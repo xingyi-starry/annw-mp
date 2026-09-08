@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GameRoot>$(MSBuildThisFileDirectory)..\Tactical Annihilation</GameRoot>
+    <ManagedDir>$(GameRoot)\AnnW_Data\Managed</ManagedDir>
+    <BepInExDir>$(MSBuildThisFileDirectory)..\AnnW.LanMp-0.18.0-with-BepInEx\BepInEx\core</BepInExDir>
+  </PropertyGroup>
+</Project>

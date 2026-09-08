@@ -1,0 +1,38 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+dist/
+.artifacts/
+
+# Visual Studio / VS Code / Rider
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# .NET and test tooling
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.ncrunch*
+*.dotCover
+*.xmpj
+
+# Logs and local tool state
+*.log
+*.log.*
+.sonarqube/
+.nuget/
+packages/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Local game/deployment markers
+XingyiStarry.Mp.NoSteam
