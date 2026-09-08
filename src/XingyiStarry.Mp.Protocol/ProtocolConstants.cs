@@ -2,7 +2,7 @@ namespace XingyiStarry.Mp.Protocol;
 
 public static class ProtocolConstants
 {
-    public const ushort Version = 7;
+    public const ushort Version = 8;
     public const int DefaultPort = 24555;
     public const int MaxPacketBytes = 16 * 1024 * 1024;
     public const int MaxSnapshotBytes = 256 * 1024 * 1024;
@@ -42,7 +42,9 @@ public enum CommandKind : ushort
     UndoMove,
     EndTurn,
     AutoGuideStart,
-    AutoGuideCancel
+    AutoGuideCancel,
+    DebugAddResources,
+    DebugFillSkill
 }
 
 public enum TurnPhase : byte

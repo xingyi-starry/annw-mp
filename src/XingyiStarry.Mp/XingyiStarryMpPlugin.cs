@@ -22,12 +22,11 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.3.8";
+    public const string PluginVersion = "0.3.9";
 
     private Harmony? harmony;
     private HostSession? host;
     private ClientSession? client;
-    private LobbyOverlay? overlay;
     private ConfigEntry<int>? defaultPort;
     private ConfigEntry<string>? defaultAddress;
     private ConfigEntry<string>? displayName;
@@ -59,7 +58,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     private bool previousLocalTurnOwned;
     private readonly Dictionary<string, PeerConnection> requestPeers = new Dictionary<string, PeerConnection>(StringComparer.Ordinal);
 
-    internal static XingyiStarryMpPlugin? Instance { get; private set; }
+    public static XingyiStarryMpPlugin? Instance { get; private set; }
     internal string Status { get; private set; } = "未连接";
     internal bool CanClaimSeat => CurrentRoom?.Seats.Exists(s => s.OriginallyHuman && (!s.Connected || s.ClientId == LocalIdentityId)) == true;
     internal bool CanSetReady => LocalIdentityId is Guid id && CurrentRoom?.Seats.Find(s => s.ClientId == id) is not null;
@@ -71,6 +70,39 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     internal RoomSnapshot? CurrentRoom => host?.Room.Snapshot() ?? client?.Room;
     internal Guid? LocalClientId => client?.ClientId;
     internal Guid? LocalIdentityId => host?.LocalHostClientId ?? client?.ClientId;
+    public bool IsAuthorityHostBattleActive => host?.MatchId.HasValue == true && GS_Battle.self?.game_running == true;
+
+    public bool TrySubmitDebugResources(int playerIndex, int metalDelta, int powerDelta, out string reason)
+    {
+        if (!CanSubmitHostDebug(playerIndex, out reason)) return false;
+        if (metalDelta < 0 || powerDelta < 0 || metalDelta == 0 && powerDelta == 0)
+        { reason = "资源增加量必须是正整数。"; return false; }
+        EnqueueHostDebug(new GameCommand { Kind = CommandKind.DebugAddResources, DebugPlayerIndex = playerIndex, DebugMetalDelta = metalDelta, DebugPowerDelta = powerDelta });
+        reason = "调试资源指令已进入主机权威队列。"; return true;
+    }
+
+    public bool TrySubmitDebugFillSkill(int playerIndex, out string reason)
+    {
+        if (!CanSubmitHostDebug(playerIndex, out reason)) return false;
+        EnqueueHostDebug(new GameCommand { Kind = CommandKind.DebugFillSkill, DebugPlayerIndex = playerIndex });
+        reason = "充满技能指令已进入主机权威队列。"; return true;
+    }
+
+    private bool CanSubmitHostDebug(int playerIndex, out string reason)
+    {
+        if (!IsAuthorityHostBattleActive || host is null || GS_Battle.self?.all_player?.players is null)
+        { reason = "只有联机战斗中的主机可以使用调试指令。"; return false; }
+        if (playerIndex < -1 || playerIndex >= GS_Battle.self.all_player.players.Count)
+        { reason = "玩家索引无效。"; return false; }
+        reason = ""; return true;
+    }
+
+    private void EnqueueHostDebug(GameCommand command)
+    {
+        if (host is null || GS_Battle.self is null) return;
+        operations.Enqueue(new CommandRequest { ClientId = host.LocalHostClientId, RequestId = ++nextRequestId,
+            SeatId = host.LocalHostSeatId, Round = GS_Battle.self.turns, AppliedFrameId = 0, Command = command });
+    }
 
     private void Awake()
     {
@@ -78,7 +110,6 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         defaultPort = Config.Bind("Network", "Port", ProtocolConstants.DefaultPort, "创建或加入房间使用的 TCP 端口。");
         defaultAddress = Config.Bind("Network", "Address", "127.0.0.1", "默认加入的局域网主机地址。");
         displayName = Config.Bind("Network", "DisplayName", Environment.UserName, "局域网房间内显示的名称。");
-        overlay = new LobbyOverlay(this);
         try
         {
             var assemblyCSharp = Path.Combine(Paths.ManagedPath, "Assembly-CSharp.dll");
@@ -147,11 +178,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         PumpOperations();
         TryShowLiveNotice();
         TryShowNativeNotice();
-        if (Input.GetKeyDown(KeyCode.F8)) ToggleLobby();
     }
-
-    private void OnGUI() => overlay?.Draw();
-    internal void ToggleLobby() { if (overlay is not null) overlay.Visible = !overlay.Visible; }
 
     internal void SyncLobbyDraft(UI_MENU_LevelSelect_InfoSkm info, string mapId)
     {
@@ -447,7 +474,8 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     }
 
     private static bool CanReplayAtBegin(GameCommand command) =>
-        command.Kind == CommandKind.Move || command.Kind == CommandKind.UndoMove || command.Kind == CommandKind.AutoGuideCancel;
+        command.Kind == CommandKind.Move || command.Kind == CommandKind.UndoMove || command.Kind == CommandKind.AutoGuideCancel ||
+        command.Kind == CommandKind.DebugAddResources || command.Kind == CommandKind.DebugFillSkill;
 
     private void StartClientReplay(IEnumerable<RandomRecord> records)
     {

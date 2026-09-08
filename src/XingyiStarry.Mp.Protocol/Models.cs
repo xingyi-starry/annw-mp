@@ -94,6 +94,9 @@ public sealed class GameCommand
     public string TemplateId { get; set; } = "";
     public long PassengerUnitId { get; set; }
     public bool DesiredToggleState { get; set; }
+    public int DebugPlayerIndex { get; set; }
+    public int DebugMetalDelta { get; set; }
+    public int DebugPowerDelta { get; set; }
 }
 
 public sealed class RandomRecord

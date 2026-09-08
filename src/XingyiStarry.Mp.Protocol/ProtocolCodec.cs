@@ -145,6 +145,7 @@ public static class ProtocolCodec
         for (var i = 0; i < value.UnitTargetXs.Length; i++) { w.Write(value.UnitTargetXs[i]); w.Write(value.UnitTargetYs[i]); }
         w.Write(value.ActionCategory); w.Write(value.ActionId);
         w.Write(value.TemplateId); w.Write(value.PassengerUnitId); w.Write(value.DesiredToggleState);
+        w.Write(value.DebugPlayerIndex); w.Write(value.DebugMetalDelta); w.Write(value.DebugPowerDelta);
         return w.ToArray();
     }
 
@@ -163,7 +164,9 @@ public static class ProtocolCodec
         for (var i = 0; i < targetCount; i++) { value.UnitTargetXs[i] = r.ReadInt32(); value.UnitTargetYs[i] = r.ReadInt32(); }
         value.ActionCategory = r.ReadInt32();
         value.ActionId = r.ReadStringValue(); value.TemplateId = r.ReadStringValue(); value.PassengerUnitId = r.ReadInt64();
-        value.DesiredToggleState = r.ReadBoolean(); r.EnsureEnd(); return value;
+        value.DesiredToggleState = r.ReadBoolean();
+        value.DebugPlayerIndex = r.ReadInt32(); value.DebugMetalDelta = r.ReadInt32(); value.DebugPowerDelta = r.ReadInt32();
+        r.EnsureEnd(); return value;
     }
 
     public static byte[] EncodeResolution(ResolutionPayload value)

@@ -189,6 +189,8 @@ internal sealed class HostSession : IDisposable
 
     public bool Authorize(CommandRequest request, int currentPlayerIndex, int currentRound, out string reason)
     {
+        if (request.Command.Kind == CommandKind.DebugAddResources || request.Command.Kind == CommandKind.DebugFillSkill)
+        { reason = "Debug commands can only originate on the authority host."; return false; }
         if (!MatchId.HasValue || !Room.MatchStarted) { reason = "Match has not started."; return false; }
         var seat = Room.Seats.FirstOrDefault(value => value.SeatId == request.SeatId);
         if (seat is null || !seat.Connected || seat.ClientId != request.ClientId) { reason = "Client does not own the requested seat."; return false; }

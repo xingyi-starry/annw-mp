@@ -12,7 +12,9 @@ Tactical Annihilation 的 BepInEx 5 局域网遭遇战联机插件。
 
 默认从相邻的 `Tactical Annihilation` 和参考包内读取游戏、BepInEx 编译引用。可通过 MSBuild 属性 `GameRoot` 与 `BepInExDir` 覆盖。
 
-运行 `build.ps1` 会同时生成可复制到游戏目录的 `dist\BepInEx\plugins\XingyiStarry.Mp`。“联机遭遇战”会先打开原版风格大厅，输入用户名、主机地址和端口并创建/连接；握手后双方进入遭遇战配置页，在弹性房间栏中选择 Human 席位并准备，AI 行继续使用原版 AI。已被别人认领的席位会置灰。联机界面退出时会销毁附加 UI、恢复原控件并关闭对应会话，普通单机遭遇战不启用这些补丁。F8 仅保留为诊断入口。
+运行 `build.ps1` 会生成可复制到游戏目录的 `dist\BepInEx\plugins\XingyiStarry.Mp`。“联机遭遇战”会先打开原版风格大厅，输入用户名、主机地址和端口并创建/连接；握手后双方进入遭遇战配置页，在弹性房间栏中选择 Human 席位并准备，AI 行继续使用原版 AI。已被别人认领的席位会置灰。联机界面退出时会销毁附加 UI、恢复原控件并关闭对应会话，普通单机遭遇战不启用这些补丁。正式插件不占用 F8。
+
+可选的 `XingyiStarry.Mp.DebugTools` 是独立开发包，不进入正式发行包。安装后，只有已进入联机战斗的主机可用 F8 打开调试面板，为任意玩家增加金属/电力或充满主动技能；主插件会把这些操作作为仅主机可发起的权威调试指令同步给客机。
 
 `install.ps1 -NoSteam` 会安装本项目自己的 EarlyPatcher 并创建显式标记，使工作副本不调用 Steam 初始化。该选项用于本机双实例测试；默认安装不会启用它。
 

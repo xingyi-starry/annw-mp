@@ -16,6 +16,15 @@ internal sealed class GameCommandExecutor
     {
         if (GS_Battle.self is null || !GS_Battle.self.game_running) return "Battle is not running.";
         if (IsBusy || GS_Battle.self.unit_busy) return "Another operation is running.";
+        if (command.Kind == CommandKind.DebugAddResources || command.Kind == CommandKind.DebugFillSkill)
+        {
+            if (command.DebugPlayerIndex < -1 || command.DebugPlayerIndex >= GS_Battle.self.all_player.players.Count)
+                return "Debug player index is invalid.";
+            if (command.Kind == CommandKind.DebugAddResources &&
+                (command.DebugMetalDelta < 0 || command.DebugPowerDelta < 0 || command.DebugMetalDelta == 0 && command.DebugPowerDelta == 0))
+                return "Debug resource delta is invalid.";
+            return null;
+        }
         if (command.Kind == CommandKind.EndTurn || command.Kind == CommandKind.UndoMove || command.Kind == CommandKind.Skill || command.Kind == CommandKind.AutoGuideCancel) return null;
         if (command.UnitIds.Length == 0) return "Command contains no units.";
         foreach (var id in command.UnitIds)
@@ -135,8 +144,40 @@ internal sealed class GameCommandExecutor
             case CommandKind.EndTurn: return GameController.self.EndPlayerTurn(GS_Battle.self.cur_player);
             case CommandKind.AutoGuideStart: return ExecuteAutoGuide(command);
             case CommandKind.AutoGuideCancel: return ExecuteAutoGuideCancel();
+            case CommandKind.DebugAddResources: return ExecuteDebugAddResources(command);
+            case CommandKind.DebugFillSkill: return ExecuteDebugFillSkill(command);
             default: return Unsupported(command.Kind);
         }
+    }
+
+    private static IEnumerator ExecuteDebugAddResources(GameCommand command)
+    {
+        foreach (var player in DebugPlayers(command.DebugPlayerIndex))
+        {
+            player.metal = SaturatingAdd(player.metal, command.DebugMetalDelta);
+            player.power = SaturatingAdd(player.power, command.DebugPowerDelta);
+            player.Event_MetalPowerChange?.Invoke();
+        }
+        yield break;
+    }
+
+    private static IEnumerator ExecuteDebugFillSkill(GameCommand command)
+    {
+        foreach (var player in DebugPlayers(command.DebugPlayerIndex))
+            if (player.co_data?.skill is not null) player.co_data.energy = player.co_data.energy_max;
+        yield break;
+    }
+
+    private static System.Collections.Generic.IEnumerable<Player> DebugPlayers(int playerIndex)
+    {
+        if (playerIndex >= 0) { yield return GS_Battle.self.all_player.players[playerIndex]; yield break; }
+        foreach (var player in GS_Battle.self.all_player.players) if (player is not null) yield return player;
+    }
+
+    private static int SaturatingAdd(int value, int delta)
+    {
+        var result = (long)value + delta;
+        return result > int.MaxValue ? int.MaxValue : (int)result;
     }
 
     private static IEnumerator ExecuteAction(GameCommand command)
