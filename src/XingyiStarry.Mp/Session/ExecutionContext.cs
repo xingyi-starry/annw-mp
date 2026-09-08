@@ -8,8 +8,9 @@ internal enum ExecutionOrigin { LocalInput, HostAuthority, ClientReplay, NestedO
 internal static class ExecutionContext
 {
     private static readonly AsyncLocal<ExecutionOrigin?> current = new AsyncLocal<ExecutionOrigin?>();
+    public static bool DetachedAuthoritativeExecution { get; set; }
     public static ExecutionOrigin Origin => current.Value ?? ExecutionOrigin.LocalInput;
-    public static bool IsAuthoritativeExecution => Origin == ExecutionOrigin.HostAuthority || Origin == ExecutionOrigin.ClientReplay || Origin == ExecutionOrigin.NestedOriginal;
+    public static bool IsAuthoritativeExecution => DetachedAuthoritativeExecution || Origin == ExecutionOrigin.HostAuthority || Origin == ExecutionOrigin.ClientReplay || Origin == ExecutionOrigin.NestedOriginal;
 
     public static IDisposable Enter(ExecutionOrigin origin)
     {

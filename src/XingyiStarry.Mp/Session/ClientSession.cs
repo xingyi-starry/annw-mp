@@ -32,7 +32,7 @@ internal sealed class ClientSession : IDisposable
         await network.SendAsync(MessageType.Hello, ProtocolCodec.EncodeHello(hello)).ConfigureAwait(false);
     }
 
-    public void Pump(Action<string> log, Action<AuthorityFrame> frameReceived, Action<SnapshotManifest, byte[]> snapshotReceived)
+    public void Pump(Action<string> log, Action<AuthorityFrame> frameReceived, Action<SnapshotManifest, byte[]> snapshotReceived, Action<string> noticeReceived)
     {
         while (network.TryDequeueError(out var error))
         {
@@ -72,9 +72,20 @@ internal sealed class ClientSession : IDisposable
                     case MessageType.CommandRejected:
                         var rejection = ProtocolCodec.DecodeCommandResponse(envelope.Payload); log($"Command {rejection.RequestId} rejected: {rejection.Reason}"); break;
                     case MessageType.CommandAccepted: break;
+                    case MessageType.SessionEnded:
+                        ConnectionError = ProtocolCodec.DecodeString(envelope.Payload);
+                        ConnectionLost = true;
+                        break;
+                    case MessageType.ParticipantNotice:
+                        noticeReceived(ProtocolCodec.DecodeString(envelope.Payload));
+                        break;
                 }
             }
-            catch (Exception ex) { log("Client synchronization paused: " + ex.Message); }
+            catch (Exception ex)
+            {
+                log("Client synchronization paused: " + ex.Message);
+                if (envelope.Type == MessageType.AuthorityFrame) _ = RequestSnapshotAsync();
+            }
         }
     }
 
@@ -88,6 +99,7 @@ internal sealed class ClientSession : IDisposable
 
     public Task ClaimSeatAsync(int lobbySlotIndex) => network.SendAsync(MessageType.ClaimSeat, ProtocolCodec.EncodeInt64(lobbySlotIndex));
     public Task SetReadyAsync(bool ready) => network.SendAsync(MessageType.SetReady, ProtocolCodec.EncodeInt64(ready ? 1 : 0));
+    public Task SendLobbyDraftAsync(RoomSnapshot draft) => network.SendAsync(MessageType.LobbyDraftChange, ProtocolCodec.EncodeRoom(draft));
     public Task RequestSnapshotAsync()
     {
         hasSnapshotAnchor = false; snapshotRequested = true; IsCaughtUp = false;

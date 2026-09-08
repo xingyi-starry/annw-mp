@@ -18,6 +18,7 @@ internal static class NativeSkirmishLobby
     private static UI_MENU_POP_SkirmishSelect? screen;
     private static UI_MENU_LevelSelect_InfoSkm? info;
     private static GameObject? roomRoot;
+    private static RectTransform? roomRect;
     private static RectTransform? seatsRow;
     private static TextMeshProUGUI? statusText;
     private static int lastAppliedRevision = -1;
@@ -26,6 +27,7 @@ internal static class NativeSkirmishLobby
     private static float nextRefresh;
 
     internal static bool Active { get; private set; }
+    internal static UI_MENU_LevelSelect_InfoSkm? CurrentInfo => info;
 
     internal static void Enter(UI_MENU_MainMenu menu)
     {
@@ -57,6 +59,7 @@ internal static class NativeSkirmishLobby
     {
         if (!Active || screen == null || info == null || Time.unscaledTime < nextRefresh) return;
         nextRefresh = Time.unscaledTime + 0.2f;
+        if (roomRect != null) PositionAboveNativeFooter(roomRect);
         var mapId = CurrentMapId();
         if (plugin.IsHost && !string.IsNullOrEmpty(mapId))
         {
@@ -65,6 +68,11 @@ internal static class NativeSkirmishLobby
         }
         var room = plugin.CurrentRoom;
         if (plugin.IsClient && room != null) ApplyGuestDraft(room);
+        if (plugin.IsClient && !string.IsNullOrEmpty(mapId))
+        {
+            var signature = DraftSignature(info, mapId);
+            if (signature != lastDraftSignature) { lastDraftSignature = signature; plugin.SyncLobbyDraft(info, mapId); }
+        }
         ApplyPermissions(plugin, room, mapId);
         var seatSignature = SeatSignature(room, plugin.LocalIdentityId);
         if (seatSignature != lastSeatSignature) { lastSeatSignature = seatSignature; RebuildSeats(plugin, room); }
@@ -102,7 +110,8 @@ internal static class NativeSkirmishLobby
         var old = info.transform.Find(RootName); if (old != null) UnityEngine.Object.Destroy(old.gameObject);
         var root = GameUiKit.Rect(RootName, info.transform);
         root.anchorMin = new Vector2(0f, 0f); root.anchorMax = new Vector2(1f, 0f); root.pivot = new Vector2(0.5f, 0f);
-        root.sizeDelta = new Vector2(-20f, 104f); root.anchoredPosition = new Vector2(0f, 62f);
+        root.sizeDelta = new Vector2(-20f, 104f);
+        PositionAboveNativeFooter(root);
         GameUiKit.Panel(root, new Color(0.12f, 0.065f, 0.025f, 0.94f));
         var vertical = root.gameObject.AddComponent<VerticalLayoutGroup>();
         vertical.padding = new RectOffset(8, 8, 6, 6); vertical.spacing = 5f; vertical.childControlWidth = true; vertical.childControlHeight = true; vertical.childForceExpandWidth = true; vertical.childForceExpandHeight = false;
@@ -111,7 +120,20 @@ internal static class NativeSkirmishLobby
         seatsRow = GameUiKit.Rect("Seats", root); seatsRow.gameObject.AddComponent<LayoutElement>().preferredHeight = 54f;
         var horizontal = seatsRow.gameObject.AddComponent<HorizontalLayoutGroup>();
         horizontal.spacing = 7f; horizontal.childControlWidth = true; horizontal.childControlHeight = true; horizontal.childForceExpandWidth = true; horizontal.childForceExpandHeight = true;
-        roomRoot = root.gameObject;
+        roomRect = root; roomRoot = root.gameObject;
+    }
+
+    private static void PositionAboveNativeFooter(RectTransform root)
+    {
+        if (info == null || screen?.btn_confirm == null) { root.anchoredPosition = new Vector2(0f, 68f); return; }
+        var infoRect = info.transform as RectTransform;
+        var confirmRect = screen.btn_confirm.transform as RectTransform;
+        if (infoRect == null || confirmRect == null) { root.anchoredPosition = new Vector2(0f, 68f); return; }
+        var corners = new Vector3[4]; confirmRect.GetWorldCorners(corners);
+        var footerTop = float.MinValue;
+        foreach (var corner in corners) footerTop = Mathf.Max(footerTop, infoRect.InverseTransformPoint(corner).y);
+        var bottomOffset = footerTop - infoRect.rect.yMin + 6f;
+        root.anchoredPosition = new Vector2(0f, Mathf.Max(0f, bottomOffset));
     }
 
     private static void ApplyGuestDraft(RoomSnapshot room)
@@ -122,17 +144,75 @@ internal static class NativeSkirmishLobby
         info.gameObject.SetActive(true);
         screen.OnSelectMap(asset);
         info.dd_fow.SetValueWithoutNotify(room.FowType); info.dd_condition.SetValueWithoutNotify(room.WinCondition); info.dd_quickStart.SetValueWithoutNotify(room.QuickStart);
+        ApplySeatSettings(room);
+        lastAppliedRevision = room.DraftRevision;
+        lastDraftSignature = DraftSignature(info, room.MapId);
+    }
+
+    internal static bool ApplyRemoteSeatDraft(RoomSnapshot draft)
+    {
+        if (!Active || info == null || draft.Seats.Select(value => value.LobbySlotIndex).Distinct().Count() != draft.Seats.Count) return false;
+        var items = Items();
+        if (draft.Seats.Any(value => value.LobbySlotIndex < 0 || value.LobbySlotIndex >= items.Count)) return false;
+        ApplySeatSettings(draft);
+        lastDraftSignature = DraftSignature(info, CurrentMapId());
+        return true;
+    }
+
+    private static void ApplySeatSettings(RoomSnapshot draft)
+    {
         var items = Items();
         for (var index = 0; index < items.Count; index++)
         {
-            var item = items[index]; var seat = room.Seats.Find(value => value.LobbySlotIndex == index);
+            var item = items[index]; var seat = draft.Seats.Find(value => value.LobbySlotIndex == index);
             if ((seat != null) != item.is_open) item.OnBtnSwitch();
             if (seat == null) continue;
             item.ForceSetControl(seat.Controller); item.ForceSetTeam(seat.Team); item.ForceSetColor(seat.Color); item.ForceSetPos(seat.PositionRandom ? -1 : seat.Position);
             SetNearest(item.dd_res, DataUtils.SkirmishResMulOptions, seat.ResourceMultiplier);
             SetNearest(item.dd_ai_intell, DataUtils.SkirmishAIIntelOptions, seat.AiIntelligence);
+            ApplyCommander(item, seat);
         }
-        lastAppliedRevision = room.DraftRevision;
+    }
+
+    private static void ApplyCommander(UI_SKM_PlayerSetting item, SeatInfo seat)
+    {
+        var selectedField = AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co");
+        var skillField = AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co_sk");
+        var passivesField = AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co_ps");
+        var namesField = AccessTools.Field(typeof(UI_SKM_PlayerSetting), "list_hero_name");
+        var selection = seat.CommanderMode;
+        if (seat.CommanderMode == 2)
+        {
+            var names = namesField?.GetValue(item) as List<string>;
+            var index = names?.IndexOf(seat.CommanderId) ?? -1;
+            selection = index >= 0 ? index + 2 : 1;
+            skillField?.SetValue(item, string.IsNullOrEmpty(seat.SkillId) ? null : SDBase<SD_ANNW_SKILL>.Get(seat.SkillId));
+            var passives = new List<SD_ANNW_PS>();
+            foreach (var id in seat.PassiveIds)
+            {
+                var passive = SDBase<SD_ANNW_PS>.Get(id); if (passive is not null) passives.Add(passive);
+            }
+            passivesField?.SetValue(item, passives);
+        }
+        else
+        {
+            skillField?.SetValue(item, null); passivesField?.SetValue(item, null);
+        }
+        selectedField?.SetValue(item, selection);
+        if (selection == 0)
+        {
+            item.icon_icon.gameObject.SetActive(false); item.txt_co.text = LAN.Get("UI_NoCO");
+        }
+        else if (selection == 1)
+        {
+            item.icon_icon.gameObject.SetActive(false); item.txt_co.text = LAN.Get("UI_RdCO");
+        }
+        else
+        {
+            item.icon_icon.gameObject.SetActive(true);
+            item.icon_icon.sprite = PrebuildIconDic.self.GetSprite("co", seat.CommanderId + "_1");
+            item.txt_co.text = AccessTools.Method(typeof(LAN), "GetCOName")?.Invoke(null, new object[] { seat.CommanderId }) as string ?? seat.CommanderId;
+        }
     }
 
     private static void ApplyPermissions(XingyiStarryMpPlugin plugin, RoomSnapshot? room, string mapId)
@@ -141,7 +221,6 @@ internal static class NativeSkirmishLobby
         if (plugin.IsClient)
         {
             Disable(info.dd_fow); Disable(info.dd_condition); Disable(info.dd_quickStart);
-            foreach (var item in Items()) foreach (var selectable in item.GetComponentsInChildren<Selectable>(true)) Disable(selectable);
             if (screen.pool_maps != null) foreach (var button in screen.pool_maps.GetComponentsInChildren<Button>(true)) Disable(button);
         }
         Store(screen.btn_confirm);
@@ -227,7 +306,7 @@ internal static class NativeSkirmishLobby
             if (localized != null) { localized.enabled = true; localized.RenderLocalizedContent(); }
         }
         if (roomRoot != null) UnityEngine.Object.Destroy(roomRoot);
-        roomRoot = null; seatsRow = null; statusText = null; screen = null; info = null;
+        roomRoot = null; roomRect = null; seatsRow = null; statusText = null; screen = null; info = null;
         lastAppliedRevision = -1; lastSeatSignature = 0; lastDraftSignature = 0;
     }
 

@@ -10,11 +10,13 @@ internal sealed class GameCommandExecutor
 {
     public bool IsBusy { get; private set; }
 
+    public void Reset() { IsBusy = false; ExecutionContext.DetachedAuthoritativeExecution = false; }
+
     public string? Validate(GameCommand command)
     {
         if (GS_Battle.self is null || !GS_Battle.self.game_running) return "Battle is not running.";
         if (IsBusy || GS_Battle.self.unit_busy) return "Another operation is running.";
-        if (command.Kind == CommandKind.EndTurn || command.Kind == CommandKind.UndoMove || command.Kind == CommandKind.Skill || command.Kind == CommandKind.AutoGuideStart || command.Kind == CommandKind.AutoGuideCancel) return null;
+        if (command.Kind == CommandKind.EndTurn || command.Kind == CommandKind.UndoMove || command.Kind == CommandKind.Skill || command.Kind == CommandKind.AutoGuideCancel) return null;
         if (command.UnitIds.Length == 0) return "Command contains no units.";
         foreach (var id in command.UnitIds)
         {
@@ -35,13 +37,14 @@ internal sealed class GameCommandExecutor
                 var unit = GS_Battle.self.all_unit.GetUnitByID((int)id);
                 var action = unit.GetAction((ActionCate)command.ActionCategory);
                 if (action is null) return "Unit does not have the requested action.";
+                if (!string.IsNullOrEmpty(command.TemplateId)) action.train_template = UnitTemplate.Acquire(command.TemplateId);
                 if (action.CanDoAction(tile) != REASON_CANTDO.OK || !action.CanAfford(tile)) return "Original action validation rejected the command.";
             }
         }
         return null;
     }
 
-    public void Start(GameCommand command, ExecutionOrigin origin, Action<byte[]> completed, Action<Exception> failed)
+    public void Start(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
     {
         var validation = Validate(command);
         if (validation is not null) { failed(new InvalidOperationException(validation)); return; }
@@ -49,10 +52,56 @@ internal sealed class GameCommandExecutor
         GameController.self.StartCoroutine(Run(command, origin, completed, failed), "XingyiStarryMpOperation");
     }
 
-    private IEnumerator Run(GameCommand command, ExecutionOrigin origin, Action<byte[]> completed, Action<Exception> failed)
+    public void StartEquipmentMovePrelude(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
+    {
+        var validation = Validate(command);
+        if (validation is not null) { failed(new InvalidOperationException(validation)); return; }
+        IsBusy = true;
+        GameController.self.StartCoroutine(RunInner(ExecuteEquipmentMovePrelude(command), origin, completed, failed), "XingyiStarryMpMovePrelude");
+    }
+
+    public void StartEquipmentMoveResolution(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
+    {
+        if (IsBusy) { failed(new InvalidOperationException("Another operation is running.")); return; }
+        IsBusy = true;
+        GameController.self.StartCoroutine(RunInner(ExecuteEquipmentMoveResolution(command), origin, completed, failed), "XingyiStarryMpMoveResolution");
+    }
+
+    public void StartBuildMoveResolution(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
+    {
+        if (IsBusy) { failed(new InvalidOperationException("Another operation is running.")); return; }
+        IsBusy = true;
+        GameController.self.StartCoroutine(RunInner(ExecuteBuildMoveResolution(command), origin, completed, failed), "XingyiStarryMpBuildResolution");
+    }
+
+    private IEnumerator Run(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
     {
         IEnumerator inner;
+        var detachedAuthority = command.Kind == CommandKind.AutoGuideStart;
+        if (detachedAuthority) ExecutionContext.DetachedAuthoritativeExecution = true;
         using (ExecutionContext.Enter(origin)) inner = Create(command);
+        while (true)
+        {
+            bool more; object? current = null;
+            try
+            {
+                using (ExecutionContext.Enter(origin))
+                {
+                    more = inner.MoveNext();
+                    if (more) current = inner.Current;
+                }
+            }
+            catch (Exception ex) { if (detachedAuthority) ExecutionContext.DetachedAuthoritativeExecution = false; IsBusy = false; failed(ex); yield break; }
+            if (!more) break;
+            yield return current;
+        }
+        if (detachedAuthority) ExecutionContext.DetachedAuthoritativeExecution = false;
+        IsBusy = false;
+        completed();
+    }
+
+    private IEnumerator RunInner(IEnumerator inner, ExecutionOrigin origin, Action completed, Action<Exception> failed)
+    {
         while (true)
         {
             bool more; object? current = null;
@@ -69,7 +118,7 @@ internal sealed class GameCommandExecutor
             yield return current;
         }
         IsBusy = false;
-        completed(ComputeStateHash());
+        completed();
     }
 
     private static IEnumerator Create(GameCommand command)
@@ -84,7 +133,7 @@ internal sealed class GameCommandExecutor
             case CommandKind.Skill: return UX_Manager.self.proc_SkillDoAction(GameTileData.Get(new Inctor2(command.TargetX, command.TargetY)));
             case CommandKind.UndoMove: return ExecuteUndo();
             case CommandKind.EndTurn: return GameController.self.EndPlayerTurn(GS_Battle.self.cur_player);
-            case CommandKind.AutoGuideStart: return ExecuteAutoGuide();
+            case CommandKind.AutoGuideStart: return ExecuteAutoGuide(command);
             case CommandKind.AutoGuideCancel: return ExecuteAutoGuideCancel();
             default: return Unsupported(command.Kind);
         }
@@ -138,10 +187,70 @@ internal sealed class GameCommandExecutor
     private static IEnumerator ExecuteBuildWithMove(GameCommand command)
     {
         var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]); var target = GameTileData.Get(new Inctor2(command.TargetX, command.TargetY));
-        var op = unit.eq.GetMoveOpAt(target.pos);
-        if (op is null) throw new InvalidOperationException("Build move operation is no longer valid.");
+        var op = new OpData();
+        if (command.UnitTargetXs.Length == 1 && command.UnitTargetYs.Length == 1)
+            op.move_pos = new Inctor2(command.UnitTargetXs[0], command.UnitTargetYs[0]);
         GS_Battle.self.ux_unit_template = UnitTemplate.Acquire(command.TemplateId);
         yield return UX_Manager.self.proc_BuildWithMove(target, unit, op);
+    }
+
+    private static IEnumerator ExecuteEquipmentMovePrelude(GameCommand command)
+    {
+        var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
+        GS_Battle.self.unit_busy = true;
+        BattleEventBus.self.TriggerUnitBusyChanged(isBusy: true);
+        if (command.UnitTargetXs.Length == 1 && command.UnitTargetYs.Length == 1)
+        {
+            var move = new Inctor2(command.UnitTargetXs[0], command.UnitTargetYs[0]);
+            if (move != unit.pos) yield return unit.DoMoveWithAni(move);
+        }
+        unit.in_animation = true;
+        UX_Manager.self.CheckUnitsAndSetUXState();
+    }
+
+    private static IEnumerator ExecuteEquipmentMoveResolution(GameCommand command)
+    {
+        var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
+        var target = GameTileData.Get(new Inctor2(command.TargetX, command.TargetY));
+        var action = unit.GetAction((ActionCate)command.ActionCategory);
+        if (action is null) throw new InvalidOperationException("Equipment move action is no longer available.");
+        unit.Event_SetAiming?.Invoke(target.pos);
+        unit.in_animation = true;
+        yield return action.DoActionAni(target);
+        unit.CheckAfterAction(action);
+        yield return 0.05f;
+        unit.in_animation = false;
+        GS_Battle.self.unit_busy = false;
+        BattleEventBus.self.TriggerUnitBusyChanged(isBusy: false);
+        GS_Battle.self.ux_skill_action = null;
+        HarmonyLib.AccessTools.Method(GS_Battle.self.cur_player.GetType(), "UpdateUnactionedUnitCount")?.Invoke(GS_Battle.self.cur_player, null);
+        GS_Battle.self.undo_move.ClearUndoableMoveList();
+        UX_Manager.self.CheckUnitsAndSetUXState();
+    }
+
+    private static IEnumerator ExecuteBuildMoveResolution(GameCommand command)
+    {
+        var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
+        var target = GameTileData.Get(new Inctor2(command.TargetX, command.TargetY));
+        var action = unit.GetAction(ActionCate.BUILD);
+        if (action is null) throw new InvalidOperationException("Build action is no longer available.");
+        var template = UnitTemplate.Acquire(command.TemplateId);
+        GS_Battle.self.ux_unit_template = template;
+        GS_Battle.self.ux_state = UX_State.NONE;
+        action.train_template = template;
+        unit.Event_SetAiming?.Invoke(target.pos);
+        unit.in_animation = true;
+        yield return action.DoActionAni(target);
+        unit.CheckAfterAction(action);
+        yield return 0.05f;
+        unit.in_animation = false;
+        unit.build_planner?.ClearTemplate();
+        GS_Battle.self.unit_busy = false;
+        BattleEventBus.self.TriggerUnitBusyChanged(isBusy: false);
+        GS_Battle.self.ux_skill_action = null;
+        HarmonyLib.AccessTools.Method(GS_Battle.self.cur_player.GetType(), "UpdateUnactionedUnitCount")?.Invoke(GS_Battle.self.cur_player, null);
+        GS_Battle.self.undo_move.ClearUndoableMoveList();
+        UX_Manager.self.CheckUnitsAndSetUXState();
     }
 
     private static System.Collections.Generic.List<UnitData> ResolveUnits(GameCommand command)
@@ -152,12 +261,15 @@ internal sealed class GameCommandExecutor
     }
 
     private static IEnumerator ExecuteUndo() { GS_Battle.self.undo_move.UndoLastMove(); yield return 0f; }
-    private static IEnumerator ExecuteAutoGuide() { SingletonMono<SS_ANNW_Game>.self.auto_guide.TryAutoCommandSelectedUnits(); yield return 0f; }
+    private static IEnumerator ExecuteAutoGuide(GameCommand command)
+    {
+        var units = ResolveUnits(command);
+        UnitSpatialSorter.SortUnitListWithHAC(units);
+        var method = HarmonyLib.AccessTools.Method(typeof(AutoGuideController), "proc_AutoCommand");
+        if (method is null) throw new MissingMethodException(typeof(AutoGuideController).FullName, "proc_AutoCommand");
+        return (IEnumerator)method.Invoke(SingletonMono<SS_ANNW_Game>.self.auto_guide, new object[] { units, false });
+    }
     private static IEnumerator ExecuteAutoGuideCancel() { GS_Battle.self.auto_guide_canceled = true; yield return 0f; }
     private static IEnumerator Unsupported(CommandKind kind) { throw new NotSupportedException("Command adapter is not implemented: " + kind); }
 
-    private static byte[] ComputeStateHash()
-    {
-        return GameStateSerializer.ComputeStateHash();
-    }
 }

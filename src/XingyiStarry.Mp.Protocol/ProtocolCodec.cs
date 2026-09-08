@@ -68,6 +68,8 @@ public static class ProtocolCodec
             if (seat.ClientId.HasValue) w.Write(seat.ClientId.Value);
             w.Write(seat.Controller); w.Write(seat.Team); w.Write(seat.Color); w.Write(seat.Position); w.Write(seat.PositionRandom);
             w.Write(seat.ResourceMultiplier); w.Write(seat.AiIntelligence); w.Write(seat.CommanderId);
+            w.Write(seat.CommanderMode); w.Write(seat.SkillId); w.Write(seat.PassiveIds.Count);
+            foreach (var passive in seat.PassiveIds) w.Write(passive);
         }
         return w.ToArray();
     }
@@ -88,6 +90,10 @@ public static class ProtocolCodec
             if (r.ReadBoolean()) seat.ClientId = r.ReadGuid();
             seat.Controller = r.ReadInt32(); seat.Team = r.ReadInt32(); seat.Color = r.ReadInt32(); seat.Position = r.ReadInt32(); seat.PositionRandom = r.ReadBoolean();
             seat.ResourceMultiplier = r.ReadSingle(); seat.AiIntelligence = r.ReadSingle(); seat.CommanderId = r.ReadStringValue();
+            seat.CommanderMode = r.ReadInt32(); seat.SkillId = r.ReadStringValue();
+            var passiveCount = r.ReadInt32();
+            if (passiveCount < 0 || passiveCount > 64) throw new InvalidDataException("Invalid commander passive count.");
+            for (var passiveIndex = 0; passiveIndex < passiveCount; passiveIndex++) seat.PassiveIds.Add(r.ReadStringValue());
             value.Seats.Add(seat);
         }
         r.EnsureEnd(); return value;
@@ -187,13 +193,25 @@ public static class ProtocolCodec
 
     public static byte[] EncodeOperationEnd(OperationEndPayload value)
     {
-        using var w = new CanonicalWriter(); w.Write(value.OperationId); w.Write(value.StateHash); return w.ToArray();
+        using var w = new CanonicalWriter(); w.Write(value.OperationId); return w.ToArray();
     }
 
     public static OperationEndPayload DecodeOperationEnd(byte[] bytes)
     {
         using var r = new CanonicalReader(bytes);
-        var value = new OperationEndPayload { OperationId = r.ReadGuid(), StateHash = r.ReadBytes(64) };
+        var value = new OperationEndPayload { OperationId = r.ReadGuid() };
+        r.EnsureEnd(); return value;
+    }
+
+    public static byte[] EncodeOperationFailed(OperationFailedPayload value)
+    {
+        using var w = new CanonicalWriter(); w.Write(value.OperationId); w.Write(value.Reason); return w.ToArray();
+    }
+
+    public static OperationFailedPayload DecodeOperationFailed(byte[] bytes)
+    {
+        using var r = new CanonicalReader(bytes);
+        var value = new OperationFailedPayload { OperationId = r.ReadGuid(), Reason = r.ReadStringValue() };
         r.EnsureEnd(); return value;
     }
 
@@ -232,14 +250,14 @@ public static class ProtocolCodec
     public static byte[] EncodeSnapshotManifest(SnapshotManifest value)
     {
         using var w = new CanonicalWriter();
-        w.Write(value.SnapshotId); w.Write(value.MatchId); w.Write(value.FrameId); w.Write(value.FrameHash); w.Write(value.StateHash);
+        w.Write(value.SnapshotId); w.Write(value.MatchId); w.Write(value.FrameId); w.Write(value.FrameHash);
         w.Write(value.CompressedLength); w.Write(value.ChunkCount); w.Write(value.ContentHash); return w.ToArray();
     }
 
     public static SnapshotManifest DecodeSnapshotManifest(byte[] bytes)
     {
         using var r = new CanonicalReader(bytes);
-        var value = new SnapshotManifest { SnapshotId = r.ReadGuid(), MatchId = r.ReadGuid(), FrameId = r.ReadInt64(), FrameHash = r.ReadBytes(64), StateHash = r.ReadBytes(64), CompressedLength = r.ReadInt32(), ChunkCount = r.ReadInt32(), ContentHash = r.ReadBytes(64) };
+        var value = new SnapshotManifest { SnapshotId = r.ReadGuid(), MatchId = r.ReadGuid(), FrameId = r.ReadInt64(), FrameHash = r.ReadBytes(64), CompressedLength = r.ReadInt32(), ChunkCount = r.ReadInt32(), ContentHash = r.ReadBytes(64) };
         r.EnsureEnd();
         if (value.CompressedLength < 0 || value.CompressedLength > ProtocolConstants.MaxSnapshotBytes || value.ChunkCount < 0 || value.ChunkCount > 65536) throw new InvalidDataException("Invalid snapshot manifest bounds.");
         return value;

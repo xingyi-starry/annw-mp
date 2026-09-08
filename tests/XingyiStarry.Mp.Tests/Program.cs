@@ -18,8 +18,9 @@ internal static class Program
         Test("snapshot codec", SnapshotRoundTrip);
         Test("room round trip", RoomRoundTrip);
         Test("snapshot assembly", SnapshotAssembly);
+        Test("operation failure codec", OperationFailureRoundTrip);
         await TestAsync("packet framing", PacketRoundTrip);
-        Console.WriteLine($"PASS {passed}/7"); return 0;
+        Console.WriteLine($"PASS {passed}/8"); return 0;
     }
 
     private static void CommandRoundTrip()
@@ -62,9 +63,10 @@ internal static class Program
     private static void RoomRoundTrip()
     {
         var room = new RoomSnapshot { RoomId = Guid.NewGuid(), MatchId = Guid.NewGuid(), MatchStarted = true, DraftRevision = 7, MapId = "CP_1", MapTitle = "初次接触", FowType = 1, WinCondition = 2, QuickStart = 2 };
-        room.Seats.Add(new SeatInfo { SeatId = Guid.NewGuid(), LobbySlotIndex = 3, PlayerIndex = 2, DisplayName = "玩家一", OriginallyHuman = true, Connected = true, Ready = true, ClientId = Guid.NewGuid(), Controller = 0, Team = 2, Color = 4, Position = 1, PositionRandom = true, ResourceMultiplier = 1.25f, AiIntelligence = 0.7f, CommanderId = "CO_Zero" });
+        var seat = new SeatInfo { SeatId = Guid.NewGuid(), LobbySlotIndex = 3, PlayerIndex = 2, DisplayName = "玩家一", OriginallyHuman = true, Connected = true, Ready = true, ClientId = Guid.NewGuid(), Controller = 0, Team = 2, Color = 4, Position = 1, PositionRandom = true, ResourceMultiplier = 1.25f, AiIntelligence = 0.7f, CommanderId = "CO_Zero", CommanderMode = 2, SkillId = "skill.zero" };
+        seat.PassiveIds.Add("ps.one"); seat.PassiveIds.Add("ps.two"); room.Seats.Add(seat);
         var restored = ProtocolCodec.DecodeRoom(ProtocolCodec.EncodeRoom(room));
-        Equal(room.RoomId, restored.RoomId); Equal(room.MatchId, restored.MatchId); Equal("CP_1", restored.MapId); Equal(7, restored.DraftRevision); Equal("玩家一", restored.Seats[0].DisplayName); Equal(3, restored.Seats[0].LobbySlotIndex); Equal(2, restored.Seats[0].PlayerIndex); Equal(true, restored.Seats[0].Ready); Equal(2, restored.Seats[0].Team); Equal(4, restored.Seats[0].Color); Equal(1.25f, restored.Seats[0].ResourceMultiplier); Equal("CO_Zero", restored.Seats[0].CommanderId);
+        Equal(room.RoomId, restored.RoomId); Equal(room.MatchId, restored.MatchId); Equal("CP_1", restored.MapId); Equal(7, restored.DraftRevision); Equal("玩家一", restored.Seats[0].DisplayName); Equal(3, restored.Seats[0].LobbySlotIndex); Equal(2, restored.Seats[0].PlayerIndex); Equal(true, restored.Seats[0].Ready); Equal(2, restored.Seats[0].Team); Equal(4, restored.Seats[0].Color); Equal(1.25f, restored.Seats[0].ResourceMultiplier); Equal("CO_Zero", restored.Seats[0].CommanderId); Equal(2, restored.Seats[0].CommanderMode); Equal("skill.zero", restored.Seats[0].SkillId); Equal("ps.two", restored.Seats[0].PassiveIds[1]);
     }
 
     private static void SnapshotAssembly()
@@ -77,6 +79,13 @@ internal static class Program
         var head = new byte[ProtocolConstants.SnapshotChunkBytes]; Buffer.BlockCopy(bytes, 0, head, 0, head.Length);
         assembler.Add(new SnapshotChunk { SnapshotId = id, Index = 1, Data = tail }); assembler.Add(new SnapshotChunk { SnapshotId = id, Index = 0, Data = head });
         True(AuthorityHashChain.FixedEquals(bytes, assembler.Finish()));
+    }
+
+    private static void OperationFailureRoundTrip()
+    {
+        var source = new OperationFailedPayload { OperationId = Guid.NewGuid(), Reason = "failed safely" };
+        var restored = ProtocolCodec.DecodeOperationFailed(ProtocolCodec.EncodeOperationFailed(source));
+        Equal(source.OperationId, restored.OperationId); Equal(source.Reason, restored.Reason);
     }
 
     private static void Test(string name, Action action) { action(); passed++; Console.WriteLine("ok  " + name); }

@@ -35,12 +35,13 @@ internal sealed class HostSession : IDisposable
 
     public void Start() => network.Start();
 
-    public void Pump(Action<string> log, Action<CommandRequest, PeerConnection> commandReceived)
+    public void Pump(Action<string> log, Action<CommandRequest, PeerConnection> commandReceived,
+        Action<RoomSnapshot, PeerConnection> lobbyDraftReceived, Action<string> participantLeft)
     {
         while (network.TryDequeueError(out var error)) log("Network host: " + error);
         while (network.TryDequeue(out var inbound) && inbound is not null)
         {
-            try { Handle(inbound, commandReceived); }
+            try { Handle(inbound, commandReceived, lobbyDraftReceived); }
             catch (Exception ex) { log("Rejected packet: " + ex.Message); }
         }
         var now = DateTime.UtcNow;
@@ -52,12 +53,16 @@ internal sealed class HostSession : IDisposable
             {
                 client.Disconnected = true;
                 if (Room.MarkDisconnected(client.ClientId)) BroadcastRoom();
+                var notice = client.DisplayName + " 已退出联机。";
+                _ = network.BroadcastAsync(MessageType.ParticipantNotice, ProtocolCodec.EncodeString(notice));
+                participantLeft(notice);
                 log((connectionClosed ? "Client disconnected: " : "Client timed out: ") + client.DisplayName);
             }
         }
     }
 
-    private void Handle(InboundEnvelope inbound, Action<CommandRequest, PeerConnection> commandReceived)
+    private void Handle(InboundEnvelope inbound, Action<CommandRequest, PeerConnection> commandReceived,
+        Action<RoomSnapshot, PeerConnection> lobbyDraftReceived)
     {
         if (inbound.Envelope.Type == MessageType.Hello)
         {
@@ -75,6 +80,9 @@ internal sealed class HostSession : IDisposable
                 }
                 BroadcastRoom(); break;
             case MessageType.SetReady: Room.SetReady(client.ClientId, ProtocolCodec.DecodeInt64(inbound.Envelope.Payload) != 0); BroadcastRoom(); break;
+            case MessageType.LobbyDraftChange:
+                if (MatchId.HasValue || Room.MatchStarted) throw new InvalidDataException("Cannot modify the lobby after match start.");
+                lobbyDraftReceived(ProtocolCodec.DecodeRoom(inbound.Envelope.Payload), inbound.Peer); break;
             case MessageType.CommandRequest:
                 var request = ProtocolCodec.DecodeCommandRequest(inbound.Envelope.Payload);
                 if (request.ClientId != client.ClientId) throw new InvalidDataException("Client identity mismatch.");
@@ -113,7 +121,7 @@ internal sealed class HostSession : IDisposable
 
     public Guid LocalHostSeatId => Room.Seats.Single(value => value.ClientId == LocalHostClientId).SeatId;
 
-    public void UpdateLobbyDraft(string mapId, string mapTitle, int fowType, int winCondition, int quickStart, IReadOnlyList<SGS_Player> players, string hostName)
+    public void UpdateLobbyDraft(RoomSnapshot draft, IReadOnlyList<SGS_Player> players)
     {
         var values = new List<SeatInfo>();
         for (var slotIndex = 0; slotIndex < players.Count; slotIndex++)
@@ -121,21 +129,19 @@ internal sealed class HostSession : IDisposable
             var player = players[slotIndex];
             if (!player.exist) continue;
             var human = player.controller == PlayerControl.Human;
-            if (human)
-            {
-                values.Add(CreateSeat(player, slotIndex, true));
-            }
-            else
-            {
-                values.Add(CreateSeat(player, slotIndex, false));
-            }
+            values.Add(CreateSeat(player, slotIndex, human, draft.Seats.Find(value => value.LobbySlotIndex == slotIndex)));
         }
-        var fingerprint = new StringBuilder().Append(mapId).Append('|').Append(fowType).Append('|').Append(winCondition).Append('|').Append(quickStart);
-        foreach (var player in players)
+        var fingerprint = new StringBuilder().Append(draft.MapId).Append('|').Append(draft.FowType).Append('|').Append(draft.WinCondition).Append('|').Append(draft.QuickStart);
+        for (var index = 0; index < players.Count; index++)
+        {
+            var player = players[index]; var intent = draft.Seats.Find(value => value.LobbySlotIndex == index);
             fingerprint.Append('|').Append(player.exist).Append(',').Append((int)player.controller).Append(',').Append((int)player.team).Append(',').Append((int)player.color)
                 .Append(',').Append(player.pos_ind).Append(',').Append(player.pos_random).Append(',').Append(player.res_percent.ToString("R", CultureInfo.InvariantCulture))
-                .Append(',').Append(player.ai_interlligence.ToString("R", CultureInfo.InvariantCulture)).Append(',').Append(player.sd_co ?? "");
-        if (Room.SyncDraft(mapId, mapTitle, fowType, winCondition, quickStart, fingerprint.ToString(), values)) BroadcastRoom();
+                .Append(',').Append(player.ai_interlligence.ToString("R", CultureInfo.InvariantCulture)).Append(',').Append(intent?.CommanderMode ?? 1)
+                .Append(',').Append(intent?.CommanderId ?? "").Append(',').Append(intent?.SkillId ?? "");
+            if (intent is not null) foreach (var passive in intent.PassiveIds) fingerprint.Append(',').Append(passive);
+        }
+        if (Room.SyncDraft(draft.MapId, draft.MapTitle, draft.FowType, draft.WinCondition, draft.QuickStart, fingerprint.ToString(), values)) BroadcastRoom();
     }
 
     public void BindRuntimePlayerIndices(IReadOnlyList<SGS_Player> players) => Room.BindRuntimePlayerIndices(players);
@@ -149,13 +155,19 @@ internal sealed class HostSession : IDisposable
 
     public void SetLocalReady(bool ready) { Room.SetReady(LocalHostClientId, ready); BroadcastRoom(); }
 
-    private static SeatInfo CreateSeat(SGS_Player player, int slotIndex, bool human) => new SeatInfo
+    private static SeatInfo CreateSeat(SGS_Player player, int slotIndex, bool human, SeatInfo? intent)
     {
-        SeatId = Guid.NewGuid(), LobbySlotIndex = slotIndex, PlayerIndex = -1,
-        DisplayName = human ? "空闲真人席位" : "原版 AI", OriginallyHuman = human, Connected = false, Ready = !human, AiControlled = !human,
-        Controller = (int)player.controller, Team = (int)player.team, Color = (int)player.color, Position = player.pos_ind, PositionRandom = player.pos_random,
-        ResourceMultiplier = player.res_percent, AiIntelligence = player.ai_interlligence, CommanderId = player.sd_co ?? ""
-    };
+        var result = new SeatInfo
+        {
+            SeatId = Guid.NewGuid(), LobbySlotIndex = slotIndex, PlayerIndex = -1,
+            DisplayName = human ? "空闲真人席位" : "原版 AI", OriginallyHuman = human, Connected = false, Ready = !human, AiControlled = !human,
+            Controller = (int)player.controller, Team = (int)player.team, Color = (int)player.color, Position = player.pos_ind, PositionRandom = player.pos_random,
+            ResourceMultiplier = player.res_percent, AiIntelligence = player.ai_interlligence, CommanderId = intent?.CommanderId ?? "",
+            CommanderMode = intent?.CommanderMode ?? 1, SkillId = intent?.SkillId ?? ""
+        };
+        if (intent is not null) foreach (var passive in intent.PassiveIds) result.PassiveIds.Add(passive);
+        return result;
+    }
 
     public AuthorityFrame AppendAndBroadcast(AuthorityFrameType type, byte[] payload)
     {
@@ -170,6 +182,8 @@ internal sealed class HostSession : IDisposable
         var snapshot = Room.Snapshot(); snapshot.MatchId = MatchId;
         _ = network.BroadcastAsync(MessageType.RoomState, ProtocolCodec.EncodeRoom(snapshot));
     }
+    public Task BroadcastSessionEndedAsync(string reason) =>
+        network.BroadcastAsync(MessageType.SessionEnded, ProtocolCodec.EncodeString(reason));
     public void Accept(PeerConnection peer, ulong requestId, long frameId) => _ = network.SendAsync(peer, MessageType.CommandAccepted, ProtocolCodec.EncodeCommandResponse(new CommandResponse { RequestId = requestId, AuthorityFrameId = frameId }));
     public void Reject(PeerConnection peer, ulong requestId, string reason) => _ = network.SendAsync(peer, MessageType.CommandRejected, ProtocolCodec.EncodeCommandResponse(new CommandResponse { RequestId = requestId, AuthorityFrameId = 0, Reason = reason }));
 
@@ -184,13 +198,13 @@ internal sealed class HostSession : IDisposable
         reason = ""; return true;
     }
 
-    public void SetLatestSnapshot(byte[] snapshot, byte[] stateHash, AuthorityFrame frame)
+    public void SetLatestSnapshot(byte[] snapshot, AuthorityFrame frame)
     {
         var compressed = SnapshotCodec.Compress(snapshot);
         latestCompressedSnapshot = compressed;
         latestSnapshotManifest = new SnapshotManifest
         {
-            SnapshotId = Guid.NewGuid(), MatchId = frame.MatchId, FrameId = frame.FrameId, FrameHash = (byte[])frame.Hash.Clone(), StateHash = (byte[])stateHash.Clone(),
+            SnapshotId = Guid.NewGuid(), MatchId = frame.MatchId, FrameId = frame.FrameId, FrameHash = (byte[])frame.Hash.Clone(),
             CompressedLength = compressed.Length, ChunkCount = compressed.Length == 0 ? 0 : (compressed.Length + ProtocolConstants.SnapshotChunkBytes - 1) / ProtocolConstants.SnapshotChunkBytes,
             ContentHash = SnapshotCodec.Hash(compressed)
         };

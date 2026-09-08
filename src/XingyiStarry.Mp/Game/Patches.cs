@@ -50,4 +50,38 @@ internal static class UnitAiPatch
 internal static class StartPlayerTurnPatch
 {
     private static void Prefix(Player player) => XingyiStarryMpPlugin.Instance?.OnSeatTurnStarting(player.index);
+
+    private static void Postfix(Player player, ref IEnumerator __result)
+    {
+        if (__result != null) __result = Wrap(__result, player.index);
+    }
+
+    private static IEnumerator Wrap(IEnumerator original, int playerIndex)
+    {
+        while (original.MoveNext()) yield return original.Current;
+        XingyiStarryMpPlugin.Instance?.OnNativeStartPlayerTurnCompleted(playerIndex);
+    }
+}
+
+[HarmonyPatch(typeof(GS_Battle), nameof(GS_Battle.GetDisplayPlayer))]
+internal static class MultiplayerDisplayPlayerPatch
+{
+    private static void Postfix(ref Player __result)
+    {
+        var local = XingyiStarryMpPlugin.Instance?.GetLocalDisplayPlayer();
+        if (local is not null) __result = local;
+    }
+}
+
+[HarmonyPatch]
+internal static class MultiplayerWorldInputPatch
+{
+    private static System.Collections.Generic.IEnumerable<System.Reflection.MethodBase> TargetMethods()
+    {
+        yield return AccessTools.Method(typeof(ANNW_MouseInput), nameof(ANNW_MouseInput.OnClick));
+        yield return AccessTools.Method(typeof(ANNW_MouseInput), nameof(ANNW_MouseInput.OnDoubleClick));
+        yield return AccessTools.Method(typeof(ANNW_MouseInput), nameof(ANNW_MouseInput.OnStartDrag));
+        yield return AccessTools.Method(typeof(ANNW_MouseInput), nameof(ANNW_MouseInput.OnEndDrag));
+    }
+    private static bool Prefix() => !InputGate.MultiplayerActive || InputGate.MaySubmit;
 }

@@ -14,5 +14,10 @@ public sealed class OperationBeginPayload
 public sealed class OperationEndPayload
 {
     public Guid OperationId { get; set; }
-    public byte[] StateHash { get; set; } = Array.Empty<byte>();
+}
+
+public sealed class OperationFailedPayload
+{
+    public Guid OperationId { get; set; }
+    public string Reason { get; set; } = "";
 }

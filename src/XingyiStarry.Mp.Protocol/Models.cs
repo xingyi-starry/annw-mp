@@ -45,6 +45,9 @@ public sealed class SeatInfo
     public float ResourceMultiplier { get; set; } = 1f;
     public float AiIntelligence { get; set; } = 1f;
     public string CommanderId { get; set; } = "";
+    public int CommanderMode { get; set; } = 1;
+    public string SkillId { get; set; } = "";
+    public List<string> PassiveIds { get; } = new List<string>();
 }
 
 public sealed class RoomSnapshot
@@ -126,7 +129,6 @@ public sealed class SnapshotManifest
     public Guid MatchId { get; set; }
     public long FrameId { get; set; }
     public byte[] FrameHash { get; set; } = Array.Empty<byte>();
-    public byte[] StateHash { get; set; } = Array.Empty<byte>();
     public int CompressedLength { get; set; }
     public int ChunkCount { get; set; }
     public byte[] ContentHash { get; set; } = Array.Empty<byte>();

@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using ANNW;
 using HarmonyLib;
 using XingyiStarry.Mp.Protocol;
 
@@ -27,7 +28,16 @@ internal static class EquipmentMoveCapturePatch
     private static bool Prefix(GameTileData lt, UnitData unit, ref IEnumerator __result)
     {
         if (InputGate.ShouldRunOriginal) return true;
-        XingyiStarryMpPlugin.Instance?.SubmitCommand(EquipmentActionCapturePatch.Command(new List<UnitData> { unit }, CommandKind.EquipmentMoveAction, lt));
+        var command = EquipmentActionCapturePatch.Command(new List<UnitData> { unit }, CommandKind.EquipmentMoveAction, lt);
+        var op = unit.eq.GetMoveOpAt(lt.pos);
+        if (op?.move_pos is Inctor2 move)
+        {
+            command.UnitTargetXs = new[] { move.x };
+            command.UnitTargetYs = new[] { move.y };
+        }
+        if (op?.action?.sd_action is not null) command.ActionCategory = (int)op.action.sd_action.cate;
+        unit.in_animation = false;
+        XingyiStarryMpPlugin.Instance?.SubmitCommand(command);
         __result = EquipmentActionCapturePatch.Empty(); return false;
     }
 }
@@ -35,10 +45,16 @@ internal static class EquipmentMoveCapturePatch
 [HarmonyPatch(typeof(UX_Manager), nameof(UX_Manager.proc_BuildWithMove))]
 internal static class BuildWithMoveCapturePatch
 {
-    private static bool Prefix(GameTileData lt, UnitData unit, ref IEnumerator __result)
+    private static bool Prefix(GameTileData lt, UnitData unit, OpData op, ref IEnumerator __result)
     {
         if (InputGate.ShouldRunOriginal) return true;
-        XingyiStarryMpPlugin.Instance?.SubmitCommand(EquipmentActionCapturePatch.Command(new List<UnitData> { unit }, CommandKind.BuildWithMove, lt));
+        var command = EquipmentActionCapturePatch.Command(new List<UnitData> { unit }, CommandKind.BuildWithMove, lt);
+        if (op.move_pos is Inctor2 move)
+        {
+            command.UnitTargetXs = new[] { move.x };
+            command.UnitTargetYs = new[] { move.y };
+        }
+        XingyiStarryMpPlugin.Instance?.SubmitCommand(command);
         __result = EquipmentActionCapturePatch.Empty(); return false;
     }
 }

@@ -2,7 +2,7 @@ namespace XingyiStarry.Mp.Protocol;
 
 public static class ProtocolConstants
 {
-    public const ushort Version = 3;
+    public const ushort Version = 7;
     public const int DefaultPort = 24555;
     public const int MaxPacketBytes = 16 * 1024 * 1024;
     public const int MaxSnapshotBytes = 256 * 1024 * 1024;
@@ -17,7 +17,7 @@ public enum MessageType : ushort
     CommandRequest, CommandAccepted, CommandRejected,
     AuthorityFrame, HistoryRequest, HistoryComplete,
     SnapshotRequest, SnapshotManifest, SnapshotChunk, SnapshotComplete,
-    CatchUpComplete
+    CatchUpComplete, SessionEnded, LobbyDraftChange, ParticipantNotice
 }
 
 public enum AuthorityFrameType : byte
@@ -27,7 +27,8 @@ public enum AuthorityFrameType : byte
     OperationEnd,
     TurnPhase,
     SeatChanged,
-    MatchEnded
+    MatchEnded,
+    OperationFailed
 }
 
 public enum CommandKind : ushort
