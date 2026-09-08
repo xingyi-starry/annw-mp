@@ -47,11 +47,12 @@ internal sealed class HostSession : IDisposable
         foreach (var pair in clientsByConnection)
         {
             var client = pair.Value;
-            if (!client.Disconnected && now - client.LastSeenUtc > TimeSpan.FromSeconds(10))
+            var connectionClosed = client.Peer == null || !client.Peer.IsConnected;
+            if (!client.Disconnected && (connectionClosed || now - client.LastSeenUtc > TimeSpan.FromSeconds(10)))
             {
                 client.Disconnected = true;
                 if (Room.MarkDisconnected(client.ClientId)) BroadcastRoom();
-                log("Client timed out: " + client.DisplayName);
+                log((connectionClosed ? "Client disconnected: " : "Client timed out: ") + client.DisplayName);
             }
         }
     }
@@ -92,7 +93,7 @@ internal sealed class HostSession : IDisposable
         }
         var cleanName = (hello.DisplayName ?? "").Trim();
         if (cleanName.Length == 0 || cleanName.Length > 32) { _ = RejectHandshakeAsync(peer, "用户名长度必须为 1–32 个字符。"); return; }
-        var record = new ClientRecord { ClientId = Guid.NewGuid(), DisplayName = cleanName, LastSeenUtc = DateTime.UtcNow };
+        var record = new ClientRecord { ClientId = Guid.NewGuid(), DisplayName = cleanName, LastSeenUtc = DateTime.UtcNow, Peer = peer };
         clientsByConnection[peer.ConnectionId] = record;
         _ = network.SendAsync(peer, MessageType.Welcome, ProtocolCodec.EncodeWelcome(new WelcomeMessage { ClientId = record.ClientId, RoomId = Room.RoomId, MatchId = MatchId, LatestFrameId = journal?.Frames.Count ?? 0 }));
         var room = Room.Snapshot(); room.MatchId = MatchId;
@@ -230,5 +231,6 @@ internal sealed class HostSession : IDisposable
         public string DisplayName { get; set; } = "";
         public DateTime LastSeenUtc { get; set; }
         public bool Disconnected { get; set; }
+        public PeerConnection? Peer { get; set; }
     }
 }

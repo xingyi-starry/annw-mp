@@ -83,9 +83,11 @@ internal static class GameUiKit
         button.onClick = new Button.ButtonClickedEvent(); button.onClick.AddListener(action);
         var text = go.GetComponentInChildren<TextMeshProUGUI>(true) ?? Text(go.transform, "Label", label, 20f, TextAlignmentOptions.Center);
         text.text = label; text.font = font; text.fontSize = 20f;
+        text.enableAutoSizing = true; text.fontSizeMin = 10f; text.fontSizeMax = 20f;
         var layout = go.GetComponent<LayoutElement>() ?? go.AddComponent<LayoutElement>();
         layout.ignoreLayout = false; layout.minHeight = 42f; layout.preferredHeight = 42f; layout.flexibleHeight = 0f;
-        if (width > 0f) { layout.minWidth = width; layout.preferredWidth = width; layout.flexibleWidth = 0f; } else layout.flexibleWidth = 1f;
+        if (width > 0f) { layout.minWidth = width; layout.preferredWidth = width; layout.flexibleWidth = 0f; }
+        else { layout.minWidth = 0f; layout.preferredWidth = 0f; layout.flexibleWidth = 1f; }
         return button;
     }
 

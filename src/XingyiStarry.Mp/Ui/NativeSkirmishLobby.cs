@@ -13,13 +13,15 @@ namespace XingyiStarry.Mp.Ui;
 
 internal static class NativeSkirmishLobby
 {
-    private const string SeatButtonName = "XingyiStarryMp_Seat";
+    private const string RootName = "XingyiStarryMp_RoomControls";
+    private static readonly Dictionary<Selectable, bool> originalInteractable = new Dictionary<Selectable, bool>();
     private static UI_MENU_POP_SkirmishSelect? screen;
     private static UI_MENU_LevelSelect_InfoSkm? info;
-    private static Button? readyButton;
+    private static GameObject? roomRoot;
+    private static RectTransform? seatsRow;
     private static TextMeshProUGUI? statusText;
     private static int lastAppliedRevision = -1;
-    private static int lastRenderedRevision = -1;
+    private static int lastSeatSignature;
     private static int lastDraftSignature;
     private static float nextRefresh;
 
@@ -27,7 +29,8 @@ internal static class NativeSkirmishLobby
 
     internal static void Enter(UI_MENU_MainMenu menu)
     {
-        Active = true; lastAppliedRevision = -1; lastRenderedRevision = -1; lastDraftSignature = 0;
+        CleanupUi();
+        Active = true; lastAppliedRevision = -1; lastSeatSignature = 0; lastDraftSignature = 0;
         menu.pop_skirmish.SetActive(false); menu.OnBtn_SkirmishNew();
     }
 
@@ -35,8 +38,19 @@ internal static class NativeSkirmishLobby
     {
         if (!Active || value?.info_skirmish == null) return;
         screen = value; info = value.info_skirmish;
-        if (!GameUiKit.Ensure()) return;
-        BuildFooterControls();
+        if (GameUiKit.Ensure()) BuildRoomControls();
+    }
+
+    internal static void OnInfoRendered(UI_MENU_LevelSelect_InfoSkm value)
+    {
+        if (!Active) return;
+        info = value;
+        var plugin = XingyiStarryMpPlugin.Instance; var mapId = CurrentMapId();
+        if (plugin?.IsHost == true && !string.IsNullOrEmpty(mapId))
+        {
+            plugin.SyncLobbyDraft(value, mapId);
+            lastDraftSignature = DraftSignature(value, mapId);
+        }
     }
 
     internal static void Tick(XingyiStarryMpPlugin plugin)
@@ -52,11 +66,9 @@ internal static class NativeSkirmishLobby
         var room = plugin.CurrentRoom;
         if (plugin.IsClient && room != null) ApplyGuestDraft(room);
         ApplyPermissions(plugin, room, mapId);
-        if (room != null && (room.DraftRevision != lastRenderedRevision || SeatLabelsChanged(room)))
-        {
-            RebuildSeatButtons(plugin, room); lastRenderedRevision = room.DraftRevision;
-        }
-        RefreshFooter(plugin, room);
+        var seatSignature = SeatSignature(room, plugin.LocalIdentityId);
+        if (seatSignature != lastSeatSignature) { lastSeatSignature = seatSignature; RebuildSeats(plugin, room); }
+        RefreshStatus(plugin, room);
     }
 
     internal static string CurrentMapId()
@@ -68,112 +80,116 @@ internal static class NativeSkirmishLobby
         return string.IsNullOrEmpty(path) ? "" : Path.GetFileNameWithoutExtension(path);
     }
 
-    private static void BuildFooterControls()
+    internal static void MarkStartingMatch() => CleanupUi();
+
+    internal static void OnPageLeaving()
     {
-        if (screen == null || readyButton != null) return;
-        var confirm = screen.btn_confirm; if (confirm == null) return;
-        readyButton = GameUiKit.Button(confirm.transform.parent, "XingyiStarryMp_Ready", "准备", () => XingyiStarryMpPlugin.Instance?.ToggleReady(), 150f);
-        if (readyButton.transform is RectTransform readyRect && confirm.transform is RectTransform confirmRect)
-        {
-            readyRect.anchorMin = confirmRect.anchorMin; readyRect.anchorMax = confirmRect.anchorMax; readyRect.pivot = confirmRect.pivot;
-            readyRect.sizeDelta = confirmRect.sizeDelta; readyRect.anchoredPosition = confirmRect.anchoredPosition + new Vector2(-Mathf.Max(165f, confirmRect.rect.width + 12f), 0f);
-        }
-        var statusHost = GameUiKit.Rect("XingyiStarryMp_Status", confirm.transform.parent);
-        if (confirm.transform is RectTransform source)
-        {
-            statusHost.anchorMin = source.anchorMin; statusHost.anchorMax = source.anchorMax; statusHost.pivot = source.pivot;
-            statusHost.sizeDelta = new Vector2(460f, 36f); statusHost.anchoredPosition = source.anchoredPosition + new Vector2(-235f, 52f);
-        }
-        statusText = GameUiKit.Text(statusHost, "Text", "请选择地图和席位", 17f, TextAlignmentOptions.MidlineRight);
+        if (!Active) return;
+        XingyiStarryMpPlugin.Instance?.Disconnect();
+        CleanupUi();
+    }
+
+    internal static void TerminateFromRemote()
+    {
+        var currentScreen = screen;
+        CleanupUi();
+        if (currentScreen != null && currentScreen.gameObject.activeInHierarchy) currentScreen.Hide();
+    }
+
+    private static void BuildRoomControls()
+    {
+        if (info == null || roomRoot != null) return;
+        var old = info.transform.Find(RootName); if (old != null) UnityEngine.Object.Destroy(old.gameObject);
+        var root = GameUiKit.Rect(RootName, info.transform);
+        root.anchorMin = new Vector2(0f, 0f); root.anchorMax = new Vector2(1f, 0f); root.pivot = new Vector2(0.5f, 0f);
+        root.sizeDelta = new Vector2(-20f, 104f); root.anchoredPosition = new Vector2(0f, 62f);
+        GameUiKit.Panel(root, new Color(0.12f, 0.065f, 0.025f, 0.94f));
+        var vertical = root.gameObject.AddComponent<VerticalLayoutGroup>();
+        vertical.padding = new RectOffset(8, 8, 6, 6); vertical.spacing = 5f; vertical.childControlWidth = true; vertical.childControlHeight = true; vertical.childForceExpandWidth = true; vertical.childForceExpandHeight = false;
+        var statusHost = GameUiKit.Rect("Status", root); statusHost.gameObject.AddComponent<LayoutElement>().preferredHeight = 27f;
+        statusText = GameUiKit.Text(statusHost, "Text", "请选择地图", 16f, TextAlignmentOptions.Center);
+        seatsRow = GameUiKit.Rect("Seats", root); seatsRow.gameObject.AddComponent<LayoutElement>().preferredHeight = 54f;
+        var horizontal = seatsRow.gameObject.AddComponent<HorizontalLayoutGroup>();
+        horizontal.spacing = 7f; horizontal.childControlWidth = true; horizontal.childControlHeight = true; horizontal.childForceExpandWidth = true; horizontal.childForceExpandHeight = true;
+        roomRoot = root.gameObject;
     }
 
     private static void ApplyGuestDraft(RoomSnapshot room)
     {
-        if (info == null || room.DraftRevision == lastAppliedRevision || string.IsNullOrEmpty(room.MapId)) return;
+        if (info == null || screen == null || room.DraftRevision == lastAppliedRevision || string.IsNullOrEmpty(room.MapId)) return;
         var asset = Resources.Load<TextAsset>("Skirmish/" + room.MapId);
-        if (asset != null)
+        if (asset == null) return;
+        info.gameObject.SetActive(true);
+        screen.OnSelectMap(asset);
+        info.dd_fow.SetValueWithoutNotify(room.FowType); info.dd_condition.SetValueWithoutNotify(room.WinCondition); info.dd_quickStart.SetValueWithoutNotify(room.QuickStart);
+        var items = Items();
+        for (var index = 0; index < items.Count; index++)
         {
-            info.Render(asset); info.dd_fow.SetValueWithoutNotify(room.FowType); info.dd_condition.SetValueWithoutNotify(room.WinCondition); info.dd_quickStart.SetValueWithoutNotify(room.QuickStart);
-            var items = Items();
-            for (var index = 0; index < items.Count; index++)
-            {
-                var item = items[index]; var seat = room.Seats.Find(value => value.LobbySlotIndex == index);
-                if ((seat != null) != item.is_open) item.OnBtnSwitch();
-                if (seat == null) continue;
-                item.ForceSetControl(seat.Controller); item.ForceSetTeam(seat.Team); item.ForceSetColor(seat.Color); item.ForceSetPos(seat.PositionRandom ? -1 : seat.Position);
-                SetNearest(item.dd_res, DataUtils.SkirmishResMulOptions, seat.ResourceMultiplier);
-                SetNearest(item.dd_ai_intell, DataUtils.SkirmishAIIntelOptions, seat.AiIntelligence);
-            }
+            var item = items[index]; var seat = room.Seats.Find(value => value.LobbySlotIndex == index);
+            if ((seat != null) != item.is_open) item.OnBtnSwitch();
+            if (seat == null) continue;
+            item.ForceSetControl(seat.Controller); item.ForceSetTeam(seat.Team); item.ForceSetColor(seat.Color); item.ForceSetPos(seat.PositionRandom ? -1 : seat.Position);
+            SetNearest(item.dd_res, DataUtils.SkirmishResMulOptions, seat.ResourceMultiplier);
+            SetNearest(item.dd_ai_intell, DataUtils.SkirmishAIIntelOptions, seat.AiIntelligence);
         }
-        lastAppliedRevision = room.DraftRevision; lastRenderedRevision = -1;
+        lastAppliedRevision = room.DraftRevision;
     }
 
     private static void ApplyPermissions(XingyiStarryMpPlugin plugin, RoomSnapshot? room, string mapId)
     {
         if (info == null || screen == null) return;
-        var host = plugin.IsHost;
-        info.dd_fow.interactable = host; info.dd_condition.interactable = host; info.dd_quickStart.interactable = host;
-        foreach (var item in Items())
+        if (plugin.IsClient)
         {
-            foreach (var selectable in item.GetComponentsInChildren<Selectable>(true))
-                if (selectable.gameObject.name != SeatButtonName) selectable.interactable = host;
+            Disable(info.dd_fow); Disable(info.dd_condition); Disable(info.dd_quickStart);
+            foreach (var item in Items()) foreach (var selectable in item.GetComponentsInChildren<Selectable>(true)) Disable(selectable);
+            if (screen.pool_maps != null) foreach (var button in screen.pool_maps.GetComponentsInChildren<Button>(true)) Disable(button);
         }
-        if (screen.pool_maps != null)
-            foreach (var button in screen.pool_maps.GetComponentsInChildren<Button>(true)) button.interactable = host;
+        Store(screen.btn_confirm);
         var canStart = plugin.IsHost && !string.IsNullOrEmpty(mapId) && room != null && room.Seats.Any(value => value.OriginallyHuman) && room.Seats.Where(value => value.OriginallyHuman).All(value => value.Connected && value.Ready);
         screen.btn_confirm.interactable = canStart;
-        SetLabel(screen.btn_confirm, plugin.IsClient ? "等待主机开始" : "开始联机对局");
+        SetConfirmLabel(plugin.IsClient ? "等待主机开始" : "开始联机对局");
     }
 
-    private static void RebuildSeatButtons(XingyiStarryMpPlugin plugin, RoomSnapshot room)
+    private static void RebuildSeats(XingyiStarryMpPlugin plugin, RoomSnapshot? room)
     {
-        var localId = plugin.LocalIdentityId; var items = Items();
-        for (var index = 0; index < items.Count; index++)
+        if (seatsRow == null) return;
+        for (var index = seatsRow.childCount - 1; index >= 0; index--) UnityEngine.Object.Destroy(seatsRow.GetChild(index).gameObject);
+        var humans = room?.Seats.Where(value => value.OriginallyHuman).OrderBy(value => value.LobbySlotIndex).ToList() ?? new List<SeatInfo>();
+        if (humans.Count == 0)
         {
-            var item = items[index]; var old = item.transform.Find(SeatButtonName);
-            if (old != null) UnityEngine.Object.Destroy(old.gameObject);
-            var seat = room.Seats.Find(value => value.LobbySlotIndex == index);
-            if (seat == null || !item.is_open) continue;
-            var slot = index;
-            var button = GameUiKit.Button(item.transform, SeatButtonName, SeatLabel(seat), () => XingyiStarryMpPlugin.Instance?.ClaimSeat(slot), 142f);
-            button.interactable = seat.OriginallyHuman && (!seat.Connected || seat.ClientId == localId);
-            button.transform.SetAsLastSibling();
+            var none = GameUiKit.Button(seatsRow, "NoSeats", plugin.IsHost ? "请将至少一个玩家设置为“人类”" : "等待主机设置真人席位", () => { }); none.interactable = false;
         }
-    }
-
-    private static bool SeatLabelsChanged(RoomSnapshot room)
-    {
-        var items = Items();
-        foreach (var seat in room.Seats)
+        foreach (var seat in humans)
         {
-            if (seat.LobbySlotIndex < 0 || seat.LobbySlotIndex >= items.Count) continue;
-            var button = items[seat.LobbySlotIndex].transform.Find(SeatButtonName)?.GetComponent<Button>();
-            var text = button?.GetComponentInChildren<TextMeshProUGUI>(true)?.text;
-            if (text != SeatLabel(seat)) return true;
+            var slot = seat.LobbySlotIndex;
+            var button = GameUiKit.Button(seatsRow, "Seat" + slot, SeatLabel(seat), () => XingyiStarryMpPlugin.Instance?.ClaimSeat(slot));
+            button.interactable = !seat.Connected || seat.ClientId == plugin.LocalIdentityId;
         }
-        return false;
-    }
-
-    private static string SeatLabel(SeatInfo seat)
-    {
-        if (!seat.OriginallyHuman) return "原版 AI";
-        if (!seat.Connected) return "空闲席位 · 点击入座";
-        return seat.DisplayName + (seat.Ready ? "  ✓" : "  未准备");
-    }
-
-    private static void RefreshFooter(XingyiStarryMpPlugin plugin, RoomSnapshot? room)
-    {
         var local = plugin.LocalIdentityId is Guid id ? room?.Seats.Find(value => value.ClientId == id) : null;
-        if (readyButton != null)
+        var ready = GameUiKit.Button(seatsRow, "Ready", local?.Ready == true ? "取消准备" : "准备", () => XingyiStarryMpPlugin.Instance?.ToggleReady());
+        ready.interactable = local != null;
+    }
+
+    private static void RefreshStatus(XingyiStarryMpPlugin plugin, RoomSnapshot? room)
+    {
+        if (statusText == null) return;
+        var local = plugin.LocalIdentityId is Guid id ? room?.Seats.Find(value => value.ClientId == id) : null;
+        if (room == null || string.IsNullOrEmpty(room.MapId)) statusText.text = plugin.IsHost ? "请选择地图并设置 Human / AI" : "等待主机选择地图";
+        else if (local == null) statusText.text = "选择一个未占用的真人席位；已占用席位会置灰";
+        else statusText.text = $"{local.DisplayName} · P{local.LobbySlotIndex + 1} · {(local.Ready ? "已准备" : "未准备")}";
+    }
+
+    private static int SeatSignature(RoomSnapshot? room, Guid? localId)
+    {
+        unchecked
         {
-            readyButton.gameObject.SetActive(local != null); readyButton.interactable = local != null;
-            GameUiKit.SetLabel(readyButton, local?.Ready == true ? "取消准备" : "准备");
-        }
-        if (statusText != null)
-        {
-            if (room == null) statusText.text = plugin.Status;
-            else if (local == null) statusText.text = "点击玩家行末尾的“空闲席位”选择位置";
-            else statusText.text = $"当前：{local.DisplayName} / P{local.LobbySlotIndex + 1}　{(local.Ready ? "已准备" : "未准备")}";
+            var value = room?.DraftRevision ?? 0; value = value * 31 + (localId?.GetHashCode() ?? 0);
+            if (room != null) foreach (var seat in room.Seats)
+            {
+                value = value * 31 + seat.LobbySlotIndex; value = value * 31 + (seat.OriginallyHuman ? 1 : 0); value = value * 31 + (seat.Connected ? 1 : 0);
+                value = value * 31 + (seat.Ready ? 1 : 0); value = value * 31 + (seat.ClientId?.GetHashCode() ?? 0); value = value * 31 + seat.DisplayName.GetHashCode();
+            }
+            return value;
         }
     }
 
@@ -197,18 +213,39 @@ internal static class NativeSkirmishLobby
         }
     }
 
+    private static void Disable(Selectable selectable) { Store(selectable); selectable.interactable = false; }
+    private static void Store(Selectable selectable) { if (selectable != null && !originalInteractable.ContainsKey(selectable)) originalInteractable.Add(selectable, selectable.interactable); }
+
+    private static void CleanupUi()
+    {
+        Active = false;
+        foreach (var pair in originalInteractable) if (pair.Key != null) pair.Key.interactable = pair.Value;
+        originalInteractable.Clear();
+        if (screen?.btn_confirm != null)
+        {
+            var localized = screen.btn_confirm.GetComponentInChildren<Localized_Txt>(true);
+            if (localized != null) { localized.enabled = true; localized.RenderLocalizedContent(); }
+        }
+        if (roomRoot != null) UnityEngine.Object.Destroy(roomRoot);
+        roomRoot = null; seatsRow = null; statusText = null; screen = null; info = null;
+        lastAppliedRevision = -1; lastSeatSignature = 0; lastDraftSignature = 0;
+    }
+
+    private static string SeatLabel(SeatInfo seat) => !seat.Connected ? $"P{seat.LobbySlotIndex + 1} 空闲" : $"P{seat.LobbySlotIndex + 1} {seat.DisplayName}{(seat.Ready ? " ✓" : "")}";
+
     private static void SetNearest(TMP_Dropdown dropdown, float[] values, float target)
     {
         if (dropdown == null || values.Length == 0) return;
         var best = 0; var distance = float.MaxValue;
-        for (var i = 0; i < values.Length; i++) { var next = Mathf.Abs(values[i] - target); if (next < distance) { distance = next; best = i; } }
+        for (var index = 0; index < values.Length; index++) { var next = Mathf.Abs(values[index] - target); if (next < distance) { distance = next; best = index; } }
         dropdown.SetValueWithoutNotify(best);
     }
 
-    private static void SetLabel(Button button, string value)
+    private static void SetConfirmLabel(string value)
     {
-        var localized = button.GetComponentInChildren<Localized_Txt>(true); if (localized != null) localized.enabled = false;
-        var text = button.GetComponentInChildren<TextMeshProUGUI>(true); if (text != null) text.text = value;
+        if (screen?.btn_confirm == null) return;
+        var localized = screen.btn_confirm.GetComponentInChildren<Localized_Txt>(true); if (localized != null) localized.enabled = false;
+        var text = screen.btn_confirm.GetComponentInChildren<TextMeshProUGUI>(true); if (text != null) text.text = value;
     }
 }
 
@@ -216,6 +253,24 @@ internal static class NativeSkirmishLobby
 internal static class NativeSkirmishShowPatch
 {
     private static void Postfix(UI_MENU_POP_SkirmishSelect __instance) => NativeSkirmishLobby.Ensure(__instance);
+}
+
+[HarmonyPatch(typeof(UI_MENU_POP_SkirmishSelect), nameof(UI_MENU_POP_SkirmishSelect.Hide))]
+internal static class NativeSkirmishHidePatch
+{
+    private static void Prefix() => NativeSkirmishLobby.OnPageLeaving();
+}
+
+[HarmonyPatch(typeof(UI_MENU_LevelSelect_InfoSkm), nameof(UI_MENU_LevelSelect_InfoSkm.Render), new[] { typeof(TextAsset) })]
+internal static class NativeSkirmishBuiltinRenderPatch
+{
+    private static void Postfix(UI_MENU_LevelSelect_InfoSkm __instance) => NativeSkirmishLobby.OnInfoRendered(__instance);
+}
+
+[HarmonyPatch(typeof(UI_MENU_LevelSelect_InfoSkm), nameof(UI_MENU_LevelSelect_InfoSkm.Render), new[] { typeof(string) })]
+internal static class NativeSkirmishLocalRenderPatch
+{
+    private static void Postfix(UI_MENU_LevelSelect_InfoSkm __instance) => NativeSkirmishLobby.OnInfoRendered(__instance);
 }
 
 [HarmonyPatch(typeof(UI_MENU_LevelSelect_InfoSkm), nameof(UI_MENU_LevelSelect_InfoSkm.StartLevel))]

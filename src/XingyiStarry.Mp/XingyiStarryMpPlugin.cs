@@ -21,7 +21,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.3.0";
+    public const string PluginVersion = "0.3.1";
 
     private Harmony? harmony;
     private HostSession? host;
@@ -93,6 +93,12 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     {
         host?.Pump(message => Logger.LogWarning(message), OnHostCommand);
         client?.Pump(message => { Status = message; Logger.LogWarning(message); }, OnAuthorityFrame, OnSnapshotReceived);
+        if (client?.ConnectionLost == true)
+        {
+            var reason = client.ConnectionError; client.Dispose(); client = null;
+            InputGate.MultiplayerActive = false; InputGate.LocalSeatMayAct = false; Status = "联机会话已结束：" + reason;
+            NativeSkirmishLobby.TerminateFromRemote();
+        }
         client?.Tick();
         NativeLobbyPanel.Tick(this);
         NativeSkirmishLobby.Tick(this);
@@ -156,6 +162,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         if (host is null) { Status = "请先创建房间"; return false; }
         SyncLobbyDraft(info, mapId);
         if (!host.Room.CanStart) { Status = "尚有真人席位未认领或未准备"; return false; }
+        NativeSkirmishLobby.MarkStartingMatch();
         return true;
     }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
@@ -41,7 +42,11 @@ internal sealed class PeerConnection : IDisposable
             while (!stop.IsCancellationRequested)
             {
                 var envelope = await PacketFraming.ReadAsync(client.GetStream(), stop.Token).ConfigureAwait(false);
-                if (envelope is null) break;
+                if (envelope is null)
+                {
+                    if (!stop.IsCancellationRequested) errors.Enqueue(new EndOfStreamException("远端已关闭连接。"));
+                    break;
+                }
                 LastReceivedUtc = DateTime.UtcNow; inbox.Enqueue(new InboundEnvelope(this, envelope));
             }
         }

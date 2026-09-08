@@ -96,10 +96,33 @@ internal static class NativeLobbyPanel
 
     private static void EnterConfiguration()
     {
-        waitingForHandshake = false; if (root != null) root.SetActive(false);
-        if (menu != null) NativeSkirmishLobby.Enter(menu);
+        waitingForHandshake = false;
+        var source = menu;
+        DestroyPanel();
+        menu = null;
+        if (source != null) NativeSkirmishLobby.Enter(source);
     }
 
     private static void Refresh(XingyiStarryMpPlugin? plugin) { if (status != null && plugin != null) status.text = plugin.Status; }
-    private static void Close() { waitingForHandshake = false; XingyiStarryMpPlugin.Instance?.Disconnect(); if (root != null) root.SetActive(false); }
+    private static void Close()
+    {
+        waitingForHandshake = false;
+        XingyiStarryMpPlugin.Instance?.Disconnect();
+        DestroyPanel();
+        menu = null;
+    }
+
+    private static void DestroyPanel()
+    {
+        if (root != null)
+        {
+            root.SetActive(false);
+            UnityEngine.Object.Destroy(root);
+        }
+        root = null;
+        nameInput = null;
+        hostInput = null;
+        portInput = null;
+        status = null;
+    }
 }

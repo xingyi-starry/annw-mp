@@ -23,6 +23,8 @@ internal sealed class ClientSession : IDisposable
     public long AppliedFrameId { get; private set; }
     public RoomSnapshot? Room { get; private set; }
     public bool IsCaughtUp { get; private set; }
+    public bool ConnectionLost { get; private set; }
+    public string ConnectionError { get; private set; } = "";
 
     public async Task ConnectAsync(string host, int port, HelloMessage hello)
     {
@@ -32,7 +34,10 @@ internal sealed class ClientSession : IDisposable
 
     public void Pump(Action<string> log, Action<AuthorityFrame> frameReceived, Action<SnapshotManifest, byte[]> snapshotReceived)
     {
-        while (network.TryDequeueError(out var error)) log("Network client: " + error);
+        while (network.TryDequeueError(out var error))
+        {
+            ConnectionLost = true; ConnectionError = error?.Message ?? "连接已关闭"; log("Network client: " + ConnectionError);
+        }
         while (network.TryDequeue(out var envelope) && envelope is not null)
         {
             try
