@@ -21,6 +21,29 @@ internal static class MultiplayerIdleButtonsPatch
     }
 }
 
+[HarmonyPatch(typeof(UI_POP_AITurn), "Update")]
+internal static class AiTurnSkipButtonsPatch
+{
+    private static void Postfix(UI_POP_AITurn __instance)
+    {
+        if (!InputGate.MultiplayerActive) return;
+        if (__instance.btn_skip_cur is not null) __instance.btn_skip_cur.interactable = false;
+        if (__instance.btn_skip_all is not null) __instance.btn_skip_all.interactable = false;
+    }
+}
+
+[HarmonyPatch]
+internal static class AiTurnSkipClickPatch
+{
+    private static System.Collections.Generic.IEnumerable<System.Reflection.MethodBase> TargetMethods()
+    {
+        yield return AccessTools.Method(typeof(UI_POP_AITurn), nameof(UI_POP_AITurn.OnClick_Skip_Current));
+        yield return AccessTools.Method(typeof(UI_POP_AITurn), nameof(UI_POP_AITurn.OnClick_Skip));
+    }
+
+    private static bool Prefix() => !InputGate.MultiplayerActive;
+}
+
 [HarmonyPatch(typeof(UI_Part_SkillPower), nameof(UI_Part_SkillPower.UpdateRender))]
 internal static class MultiplayerCommanderSkillUiPatch
 {

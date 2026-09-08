@@ -195,6 +195,7 @@ internal sealed class HostSession : IDisposable
         var seat = Room.Seats.FirstOrDefault(value => value.SeatId == request.SeatId);
         if (seat is null || !seat.Connected || seat.ClientId != request.ClientId) { reason = "Client does not own the requested seat."; return false; }
         if (seat.AiControlled) { reason = "Seat is currently controlled by AI."; return false; }
+        if (request.Command.Kind == CommandKind.Surrender) { reason = ""; return true; }
         if (seat.PlayerIndex != currentPlayerIndex) { reason = "It is not this seat's turn."; return false; }
         if (request.Round != currentRound) { reason = "Request belongs to another round."; return false; }
         reason = ""; return true;

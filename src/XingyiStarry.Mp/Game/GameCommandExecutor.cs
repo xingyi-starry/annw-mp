@@ -10,7 +10,7 @@ internal sealed class GameCommandExecutor
 {
     public bool IsBusy { get; private set; }
 
-    public void Reset() { IsBusy = false; ExecutionContext.DetachedAuthoritativeExecution = false; }
+    public void Reset() { IsBusy = false; ExecutionContext.DetachedAuthoritativeExecution = false; ExecutionContext.SuppressAiDecision = false; }
 
     public string? Validate(GameCommand command)
     {
@@ -25,7 +25,19 @@ internal sealed class GameCommandExecutor
                 return "Debug resource delta is invalid.";
             return null;
         }
-        if (command.Kind == CommandKind.EndTurn || command.Kind == CommandKind.UndoMove || command.Kind == CommandKind.Skill || command.Kind == CommandKind.AutoGuideCancel) return null;
+        if (command.Kind == CommandKind.AiSkill)
+        {
+            if (!GS_Battle.self.cur_player.is_ai || GS_Battle.self.cur_player.co_data?.skill is null) return "Current AI player cannot cast a skill.";
+            if (GameTileData.Get(new Inctor2(command.TargetX, command.TargetY)) is null) return "AI skill target is invalid.";
+            return null;
+        }
+        if (command.Kind == CommandKind.Surrender)
+        {
+            if (command.TargetX < 0 || command.TargetX >= GS_Battle.self.all_player.players.Count) return "Surrender player index is invalid.";
+            if (GS_Battle.self.all_player.players[command.TargetX].defeated) return "Player has already been defeated.";
+            return null;
+        }
+        if (command.Kind == CommandKind.EndTurn || command.Kind == CommandKind.TurnAdvance || command.Kind == CommandKind.UndoMove || command.Kind == CommandKind.Skill || command.Kind == CommandKind.AutoGuideCancel) return null;
         if (command.UnitIds.Length == 0) return "Command contains no units.";
         foreach (var id in command.UnitIds)
         {
@@ -35,6 +47,13 @@ internal sealed class GameCommandExecutor
             if (unit.player != GS_Battle.self.cur_player) return "Unit is not owned by the current player: " + id;
         }
         if (command.Kind == CommandKind.Move && (command.UnitTargetXs.Length != command.UnitIds.Length || command.UnitTargetYs.Length != command.UnitIds.Length)) return "Move target count mismatch.";
+        if (command.Kind == CommandKind.AiUnitAction)
+        {
+            if (!GS_Battle.self.cur_player.is_ai) return "Current player is not AI controlled.";
+            if (command.UnitIds.Length != 1 || command.UnitTargetXs.Length != 1 || command.UnitTargetYs.Length != 1) return "AI action shape is invalid.";
+            if (command.AiActionType < (int)UnitActionType.MOVE || command.AiActionType > (int)UnitActionType.ACTION_UNLOAD) return "AI action type is invalid.";
+            if (GameTileData.Get(new Inctor2(command.TargetX, command.TargetY)) is null) return "AI action target is invalid.";
+        }
         if (command.Kind == CommandKind.Action)
         {
             for (var index = 0; index < command.UnitIds.Length; index++)
@@ -141,11 +160,15 @@ internal sealed class GameCommandExecutor
             case CommandKind.BuildWithMove: return ExecuteBuildWithMove(command);
             case CommandKind.Skill: return UX_Manager.self.proc_SkillDoAction(GameTileData.Get(new Inctor2(command.TargetX, command.TargetY)));
             case CommandKind.UndoMove: return ExecuteUndo();
-            case CommandKind.EndTurn: return GameController.self.EndPlayerTurn(GS_Battle.self.cur_player);
+            case CommandKind.EndTurn: return ExecuteEndTurnOnly(GS_Battle.self.cur_player);
             case CommandKind.AutoGuideStart: return ExecuteAutoGuide(command);
             case CommandKind.AutoGuideCancel: return ExecuteAutoGuideCancel();
             case CommandKind.DebugAddResources: return ExecuteDebugAddResources(command);
             case CommandKind.DebugFillSkill: return ExecuteDebugFillSkill(command);
+            case CommandKind.AiUnitAction: return ExecuteAiUnitAction(command);
+            case CommandKind.AiSkill: return ExecuteAiSkill(command);
+            case CommandKind.TurnAdvance: return ExecuteTurnAdvance();
+            case CommandKind.Surrender: return ExecuteSurrender(command);
             default: return Unsupported(command.Kind);
         }
     }
@@ -166,6 +189,103 @@ internal sealed class GameCommandExecutor
         foreach (var player in DebugPlayers(command.DebugPlayerIndex))
             if (player.co_data?.skill is not null) player.co_data.energy = player.co_data.energy_max;
         yield break;
+    }
+
+    private static IEnumerator ExecuteAiUnitAction(GameCommand command)
+    {
+        var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
+        var type = (UnitActionType)command.AiActionType;
+        var action = type == UnitActionType.MOVE ? null : unit.GetAction((ActionCate)command.ActionCategory);
+        if (type != UnitActionType.MOVE && action is null) throw new InvalidOperationException("AI action is no longer available.");
+        var aiAction = new UT_UnitAction
+        {
+            type = type, unit = unit, original_pos = unit.pos,
+            move_pos = new Inctor2(command.UnitTargetXs[0], command.UnitTargetYs[0]),
+            action_pos = new Inctor2(command.TargetX, command.TargetY), action = action,
+            create_tp = string.IsNullOrEmpty(command.TemplateId) ? null : UnitTemplate.Acquire(command.TemplateId),
+            unload_unit = command.PassengerUnitId == 0 ? null : GS_Battle.self.all_unit.GetUnitByID((int)command.PassengerUnitId)
+        };
+        yield return unit.unit_ai.ExecuteAction(aiAction, command.DesiredToggleState);
+    }
+
+    private static IEnumerator ExecuteAiSkill(GameCommand command)
+    {
+        yield return GS_Battle.self.cur_player.co_data.proc_CastSkill(
+            GameTileData.Get(new Inctor2(command.TargetX, command.TargetY)), command.DesiredToggleState);
+    }
+
+    private static IEnumerator ExecuteSurrender(GameCommand command)
+    {
+        var player = GS_Battle.self.all_player.players[command.TargetX];
+        player.defeated = true;
+        BattleEventBus.self.TriggerPlayerDefeat(player);
+        SingletonMono<SS_ANNW_Game>.self.ui.messages.AddMessage(string.Format(LAN.Get("MSG_PlayerDefeat"), player.index + 1));
+        var method = HarmonyLib.AccessTools.Method(typeof(Player), "proc_DoWipeOut") ??
+                     HarmonyLib.AccessTools.Method(typeof(Player), "DoWipeOut");
+        if (method?.Invoke(player, null) is IEnumerator wipeOut) yield return wipeOut;
+    }
+
+    private static IEnumerator ExecuteEndTurnOnly(Player player)
+    {
+        player.ending_turn = true;
+        player.effect_host.OnTurnEnd();
+        foreach (var unit in new System.Collections.Generic.List<UnitData>(player.units)) unit.EndTurn();
+        player.last_camera_pos = SingletonMono<SS_ANNW_Game>.self.cam_control.transform.position;
+        player.last_camera_zoom = SingletonMono<SS_ANNW_Game>.self.cam_control.zoom_distance;
+        if (!GS_Battle.self.functions.Querry(GAME_FUNCTION.NoResLimit))
+        {
+            if (player.metal > player.storage)
+                HarmonyLib.AccessTools.Method(player.statics.GetType(), "RecordResLost")?.Invoke(player.statics, new object[] { player.metal - player.storage });
+            player.metal = UnityEngine.Mathf.Min(player.metal, player.storage);
+            player.power = UnityEngine.Mathf.Min(player.power, player.storage);
+        }
+        if (!player.is_ai)
+        {
+            GS_Battle.self.undo_move.ClearUndoableMoveList();
+            UX_Manager.self.ClearUnitSelection();
+        }
+        yield return GS_Battle.self.OnCOEndTurn(player);
+        player.ending_turn = false;
+    }
+
+    private static IEnumerator ExecuteTurnAdvance()
+    {
+        var battle = GS_Battle.self;
+        do
+        {
+            battle.current_co_index++;
+            if (battle.current_co_index >= battle.all_player.players.Count)
+            {
+                if (battle.turns == 0)
+                {
+                    BattleEventBus.self.TriggerBeforeFirstTurn();
+                    BattleEventBus.self.TriggerTurnStarted(0);
+                }
+                battle.turns++;
+                battle.current_co_index = 0;
+                HarmonyLib.AccessTools.Method(battle.all_unit.GetType(), "ClearDeadUnits")?.Invoke(battle.all_unit, null);
+                battle.last_died_unit = null; battle.last_died_unit_pos = Inctor2.Zero; battle.last_levelup_unit = null;
+                BattleEventBus.self.TriggerTurnStarted(battle.turns);
+                HarmonyLib.AccessTools.Method(typeof(GS_Battle), "CaptureAllTurnSnaps")?.Invoke(battle, null);
+            }
+        }
+        while (battle.all_player.players[battle.current_co_index].fraction == Fraction.NEUTRAL || battle.all_player.players[battle.current_co_index].defeated);
+
+        battle.cur_player = battle.all_player.players[battle.current_co_index];
+        var start = GameController.self.StartPlayerTurn(battle.cur_player);
+        while (true)
+        {
+            bool more; object? current = null;
+            try
+            {
+                ExecutionContext.SuppressAiDecision = true;
+                more = start.MoveNext();
+                if (more) current = start.Current;
+            }
+            finally { ExecutionContext.SuppressAiDecision = false; }
+            if (!more) break;
+            yield return current;
+        }
     }
 
     private static System.Collections.Generic.IEnumerable<Player> DebugPlayers(int playerIndex)

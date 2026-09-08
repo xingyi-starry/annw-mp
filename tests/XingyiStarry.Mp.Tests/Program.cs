@@ -25,10 +25,12 @@ internal static class Program
 
     private static void CommandRoundTrip()
     {
-        var command = new GameCommand { Kind = CommandKind.Action, UnitIds = new long[] { 9, 2 }, TargetX = -4, TargetY = 17, UnitTargetXs = new[] { 3, 4 }, UnitTargetYs = new[] { 5, 6 }, ActionCategory = 3, ActionId = "attack", TemplateId = "unit.tank", PassengerUnitId = 44, DesiredToggleState = true, DebugPlayerIndex = 3, DebugMetalDelta = 1200, DebugPowerDelta = 800 };
+        var command = new GameCommand { Kind = CommandKind.Action, UnitIds = new long[] { 9, 2 }, TargetX = -4, TargetY = 17, UnitTargetXs = new[] { 3, 4 }, UnitTargetYs = new[] { 5, 6 }, ActionCategory = 3, ActionId = "attack", TemplateId = "unit.tank", PassengerUnitId = 44, DesiredToggleState = true, DebugPlayerIndex = 3, DebugMetalDelta = 1200, DebugPowerDelta = 800, AiActionType = 2 };
         var decoded = ProtocolCodec.DecodeCommand(ProtocolCodec.EncodeCommand(command));
         Equal(command.Kind, decoded.Kind); Equal(command.UnitIds[1], decoded.UnitIds[1]); Equal(command.TargetX, decoded.TargetX); Equal(4, decoded.UnitTargetXs[1]); Equal(command.TemplateId, decoded.TemplateId);
-        Equal(3, decoded.DebugPlayerIndex); Equal(1200, decoded.DebugMetalDelta); Equal(800, decoded.DebugPowerDelta);
+        Equal(3, decoded.DebugPlayerIndex); Equal(1200, decoded.DebugMetalDelta); Equal(800, decoded.DebugPowerDelta); Equal(2, decoded.AiActionType);
+        var surrender = ProtocolCodec.DecodeCommand(ProtocolCodec.EncodeCommand(new GameCommand { Kind = CommandKind.Surrender, TargetX = 4 }));
+        Equal(CommandKind.Surrender, surrender.Kind); Equal(4, surrender.TargetX);
     }
 
     private static void AuthorityChain()

@@ -287,6 +287,10 @@ internal static class NativeSkirmishLobby
             {
                 value = value * 31 + (item.is_open ? 1 : 0);
                 foreach (var dropdown in item.GetComponentsInChildren<TMP_Dropdown>(true)) value = value * 31 + dropdown.value;
+                value = value * 31 + (int)(AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co")?.GetValue(item) ?? 1);
+                value = value * 31 + ((AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co_sk")?.GetValue(item) as SD_ANNW_SKILL)?.name?.GetHashCode() ?? 0);
+                if (AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co_ps")?.GetValue(item) is System.Collections.IEnumerable passives)
+                    foreach (var passive in passives) value = value * 31 + ((passive as SD_ANNW_PS)?.name?.GetHashCode() ?? 0);
             }
             return value;
         }

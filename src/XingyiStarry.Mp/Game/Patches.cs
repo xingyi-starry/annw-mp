@@ -30,9 +30,20 @@ internal static class UndoMovePatch
 [HarmonyPatch(typeof(GameController), nameof(GameController.EndPlayerTurn))]
 internal static class EndTurnPatch
 {
-    private static bool Prefix(ref IEnumerator __result)
+    private static bool Prefix(Player player, ref IEnumerator __result)
     {
         if (InputGate.ShouldRunOriginal) return true;
+        var plugin = XingyiStarryMpPlugin.Instance;
+        if (player.is_ai && plugin?.ShouldCaptureHostAi == true)
+        {
+            __result = plugin.RunHostAiEndTurn();
+            return false;
+        }
+        if (player.is_ai && plugin?.ShouldSuppressClientAi == true)
+        {
+            __result = Empty();
+            return false;
+        }
         XingyiStarryMpPlugin.Instance?.SubmitCommand(new Protocol.GameCommand { Kind = Protocol.CommandKind.EndTurn });
         __result = Empty(); return false;
     }
@@ -43,7 +54,51 @@ internal static class EndTurnPatch
 [HarmonyPatch(typeof(UnitAI), nameof(UnitAI.ExecuteAction))]
 internal static class UnitAiPatch
 {
-    private static bool Prefix() => InputGate.ShouldRunOriginal;
+    private static bool Prefix(UnitAI __instance, UtilityItem ut, bool skipping, ref IEnumerator __result)
+    {
+        if (InputGate.ShouldRunOriginal) return true;
+        var plugin = XingyiStarryMpPlugin.Instance;
+        if (plugin?.ShouldCaptureHostAi == true && __instance.owner?.player == GS_Battle.self.cur_player)
+            __result = plugin.RunHostAiCommand(XingyiStarryMpPlugin.CreateAiUnitCommand(__instance, ut, skipping));
+        else
+            __result = Empty();
+        return false;
+    }
+
+    private static IEnumerator Empty() { yield break; }
+}
+
+[HarmonyPatch(typeof(PlayerAI), nameof(PlayerAI.OnStartTurn_DoTurn))]
+internal static class PlayerAiTurnPatch
+{
+    private static bool Prefix(PlayerAI __instance, ref IEnumerator __result)
+    {
+        if (Session.ExecutionContext.SuppressAiDecision)
+        {
+            __result = Empty();
+            return false;
+        }
+        if (XingyiStarryMpPlugin.Instance?.ShouldSuppressClientAi != true) return true;
+        __result = XingyiStarryMpPlugin.WaitForAuthorityAiTurnEnd(__instance.owner.index);
+        return false;
+    }
+
+    private static IEnumerator Empty() { yield break; }
+}
+
+[HarmonyPatch(typeof(CO_Data), nameof(CO_Data.proc_CastSkill))]
+internal static class AiSkillPatch
+{
+    private static bool Prefix(GameTileData target, bool skipping, ref IEnumerator __result)
+    {
+        if (InputGate.ShouldRunOriginal || XingyiStarryMpPlugin.Instance?.ShouldCaptureHostAi != true) return true;
+        __result = XingyiStarryMpPlugin.Instance.RunHostAiCommand(new Protocol.GameCommand
+        {
+            Kind = Protocol.CommandKind.AiSkill, TargetX = target.pos.x, TargetY = target.pos.y,
+            DesiredToggleState = skipping
+        });
+        return false;
+    }
 }
 
 [HarmonyPatch(typeof(GameController), nameof(GameController.StartPlayerTurn))]
@@ -84,4 +139,21 @@ internal static class MultiplayerWorldInputPatch
         yield return AccessTools.Method(typeof(ANNW_MouseInput), nameof(ANNW_MouseInput.OnEndDrag));
     }
     private static bool Prefix() => !InputGate.MultiplayerActive || InputGate.MaySubmit;
+}
+
+[HarmonyPatch(typeof(SS_ANNW_Game), "Surrender")]
+internal static class MultiplayerSurrenderPatch
+{
+    private static bool Prefix()
+    {
+        if (!InputGate.MultiplayerActive) return true;
+        XingyiStarryMpPlugin.Instance?.SubmitSurrender();
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(SS_ANNW_Game), "EndGame")]
+internal static class MultiplayerMatchEndPatch
+{
+    private static bool Prefix(bool victory) => XingyiStarryMpPlugin.Instance?.InterceptNativeMatchEnd(victory) ?? true;
 }

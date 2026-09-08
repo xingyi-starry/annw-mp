@@ -97,6 +97,7 @@ public sealed class GameCommand
     public int DebugPlayerIndex { get; set; }
     public int DebugMetalDelta { get; set; }
     public int DebugPowerDelta { get; set; }
+    public int AiActionType { get; set; }
 }
 
 public sealed class RandomRecord
