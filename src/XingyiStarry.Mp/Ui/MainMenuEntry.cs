@@ -35,6 +35,8 @@ internal static class MainMenuEntry
         var label = SingletonMono<SS_ANNW_Menu>.self?.txt_version;
         if (label is null) return;
         var gameVersion = Singleton<GS_Overall>.self?.version_name ?? label.text;
+        label.textWrappingMode = TextWrappingModes.NoWrap;
+        label.overflowMode = TextOverflowModes.Overflow;
         label.text = gameVersion + "    " + VersionSuffix;
     }
 

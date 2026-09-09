@@ -230,14 +230,15 @@ internal sealed class HostSession : IDisposable
     private void SendHistory(PeerConnection peer, long after)
     {
         if (journal is null) return;
-        _ = SendHistoryAsync(peer, after);
+        var frames = journal.After(after).ToArray();
+        var latestFrameId = frames.Length == 0 ? after : frames[frames.Length - 1].FrameId;
+        _ = SendHistoryAsync(peer, frames, latestFrameId);
     }
 
-    private async Task SendHistoryAsync(PeerConnection peer, long after)
+    private async Task SendHistoryAsync(PeerConnection peer, IReadOnlyList<AuthorityFrame> frames, long latestFrameId)
     {
-        if (journal is null) return;
-        foreach (var frame in journal.After(after)) await network.SendAsync(peer, MessageType.AuthorityFrame, ProtocolCodec.EncodeAuthorityFrame(frame)).ConfigureAwait(false);
-        await network.SendAsync(peer, MessageType.HistoryComplete, ProtocolCodec.EncodeInt64(journal.Frames.Count)).ConfigureAwait(false);
+        foreach (var frame in frames) await network.SendAsync(peer, MessageType.AuthorityFrame, ProtocolCodec.EncodeAuthorityFrame(frame)).ConfigureAwait(false);
+        await network.SendAsync(peer, MessageType.HistoryComplete, ProtocolCodec.EncodeInt64(latestFrameId)).ConfigureAwait(false);
     }
 
     public void Dispose() { journal?.Dispose(); network.Dispose(); }

@@ -375,6 +375,7 @@ internal sealed class GameCommandExecutor
         var target = GameTileData.Get(new Inctor2(command.TargetX, command.TargetY));
         var action = unit.GetAction((ActionCate)command.ActionCategory);
         if (action is null) throw new InvalidOperationException("Equipment move action is no longer available.");
+        if (!string.IsNullOrEmpty(command.TemplateId)) action.train_template = UnitTemplate.Acquire(command.TemplateId);
         unit.Event_SetAiming?.Invoke(target.pos);
         unit.in_animation = true;
         yield return action.DoActionAni(target);

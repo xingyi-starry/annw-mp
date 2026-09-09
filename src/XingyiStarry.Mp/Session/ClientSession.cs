@@ -11,6 +11,7 @@ internal sealed class ClientSession : IDisposable
 {
     private readonly NetworkClient network = new NetworkClient();
     private readonly SortedDictionary<long, AuthorityFrame> received = new SortedDictionary<long, AuthorityFrame>();
+    private readonly SortedDictionary<long, AuthorityFrame> pendingVerification = new SortedDictionary<long, AuthorityFrame>();
     private Guid? matchId;
     private byte[] verifiedHash = new byte[AuthorityHashChain.HashLength];
     private DateTime lastHeartbeatUtc = DateTime.MinValue;
@@ -23,6 +24,7 @@ internal sealed class ClientSession : IDisposable
     public long AppliedFrameId { get; private set; }
     public RoomSnapshot? Room { get; private set; }
     public bool IsCaughtUp { get; private set; }
+    public bool SnapshotRequested => snapshotRequested;
     public bool ConnectionLost { get; private set; }
     public string ConnectionError { get; private set; } = "";
 
@@ -51,22 +53,29 @@ internal sealed class ClientSession : IDisposable
                     case MessageType.AuthorityFrame:
                         var frame = ProtocolCodec.DecodeAuthorityFrame(envelope.Payload);
                         if (!hasSnapshotAnchor) { if (!matchId.HasValue) matchId = frame.MatchId; break; }
-                        AcceptFrame(frame); frameReceived(frame); break;
+                        AcceptFrame(frame, frameReceived); break;
                     case MessageType.RoomState:
                         var room = ProtocolCodec.DecodeRoom(envelope.Payload);
                         var newlyStarted = room.MatchStarted && room.MatchId.HasValue && !hasSnapshotAnchor && !snapshotRequested;
                         Room = room;
                         if (newlyStarted) { matchId = room.MatchId; snapshotRequested = true; _ = RequestSnapshotAsync(); }
                         break;
-                    case MessageType.HistoryComplete: IsCaughtUp = ProtocolCodec.DecodeInt64(envelope.Payload) == VerifiedFrameId; break;
+                    case MessageType.HistoryComplete:
+                        var latestFrameId = ProtocolCodec.DecodeInt64(envelope.Payload);
+                        IsCaughtUp = VerifiedFrameId >= latestFrameId;
+                        log($"History complete latest={latestFrameId} verified={VerifiedFrameId} applied={AppliedFrameId} caughtUp={IsCaughtUp}.");
+                        break;
                     case MessageType.SnapshotManifest:
-                        snapshotManifest = ProtocolCodec.DecodeSnapshotManifest(envelope.Payload); snapshotAssembler = new SnapshotAssembler(snapshotManifest); break;
+                        snapshotManifest = ProtocolCodec.DecodeSnapshotManifest(envelope.Payload); snapshotAssembler = new SnapshotAssembler(snapshotManifest);
+                        log($"Snapshot manifest id={snapshotManifest.SnapshotId:N} frame={snapshotManifest.FrameId} chunks={snapshotManifest.ChunkCount} compressed={snapshotManifest.CompressedLength}.");
+                        break;
                     case MessageType.SnapshotChunk:
                         if (snapshotAssembler is null) throw new InvalidDataException("Snapshot chunk arrived before its manifest.");
                         snapshotAssembler.Add(ProtocolCodec.DecodeSnapshotChunk(envelope.Payload)); break;
                     case MessageType.SnapshotComplete:
                         if (snapshotManifest is null || snapshotAssembler is null || ProtocolCodec.DecodeGuid(envelope.Payload) != snapshotManifest.SnapshotId) throw new InvalidDataException("Snapshot completion identity mismatch.");
                         var compressed = snapshotAssembler.Finish(); var snapshot = SnapshotCodec.Decompress(compressed, ProtocolConstants.MaxSnapshotBytes);
+                        log($"Snapshot transfer complete id={snapshotManifest.SnapshotId:N} frame={snapshotManifest.FrameId} bytes={snapshot.Length}.");
                         snapshotReceived(snapshotManifest, snapshot); snapshotManifest = null; snapshotAssembler = null; break;
                     case MessageType.Reject: throw new InvalidDataException(ProtocolCodec.DecodeString(envelope.Payload));
                     case MessageType.CommandRejected:
@@ -111,14 +120,29 @@ internal sealed class ClientSession : IDisposable
     {
         if (matchId.HasValue && manifest.MatchId != matchId.Value) throw new InvalidDataException("Snapshot belongs to another match.");
         matchId = manifest.MatchId; VerifiedFrameId = manifest.FrameId; AppliedFrameId = manifest.FrameId;
-        verifiedHash = (byte[])manifest.FrameHash.Clone(); received.Clear(); IsCaughtUp = false; hasSnapshotAnchor = true; snapshotRequested = false;
+        verifiedHash = (byte[])manifest.FrameHash.Clone(); received.Clear(); pendingVerification.Clear(); IsCaughtUp = false; hasSnapshotAnchor = true; snapshotRequested = false;
     }
 
-    private void AcceptFrame(AuthorityFrame frame)
+    private void AcceptFrame(AuthorityFrame frame, Action<AuthorityFrame> frameReceived)
     {
         if (!matchId.HasValue) matchId = frame.MatchId;
-        AuthorityHashChain.VerifyNext(frame, matchId.Value, VerifiedFrameId + 1, verifiedHash);
-        received.Add(frame.FrameId, frame); VerifiedFrameId = frame.FrameId; verifiedHash = (byte[])frame.Hash.Clone();
+        if (frame.MatchId != matchId.Value) throw new InvalidDataException("Authority frame belongs to another match.");
+        if (frame.FrameId <= VerifiedFrameId) return;
+        if (frame.FrameId > VerifiedFrameId + 65536) throw new InvalidDataException("Authority frame is too far ahead of the verified cursor.");
+        if (pendingVerification.TryGetValue(frame.FrameId, out var duplicate))
+        {
+            if (!AuthorityHashChain.FixedEquals(duplicate.Hash, frame.Hash)) throw new InvalidDataException("Conflicting duplicate authority frame.");
+            return;
+        }
+        if (pendingVerification.Count >= 65536) throw new InvalidDataException("Authority reorder buffer limit exceeded.");
+        pendingVerification.Add(frame.FrameId, frame);
+        while (pendingVerification.TryGetValue(VerifiedFrameId + 1, out var next))
+        {
+            AuthorityHashChain.VerifyNext(next, matchId.Value, VerifiedFrameId + 1, verifiedHash);
+            pendingVerification.Remove(next.FrameId);
+            received.Add(next.FrameId, next); VerifiedFrameId = next.FrameId; verifiedHash = (byte[])next.Hash.Clone();
+            frameReceived(next);
+        }
     }
 
     public void MarkApplied(long frameId)

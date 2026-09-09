@@ -22,7 +22,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.3.12";
+    public const string PluginVersion = "0.3.14";
 
     private Harmony? harmony;
     private HostSession? host;
@@ -59,6 +59,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     private bool? pendingMatchEnd;
     private bool applyingAuthorityMatchEnd;
     private bool turnAdvanceRunning;
+    private bool authorityAiOperationActive;
     private readonly Dictionary<string, PeerConnection> requestPeers = new Dictionary<string, PeerConnection>(StringComparer.Ordinal);
 
     public static XingyiStarryMpPlugin? Instance { get; private set; }
@@ -67,6 +68,8 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     internal bool CanSetReady => LocalIdentityId is Guid id && CurrentRoom?.Seats.Find(s => s.ClientId == id) is not null;
     internal bool IsHost => host is not null;
     internal bool IsClient => client is not null;
+    internal bool CanManualResync => client?.ClientId.HasValue == true && client.SnapshotRequested == false &&
+                                     InputGate.MultiplayerActive && GS_Battle.self?.game_running == true;
     internal bool ShouldCaptureHostAi => host?.MatchId.HasValue == true && GS_Battle.self?.game_running == true && GS_Battle.self.cur_player?.is_ai == true;
     internal bool ShouldSuppressClientAi => client?.IsCaughtUp == true && InputGate.MultiplayerActive;
     internal int ConfiguredPort { get => defaultPort?.Value ?? ProtocolConstants.DefaultPort; set { if (defaultPort is not null) defaultPort.Value = value; } }
@@ -76,6 +79,15 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     internal Guid? LocalClientId => client?.ClientId;
     internal Guid? LocalIdentityId => host?.LocalHostClientId ?? client?.ClientId;
     public bool IsAuthorityHostBattleActive => host?.MatchId.HasValue == true && GS_Battle.self?.game_running == true;
+    internal bool LocalOwnsCurrentTurn
+    {
+        get
+        {
+            var local = GetLocalDisplayPlayer();
+            return local is not null && GS_Battle.self?.cur_player == local &&
+                   CurrentRoom?.Seats.Find(value => value.PlayerIndex == local.index)?.AiControlled != true;
+        }
+    }
 
     public bool TrySubmitDebugResources(int playerIndex, int metalDelta, int powerDelta, out string reason)
     {
@@ -177,7 +189,8 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         if (loadingSnapshot is not null && GS_Battle.self is not null && GS_Battle.self.game_running)
         {
             Status = $"快照帧 {loadingSnapshot.FrameId} 已恢复，正在追赶日志";
-            InputGate.MultiplayerActive = true; InputGate.LocalSeatMayAct = false; _ = client?.RequestHistoryAsync();
+            InputGate.MultiplayerActive = true; InputGate.LocalSeatMayAct = false;
+            if (client?.IsCaughtUp != true) _ = client?.RequestHistoryAsync();
             loadingSnapshot = null;
         }
         PumpOperations();
@@ -454,7 +467,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 
     private void PumpAuthorityFrames()
     {
-        if (client is null) return;
+        if (client is null || loadingSnapshot is not null) return;
         while (pendingAuthorityFrames.Count != 0)
         {
             var frame = pendingAuthorityFrames.Peek();
@@ -476,6 +489,8 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             var begin = ProtocolCodec.DecodeOperationBegin(frame.Payload);
             replayOperationId = begin.OperationId; replayExecutionCompleted = false; replayEnd = null;
             replayBegin = begin; replayFrameIds.Add(frame.FrameId);
+            if (begin.Command.Kind == CommandKind.BuildWithMove)
+                Logger.LogInfo($"Client BuildWithMove received Begin frame={frame.FrameId} op={begin.OperationId:N} time={Time.realtimeSinceStartup:F3}");
             if (begin.Command.Kind == CommandKind.EquipmentMoveAction) StartClientEquipmentMovePrelude();
             else if (CanReplayAtBegin(begin.Command)) StartClientReplay(Array.Empty<RandomRecord>());
         }
@@ -485,7 +500,13 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             if (replayBegin is null || resolution.OperationId != replayBegin.OperationId) { AbortReplay("结算帧不属于当前操作"); return; }
             replayFrameIds.Add(frame.FrameId);
             if (replayBegin.Command.Kind == CommandKind.EquipmentMoveAction)
-                StartClientEquipmentMoveResolution(resolution.RandomRecords);
+            {
+                if (replayExecutionStarted)
+                {
+                    if (resolution.RandomRecords.Count != 0) { AbortReplay("即时移动后动作产生了未预期的随机结果"); return; }
+                }
+                else StartClientEquipmentMoveResolution(resolution.RandomRecords);
+            }
             else if (replayExecutionStarted)
             {
                 if (resolution.RandomRecords.Count != 0) { AbortReplay("即时回放操作产生了未预期的随机结果"); return; }
@@ -525,6 +546,10 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         command.Kind == CommandKind.Action && (command.ActionCategory == (int)ActionCate.BUILD || command.ActionCategory == (int)ActionCate.QUICK_BUILD_MINER) ||
         (command.Kind == CommandKind.Skill || command.Kind == CommandKind.AiSkill) && IsKnownNonRandomSkill();
 
+    private static bool IsKnownNonRandomEquipmentMoveAction(GameCommand command) =>
+        command.Kind == CommandKind.EquipmentMoveAction &&
+        (command.ActionCategory == (int)ActionCate.BUILD || command.ActionCategory == (int)ActionCate.QUICK_BUILD_MINER);
+
     private static bool IsKnownNonRandomSkill()
     {
         var data = GS_Battle.self?.cur_player?.co_data;
@@ -546,10 +571,18 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     private void StartClientReplay(IEnumerable<RandomRecord> records)
     {
         if (replayBegin is null || replayExecutionStarted) return;
+        var commandKind = replayBegin.Command.Kind;
+        var operationId = replayBegin.OperationId;
+        var startedAt = Time.realtimeSinceStartup;
         replayExecutionStarted = true;
+        if (commandKind == CommandKind.BuildWithMove)
+            Logger.LogInfo($"Client BuildWithMove execution started op={operationId:N} time={startedAt:F3}");
         replayRandomTape.BeginReplay(records); GameplayRandom.ActiveTape = replayRandomTape;
         executor.Start(replayBegin.Command, ExecutionOrigin.ClientReplay,
-            () => { try { replayRandomTape.EndReplay(); replayExecutionCompleted = true; } catch (Exception ex) { AbortReplay("随机回放失败：" + ex.Message); } finally { GameplayRandom.ActiveTape = null; } TryCommitReplay(); },
+            () => { try { replayRandomTape.EndReplay(); replayExecutionCompleted = true;
+                    if (commandKind == CommandKind.BuildWithMove)
+                        Logger.LogInfo($"Client BuildWithMove execution completed op={operationId:N} elapsed={Time.realtimeSinceStartup - startedAt:F3}s");
+                } catch (Exception ex) { AbortReplay("随机回放失败：" + ex.Message); } finally { GameplayRandom.ActiveTape = null; } TryCommitReplay(); },
             ex => { GameplayRandom.ActiveTape = null; AbortReplay("回放失败：" + ex.Message); });
     }
 
@@ -559,7 +592,11 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         replayPreludeStarted = true;
         replayRandomTape.BeginReplay(Array.Empty<RandomRecord>()); GameplayRandom.ActiveTape = replayRandomTape;
         executor.StartEquipmentMovePrelude(replayBegin.Command, ExecutionOrigin.ClientReplay,
-            () => { try { replayRandomTape.EndReplay(); replayPreludeCompleted = true; } catch (Exception ex) { AbortReplay("移动前段回放失败：" + ex.Message); } finally { GameplayRandom.ActiveTape = null; } },
+            () => { try { replayRandomTape.EndReplay(); replayPreludeCompleted = true; } catch (Exception ex) { AbortReplay("移动前段回放失败：" + ex.Message); }
+                finally { GameplayRandom.ActiveTape = null; }
+                if (replayBegin is not null && IsKnownNonRandomEquipmentMoveAction(replayBegin.Command))
+                    StartClientEquipmentMoveResolution(Array.Empty<RandomRecord>());
+            },
             ex => { GameplayRandom.ActiveTape = null; AbortReplay("移动前段回放失败：" + ex.Message); });
     }
 
@@ -575,7 +612,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 
     private void PumpOperations()
     {
-        if (host is null || !host.MatchId.HasValue || executor.IsBusy || !operations.TryBegin(out var request) || request is null) return;
+        if (host is null || !host.MatchId.HasValue || executor.IsBusy || authorityAiOperationActive || !operations.TryBegin(out var request) || request is null) return;
         var validation = executor.Validate(request.Command);
         if (validation is not null)
         {
@@ -622,37 +659,46 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     internal IEnumerator RunHostAiCommand(GameCommand command)
     {
         if (host is null || !host.MatchId.HasValue) yield break;
-        while (executor.IsBusy) yield return 0f;
-        var validation = executor.Validate(command);
-        if (validation is not null) { Logger.LogError("AI command rejected: " + validation); yield break; }
-        var operationId = Guid.NewGuid();
-        Logger.LogInfo($"Authority AI operation begin kind={command.Kind} op={operationId:N} player={GS_Battle.self.current_co_index} round={GS_Battle.self.turns}");
-        var seat = host.Room.Seats.FirstOrDefault(value => value.PlayerIndex == GS_Battle.self.current_co_index);
-        host.AppendAndBroadcast(AuthorityFrameType.OperationBegin, ProtocolCodec.EncodeOperationBegin(new OperationBeginPayload
+        while (executor.IsBusy || authorityAiOperationActive) yield return 0f;
+        authorityAiOperationActive = true;
+        try
         {
-            OperationId = operationId, SeatId = seat?.SeatId ?? Guid.Empty, RequestId = ++nextRequestId,
-            Round = GS_Battle.self.turns, Command = command
-        }));
-        hostRandomTape.BeginRecording(); GameplayRandom.ActiveTape = hostRandomTape;
-        var finished = false; Exception? failure = null;
-        executor.Start(command, ExecutionOrigin.HostAuthority, () => finished = true, ex => { failure = ex; finished = true; });
-        while (!finished) yield return 0f;
-        if (failure is not null)
-        {
-            GameplayRandom.ActiveTape = null; Logger.LogError(failure);
-            host.AppendAndBroadcast(AuthorityFrameType.OperationFailed, ProtocolCodec.EncodeOperationFailed(
-                new OperationFailedPayload { OperationId = operationId, Reason = failure.Message }));
-            yield break;
+            var validation = executor.Validate(command);
+            if (validation is not null) { Logger.LogError("AI command rejected: " + validation); yield break; }
+            var operationId = Guid.NewGuid();
+            Logger.LogInfo($"Authority AI operation begin kind={command.Kind} op={operationId:N} player={GS_Battle.self.current_co_index} round={GS_Battle.self.turns}");
+            var seat = host.Room.Seats.FirstOrDefault(value => value.PlayerIndex == GS_Battle.self.current_co_index);
+            host.AppendAndBroadcast(AuthorityFrameType.OperationBegin, ProtocolCodec.EncodeOperationBegin(new OperationBeginPayload
+            {
+                OperationId = operationId, SeatId = seat?.SeatId ?? Guid.Empty, RequestId = ++nextRequestId,
+                Round = GS_Battle.self.turns, Command = command
+            }));
+            hostRandomTape.BeginRecording(); GameplayRandom.ActiveTape = hostRandomTape;
+            var finished = false; Exception? failure = null;
+            executor.Start(command, ExecutionOrigin.HostAuthority, () => finished = true, ex => { failure = ex; finished = true; });
+            while (!finished) yield return 0f;
+            if (failure is not null)
+            {
+                GameplayRandom.ActiveTape = null; Logger.LogError(failure);
+                host.AppendAndBroadcast(AuthorityFrameType.OperationFailed, ProtocolCodec.EncodeOperationFailed(
+                    new OperationFailedPayload { OperationId = operationId, Reason = failure.Message }));
+                yield break;
+            }
+            var records = hostRandomTape.EndRecording(); GameplayRandom.ActiveTape = null;
+            var resolution = new ResolutionPayload { OperationId = operationId, StageId = 0, SettlementOrdinal = 0 };
+            foreach (var record in records) resolution.RandomRecords.Add(record);
+            host.AppendAndBroadcast(AuthorityFrameType.Resolution, ProtocolCodec.EncodeResolution(resolution));
+            var end = host.AppendAndBroadcast(AuthorityFrameType.OperationEnd,
+                ProtocolCodec.EncodeOperationEnd(new OperationEndPayload { OperationId = operationId }));
+            host.SetLatestSnapshot(GameStateSerializer.CaptureSnapshot(), end);
+            Logger.LogInfo($"Authority AI operation end kind={command.Kind} op={operationId:N} frame={end.FrameId}");
+            FlushPendingMatchEnd();
         }
-        var records = hostRandomTape.EndRecording(); GameplayRandom.ActiveTape = null;
-        var resolution = new ResolutionPayload { OperationId = operationId, StageId = 0, SettlementOrdinal = 0 };
-        foreach (var record in records) resolution.RandomRecords.Add(record);
-        host.AppendAndBroadcast(AuthorityFrameType.Resolution, ProtocolCodec.EncodeResolution(resolution));
-        var end = host.AppendAndBroadcast(AuthorityFrameType.OperationEnd,
-            ProtocolCodec.EncodeOperationEnd(new OperationEndPayload { OperationId = operationId }));
-        host.SetLatestSnapshot(GameStateSerializer.CaptureSnapshot(), end);
-        Logger.LogInfo($"Authority AI operation end kind={command.Kind} op={operationId:N} frame={end.FrameId}");
-        FlushPendingMatchEnd();
+        finally
+        {
+            GameplayRandom.ActiveTape = null;
+            authorityAiOperationActive = false;
+        }
     }
 
     internal IEnumerator RunHostAiEndTurn()
@@ -772,6 +818,22 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         _ = client?.RequestSnapshotAsync();
     }
 
+    internal void RequestManualResync()
+    {
+        if (!CanManualResync)
+        {
+            Status = client?.SnapshotRequested == true ? "完整同步已经在进行中" : "当前不能重新同步";
+            return;
+        }
+        Logger.LogWarning($"Manual full synchronization requested at verified={client!.VerifiedFrameId} applied={client.AppliedFrameId} replay={replayOperationId?.ToString("N") ?? "none"} executorBusy={executor.IsBusy}.");
+        Status = "已手动请求完整同步，正在等待主机快照";
+        InputGate.LocalSeatMayAct = false;
+        pendingMatchEnd = null;
+        pendingAuthorityFrames.Clear();
+        ResetReplayState();
+        _ = client.RequestSnapshotAsync();
+    }
+
     private void ResetReplayState()
     {
         replayOperationId = null; replayBegin = null; replayExecutionStarted = false; replayExecutionCompleted = false;
@@ -782,7 +844,8 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     {
         try
         {
-            ResetReplayState(); pendingAuthorityFrames.Clear();
+            Logger.LogInfo($"Applying snapshot id={manifest.SnapshotId:N} frame={manifest.FrameId}; abandoning old executorBusy={executor.IsBusy} replay={replayOperationId?.ToString("N") ?? "none"}.");
+            ResetReplayState(); pendingAuthorityFrames.Clear(); executor.Reset(); GameplayRandom.ActiveTape = null;
             client?.AcceptSnapshotAnchor(manifest); loadingSnapshot = manifest;
             InputGate.MultiplayerActive = true; InputGate.LocalSeatMayAct = false;
             Status = $"已校验快照 {manifest.SnapshotId:N}，正在重建场景"; Logger.LogInfo(Status);
@@ -817,6 +880,12 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         return GS_Battle.self.all_player.players[seat.PlayerIndex];
     }
 
+    internal string? GetSeatDisplayName(Player player)
+    {
+        var seat = CurrentRoom?.Seats.Find(value => value.PlayerIndex == player.index && value.OriginallyHuman);
+        return seat is null || string.IsNullOrWhiteSpace(seat.DisplayName) ? null : seat.DisplayName;
+    }
+
     private void ApplyLocalPerspectiveAndControl()
     {
         if (!InputGate.MultiplayerActive || GS_Battle.self is null) return;
@@ -824,7 +893,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         var mayAct = InputGate.LocalSeatMayAct && localPlayer is not null;
         var localTurnOwned = localPlayer is not null && GS_Battle.self.cur_player == localPlayer &&
             CurrentRoom?.Seats.Find(value => value.PlayerIndex == localPlayer.index)?.AiControlled != true;
-        if (previousLocalTurnOwned && !localTurnOwned && UX_Manager.self is not null)
+        if (!localTurnOwned && GS_Battle.self.selected_units.Count != 0 && UX_Manager.self is not null)
             UX_Manager.self.ClearUnitSelection();
         previousLocalTurnOwned = localTurnOwned;
         GS_Battle.self.is_player_in_control = mayAct;
@@ -854,7 +923,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         host?.Dispose(); host = null; client?.Dispose(); client = null;
         pendingAuthorityFrames.Clear(); ResetReplayState(); executor.Reset(); GameplayRandom.ActiveTape = null;
         hostStartAuthorized = false; nativeHostBattleStarted = false; hostBootstrapAttempted = false; hostShutdownPending = false; perspectivePlayerIndex = -1; previousLocalTurnOwned = false;
-        pendingMatchEnd = null; applyingAuthorityMatchEnd = false; turnAdvanceRunning = false;
+        pendingMatchEnd = null; applyingAuthorityMatchEnd = false; turnAdvanceRunning = false; authorityAiOperationActive = false;
         pendingLiveNotice = "";
         InputGate.MultiplayerActive = false; InputGate.LocalSeatMayAct = false; Status = "未连接";
     }
