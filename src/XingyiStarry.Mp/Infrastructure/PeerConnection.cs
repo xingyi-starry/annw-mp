@@ -8,7 +8,7 @@ using XingyiStarry.Mp.Protocol;
 
 namespace XingyiStarry.Mp.Infrastructure;
 
-internal sealed class PeerConnection : IDisposable
+internal sealed class PeerConnection : IRemotePeer, IDisposable
 {
     private readonly TcpClient client;
     private readonly CancellationTokenSource stop = new CancellationTokenSource();
@@ -64,7 +64,7 @@ internal sealed class PeerConnection : IDisposable
 
 internal sealed class InboundEnvelope
 {
-    public PeerConnection Peer { get; }
+    public IRemotePeer Peer { get; }
     public Envelope Envelope { get; }
-    public InboundEnvelope(PeerConnection peer, Envelope envelope) { Peer = peer; Envelope = envelope; }
+    public InboundEnvelope(IRemotePeer peer, Envelope envelope) { Peer = peer; Envelope = envelope; }
 }

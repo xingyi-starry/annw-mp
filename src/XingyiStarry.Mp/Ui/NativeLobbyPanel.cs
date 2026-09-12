@@ -16,10 +16,11 @@ internal static class NativeLobbyPanel
     private static TMP_InputField? portInput;
     private static TextMeshProUGUI? status;
     private static bool waitingForHandshake;
+    private static bool returnToPublic;
 
-    internal static void Open(UI_MENU_MainMenu source)
+    internal static void Open(UI_MENU_MainMenu source, bool returnToPublicLobby = false)
     {
-        menu = source; source.pop_skirmish.SetActive(false);
+        menu = source; returnToPublic = returnToPublicLobby; source.pop_skirmish.SetActive(false);
         if (!Build()) return;
         waitingForHandshake = false; root!.SetActive(true); root.transform.SetAsLastSibling();
         Refresh(XingyiStarryMpPlugin.Instance);
@@ -108,8 +109,11 @@ internal static class NativeLobbyPanel
     {
         waitingForHandshake = false;
         XingyiStarryMpPlugin.Instance?.Disconnect();
+        var source = menu; var reopen = returnToPublic;
         DestroyPanel();
         menu = null;
+        returnToPublic = false;
+        if (reopen && source != null) PublicLobbyPanel.Open(source);
     }
 
     private static void DestroyPanel()

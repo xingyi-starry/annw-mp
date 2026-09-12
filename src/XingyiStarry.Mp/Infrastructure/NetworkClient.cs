@@ -6,7 +6,7 @@ using XingyiStarry.Mp.Protocol;
 
 namespace XingyiStarry.Mp.Infrastructure;
 
-internal sealed class NetworkClient : IDisposable
+internal sealed class NetworkClient : IClientTransport
 {
     private readonly ConcurrentQueue<InboundEnvelope> inbox = new ConcurrentQueue<InboundEnvelope>();
     private readonly ConcurrentQueue<Exception> errors = new ConcurrentQueue<Exception>();

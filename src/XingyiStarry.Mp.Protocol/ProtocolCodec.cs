@@ -12,12 +12,20 @@ public static class ProtocolCodec
     private const int MaxUnits = 4096;
     private const int MaxRandomRecords = 65536;
 
-    public static byte[] EncodeEnvelope(Envelope value) => Serialize(new Wire.WireEnvelope
+    public static byte[] EncodeEnvelope(Envelope value)
     {
-        ProtocolVersion = ProtocolConstants.Version,
-        MessageType = (uint)value.Type,
-        Payload = ByteString.CopyFrom(value.Payload)
-    });
+        var wire = new Wire.WireEnvelope
+        {
+            ProtocolVersion = ProtocolConstants.Version,
+            MessageType = (uint)value.Type,
+            Payload = ByteString.CopyFrom(value.Payload),
+            Delivery = (Wire.Delivery)value.Delivery
+        };
+        if (value.RoomId.HasValue) wire.RoomId = GuidBytes(value.RoomId.Value);
+        if (value.ClientId.HasValue) wire.ClientId = GuidBytes(value.ClientId.Value);
+        if (value.TargetClientId.HasValue) wire.TargetClientId = GuidBytes(value.TargetClientId.Value);
+        return Serialize(wire);
+    }
 
     public static Envelope DecodeEnvelope(byte[] bytes)
     {
@@ -25,7 +33,15 @@ public static class ProtocolCodec
         if (wire.ProtocolVersion != ProtocolConstants.Version) throw new InvalidDataException("Unsupported envelope version.");
         var type = (MessageType)wire.MessageType;
         if (!Enum.IsDefined(typeof(MessageType), type)) throw new InvalidDataException("Unknown message type.");
-        return new Envelope { Type = type, Payload = wire.Payload.ToByteArray() };
+        var delivery = (Delivery)wire.Delivery;
+        if (!Enum.IsDefined(typeof(Delivery), delivery)) throw new InvalidDataException("Unknown delivery mode.");
+        return new Envelope
+        {
+            Type = type, Payload = wire.Payload.ToByteArray(), Delivery = delivery,
+            RoomId = wire.HasRoomId ? ReadGuid(wire.RoomId) : null,
+            ClientId = wire.HasClientId ? ReadGuid(wire.ClientId) : null,
+            TargetClientId = wire.HasTargetClientId ? ReadGuid(wire.TargetClientId) : null
+        };
     }
 
     public static byte[] EncodeHello(HelloMessage value) => Serialize(new Wire.Hello
@@ -108,7 +124,7 @@ public static class ProtocolCodec
 
     public static byte[] EncodeCommandRequest(CommandRequest value) => Serialize(new Wire.CommandRequestMessage
     {
-        ClientId = GuidBytes(value.ClientId), RequestId = value.RequestId, SeatId = GuidBytes(value.SeatId),
+        RequestId = value.RequestId, SeatId = GuidBytes(value.SeatId),
         Round = value.Round, AppliedFrameId = value.AppliedFrameId, Command = ToWire(value.Command)
     });
 
@@ -116,9 +132,110 @@ public static class ProtocolCodec
     {
         var wire = Parse(Wire.CommandRequestMessage.Parser, bytes);
         if (wire.Command is null) throw new InvalidDataException("Command request has no command.");
-        return new CommandRequest { ClientId = ReadGuid(wire.ClientId), RequestId = wire.RequestId,
+        return new CommandRequest { RequestId = wire.RequestId,
             SeatId = ReadGuid(wire.SeatId), Round = wire.Round, AppliedFrameId = wire.AppliedFrameId,
             Command = FromWire(wire.Command) };
+    }
+
+    public static byte[] EncodeRelayRegisterRoom(RelayRegisterRoomRequest value) => Serialize(new Wire.RelayRegisterRoomRequest
+    {
+        RequestId = value.RequestId, RoomId = GuidBytes(value.RoomId), RoomName = value.RoomName,
+        HostName = value.HostName, Password = value.Password, PluginVersion = value.PluginVersion,
+        GameFingerprint = value.GameFingerprint, ContentFingerprint = value.ContentFingerprint
+    });
+
+    public static RelayRegisterRoomRequest DecodeRelayRegisterRoom(byte[] bytes)
+    {
+        var wire = Parse(Wire.RelayRegisterRoomRequest.Parser, bytes);
+        return new RelayRegisterRoomRequest { RequestId = wire.RequestId, RoomId = ReadGuid(wire.RoomId),
+            RoomName = wire.RoomName, HostName = wire.HostName, Password = wire.Password,
+            PluginVersion = wire.PluginVersion, GameFingerprint = wire.GameFingerprint,
+            ContentFingerprint = wire.ContentFingerprint };
+    }
+
+    public static byte[] EncodeRelayUpdateRoom(RelayUpdateRoomRequest value) => Serialize(new Wire.RelayUpdateRoomRequest
+    {
+        RequestId = value.RequestId, RoomId = GuidBytes(value.RoomId), MapTitle = value.MapTitle,
+        ConnectedPlayers = value.ConnectedPlayers, HumanSeats = value.HumanSeats, Status = (Wire.RelayRoomStatus)value.Status
+    });
+
+    public static RelayUpdateRoomRequest DecodeRelayUpdateRoom(byte[] bytes)
+    {
+        var wire = Parse(Wire.RelayUpdateRoomRequest.Parser, bytes);
+        var status = CheckedRelayRoomStatus(wire.Status);
+        return new RelayUpdateRoomRequest { RequestId = wire.RequestId, RoomId = ReadGuid(wire.RoomId),
+            MapTitle = wire.MapTitle, ConnectedPlayers = wire.ConnectedPlayers, HumanSeats = wire.HumanSeats, Status = status };
+    }
+
+    public static byte[] EncodeRelayListRoomsRequest(ulong requestId) => Serialize(new Wire.RelayListRoomsRequest { RequestId = requestId });
+    public static ulong DecodeRelayListRoomsRequest(byte[] bytes) => Parse(Wire.RelayListRoomsRequest.Parser, bytes).RequestId;
+
+    public static byte[] EncodeRelayRoomList(RelayListRoomsResponse value)
+    {
+        if (value.Rooms.Count > 4096) throw new InvalidDataException("Invalid relay room count.");
+        var wire = new Wire.RelayListRoomsResponse { RequestId = value.RequestId };
+        wire.Rooms.Add(value.Rooms.Select(ToWire));
+        return Serialize(wire);
+    }
+
+    public static RelayListRoomsResponse DecodeRelayRoomList(byte[] bytes)
+    {
+        var wire = Parse(Wire.RelayListRoomsResponse.Parser, bytes);
+        if (wire.Rooms.Count > 4096) throw new InvalidDataException("Invalid relay room count.");
+        var value = new RelayListRoomsResponse { RequestId = wire.RequestId };
+        value.Rooms.AddRange(wire.Rooms.Select(FromWire));
+        return value;
+    }
+
+    public static byte[] EncodeRelayJoinRoom(RelayJoinRoomRequest value) => Serialize(new Wire.RelayJoinRoomRequest
+        { RequestId = value.RequestId, RoomId = GuidBytes(value.RoomId), Password = value.Password });
+
+    public static RelayJoinRoomRequest DecodeRelayJoinRoom(byte[] bytes)
+    {
+        var wire = Parse(Wire.RelayJoinRoomRequest.Parser, bytes);
+        return new RelayJoinRoomRequest { RequestId = wire.RequestId, RoomId = ReadGuid(wire.RoomId), Password = wire.Password };
+    }
+
+    public static byte[] EncodeRelayControlResponse(RelayControlResponse value)
+    {
+        var wire = new Wire.RelayControlResponse { RequestId = value.RequestId, Success = value.Success, Reason = value.Reason };
+        if (value.ClientId.HasValue) wire.ClientId = GuidBytes(value.ClientId.Value);
+        return Serialize(wire);
+    }
+
+    public static RelayControlResponse DecodeRelayControlResponse(byte[] bytes)
+    {
+        var wire = Parse(Wire.RelayControlResponse.Parser, bytes);
+        return new RelayControlResponse { RequestId = wire.RequestId, Success = wire.Success, Reason = wire.Reason,
+            ClientId = wire.HasClientId ? ReadGuid(wire.ClientId) : null };
+    }
+
+    public static byte[] EncodeRelayRoomRequest(RelayRoomRequest value) => Serialize(new Wire.RelayRoomRequest
+        { RequestId = value.RequestId, RoomId = GuidBytes(value.RoomId) });
+
+    public static RelayRoomRequest DecodeRelayRoomRequest(byte[] bytes)
+    {
+        var wire = Parse(Wire.RelayRoomRequest.Parser, bytes);
+        return new RelayRoomRequest { RequestId = wire.RequestId, RoomId = ReadGuid(wire.RoomId) };
+    }
+
+    public static byte[] EncodeRelayPeerNotice(RelayPeerNotice value) => Serialize(new Wire.RelayPeerNotice
+        { ClientId = GuidBytes(value.ClientId), Reason = value.Reason });
+
+    public static RelayPeerNotice DecodeRelayPeerNotice(byte[] bytes)
+    {
+        var wire = Parse(Wire.RelayPeerNotice.Parser, bytes);
+        return new RelayPeerNotice { ClientId = ReadGuid(wire.ClientId), Reason = wire.Reason };
+    }
+
+    public static ulong DecodeRelayControlRequestId(byte[] bytes, MessageType type)
+    {
+        switch (type)
+        {
+            case MessageType.RelayControlResponse: return Parse(Wire.RelayControlResponse.Parser, bytes).RequestId;
+            case MessageType.RelayRoomList: return Parse(Wire.RelayListRoomsResponse.Parser, bytes).RequestId;
+            default: throw new InvalidDataException("Message does not carry a relay request id.");
+        }
     }
 
     public static byte[] EncodeCommandResponse(CommandResponse value) => Serialize(new Wire.CommandResponseMessage
@@ -228,6 +345,24 @@ public static class ProtocolCodec
     public static byte[] EncodeString(string value) => Serialize(new Wire.StringValue { Value = value });
     public static string DecodeString(byte[] bytes) => Parse(Wire.StringValue.Parser, bytes).Value;
 
+    private static Wire.RelayRoomInfo ToWire(RelayRoomInfo value) => new Wire.RelayRoomInfo
+    {
+        RoomId = GuidBytes(value.RoomId), RoomName = value.RoomName, HostName = value.HostName,
+        MapTitle = value.MapTitle, ConnectedPlayers = value.ConnectedPlayers, HumanSeats = value.HumanSeats,
+        HasPassword = value.HasPassword, Status = (Wire.RelayRoomStatus)value.Status,
+        PluginVersion = value.PluginVersion, GameFingerprint = value.GameFingerprint,
+        ContentFingerprint = value.ContentFingerprint
+    };
+
+    private static RelayRoomInfo FromWire(Wire.RelayRoomInfo wire) => new RelayRoomInfo
+    {
+        RoomId = ReadGuid(wire.RoomId), RoomName = wire.RoomName, HostName = wire.HostName,
+        MapTitle = wire.MapTitle, ConnectedPlayers = wire.ConnectedPlayers, HumanSeats = wire.HumanSeats,
+        HasPassword = wire.HasPassword, Status = CheckedRelayRoomStatus(wire.Status),
+        PluginVersion = wire.PluginVersion, GameFingerprint = wire.GameFingerprint,
+        ContentFingerprint = wire.ContentFingerprint
+    };
+
     private static Wire.GameCommandMessage ToWire(GameCommand value)
     {
         if (value.UnitIds.Length > MaxUnits || value.UnitTargetXs.Length > MaxUnits || value.UnitTargetXs.Length != value.UnitTargetYs.Length)
@@ -285,5 +420,12 @@ public static class ProtocolCodec
     {
         if (value > byte.MaxValue) throw new InvalidDataException("Random value kind is outside byte range.");
         return (byte)value;
+    }
+
+    private static RelayRoomStatus CheckedRelayRoomStatus(Wire.RelayRoomStatus value)
+    {
+        var status = (RelayRoomStatus)value;
+        if (!Enum.IsDefined(typeof(RelayRoomStatus), status)) throw new InvalidDataException("Unknown relay room status.");
+        return status;
     }
 }

@@ -9,7 +9,7 @@ namespace XingyiStarry.Mp.Session;
 
 internal sealed class ClientSession : IDisposable
 {
-    private readonly NetworkClient network = new NetworkClient();
+    private readonly IClientTransport network;
     private readonly SortedDictionary<long, AuthorityFrame> received = new SortedDictionary<long, AuthorityFrame>();
     private readonly SortedDictionary<long, AuthorityFrame> pendingVerification = new SortedDictionary<long, AuthorityFrame>();
     private Guid? matchId;
@@ -27,6 +27,9 @@ internal sealed class ClientSession : IDisposable
     public bool SnapshotRequested => snapshotRequested;
     public bool ConnectionLost { get; private set; }
     public string ConnectionError { get; private set; } = "";
+
+    public ClientSession() : this(new NetworkClient()) { }
+    public ClientSession(IClientTransport network) => this.network = network;
 
     public async Task ConnectAsync(string host, int port, HelloMessage hello)
     {
@@ -100,7 +103,7 @@ internal sealed class ClientSession : IDisposable
 
     public void Tick()
     {
-        if (!network.IsConnected) return;
+        if (!network.IsConnected || !ClientId.HasValue) return;
         if (DateTime.UtcNow - lastHeartbeatUtc < TimeSpan.FromSeconds(2)) return;
         lastHeartbeatUtc = DateTime.UtcNow;
         _ = network.SendAsync(MessageType.Heartbeat, ProtocolCodec.EncodeInt64(lastHeartbeatUtc.Ticks));

@@ -12,7 +12,7 @@ namespace XingyiStarry.Mp.Session;
 
 internal sealed class HostSession : IDisposable
 {
-    private readonly NetworkHost network;
+    private readonly IHostTransport network;
     private readonly Dictionary<Guid, ClientRecord> clientsByConnection = new Dictionary<Guid, ClientRecord>();
     private readonly string pluginVersion;
     private readonly string gameFingerprint;
@@ -21,24 +21,37 @@ internal sealed class HostSession : IDisposable
     private SnapshotManifest? latestSnapshotManifest;
     private byte[]? latestCompressedSnapshot;
 
-    public RoomState Room { get; } = new RoomState();
+    public RoomState Room { get; }
     public Guid? MatchId { get; private set; }
     public Guid LocalHostClientId { get; }
+    public bool ConnectionLost { get; private set; }
+    public string ConnectionError { get; private set; } = "";
 
     public HostSession(int port, string pluginVersion, string gameFingerprint, string contentFingerprint, string hostName)
+        : this(new NetworkHost(port), pluginVersion, gameFingerprint, contentFingerprint, hostName, null, null)
+    {
+    }
+
+    public HostSession(IHostTransport network, string pluginVersion, string gameFingerprint, string contentFingerprint, string hostName,
+        Guid? localHostClientId = null, Guid? roomId = null)
     {
         this.pluginVersion = pluginVersion; this.gameFingerprint = gameFingerprint; this.contentFingerprint = contentFingerprint;
-        LocalHostClientId = Guid.NewGuid();
-        network = new NetworkHost(port);
+        LocalHostClientId = localHostClientId ?? Guid.NewGuid();
+        this.network = network;
+        Room = new RoomState(roomId);
         Room.ReplaceSeats(Array.Empty<SeatInfo>());
     }
 
     public void Start() => network.Start();
 
-    public void Pump(Action<string> log, Action<CommandRequest, PeerConnection> commandReceived,
-        Action<RoomSnapshot, PeerConnection> lobbyDraftReceived, Action<string> participantLeft)
+    public void Pump(Action<string> log, Action<CommandRequest, IRemotePeer> commandReceived,
+        Action<RoomSnapshot, IRemotePeer> lobbyDraftReceived, Action<string> participantLeft)
     {
-        while (network.TryDequeueError(out var error)) log("Network host: " + error);
+        while (network.TryDequeueError(out var error))
+        {
+            log("Network host: " + error);
+            if (UsesRelay) { ConnectionLost = true; ConnectionError = error?.Message ?? "中继连接已关闭"; }
+        }
         while (network.TryDequeue(out var inbound) && inbound is not null)
         {
             try { Handle(inbound, commandReceived, lobbyDraftReceived); }
@@ -61,8 +74,8 @@ internal sealed class HostSession : IDisposable
         }
     }
 
-    private void Handle(InboundEnvelope inbound, Action<CommandRequest, PeerConnection> commandReceived,
-        Action<RoomSnapshot, PeerConnection> lobbyDraftReceived)
+    private void Handle(InboundEnvelope inbound, Action<CommandRequest, IRemotePeer> commandReceived,
+        Action<RoomSnapshot, IRemotePeer> lobbyDraftReceived)
     {
         if (inbound.Envelope.Type == MessageType.Hello)
         {
@@ -85,7 +98,7 @@ internal sealed class HostSession : IDisposable
                 lobbyDraftReceived(ProtocolCodec.DecodeRoom(inbound.Envelope.Payload), inbound.Peer); break;
             case MessageType.CommandRequest:
                 var request = ProtocolCodec.DecodeCommandRequest(inbound.Envelope.Payload);
-                if (request.ClientId != client.ClientId) throw new InvalidDataException("Client identity mismatch.");
+                request.ClientId = client.ClientId;
                 commandReceived(request, inbound.Peer); break;
             case MessageType.HistoryRequest: SendHistory(inbound.Peer, ProtocolCodec.DecodeInt64(inbound.Envelope.Payload)); break;
             case MessageType.SnapshotRequest: _ = SendSnapshotAsync(inbound.Peer); break;
@@ -93,7 +106,7 @@ internal sealed class HostSession : IDisposable
         }
     }
 
-    private void HandleHello(PeerConnection peer, HelloMessage hello)
+    private void HandleHello(IRemotePeer peer, HelloMessage hello)
     {
         if (hello.ProtocolVersion != ProtocolConstants.Version || hello.PluginVersion != pluginVersion || hello.GameFingerprint != gameFingerprint || hello.ContentFingerprint != contentFingerprint)
         {
@@ -108,7 +121,7 @@ internal sealed class HostSession : IDisposable
         _ = network.SendAsync(peer, MessageType.RoomState, ProtocolCodec.EncodeRoom(room));
     }
 
-    private async Task RejectHandshakeAsync(PeerConnection peer, string reason)
+    private async Task RejectHandshakeAsync(IRemotePeer peer, string reason)
     {
         try { await network.SendAsync(peer, MessageType.Reject, ProtocolCodec.EncodeString(reason)).ConfigureAwait(false); }
         finally { peer.Close(); }
@@ -181,11 +194,20 @@ internal sealed class HostSession : IDisposable
     {
         var snapshot = Room.Snapshot(); snapshot.MatchId = MatchId;
         _ = network.BroadcastAsync(MessageType.RoomState, ProtocolCodec.EncodeRoom(snapshot));
+        if (network is RelayHostTransport relay)
+        {
+            _ = relay.UpdateRoomAsync(new RelayUpdateRoomRequest { RequestId = 0, RoomId = Room.RoomId,
+                MapTitle = snapshot.MapTitle, ConnectedPlayers = snapshot.Seats.Count(value => value.Connected),
+                HumanSeats = snapshot.Seats.Count(value => value.OriginallyHuman),
+                Status = snapshot.MatchStarted ? RelayRoomStatus.Playing : RelayRoomStatus.Waiting });
+        }
     }
+    public bool UsesRelay => network is RelayHostTransport;
+    public Task CloseRelayJoiningAsync(ulong requestId) => network is RelayHostTransport relay ? relay.CloseJoiningAsync(requestId) : Task.CompletedTask;
     public Task BroadcastSessionEndedAsync(string reason) =>
         network.BroadcastAsync(MessageType.SessionEnded, ProtocolCodec.EncodeString(reason));
-    public void Accept(PeerConnection peer, ulong requestId, long frameId) => _ = network.SendAsync(peer, MessageType.CommandAccepted, ProtocolCodec.EncodeCommandResponse(new CommandResponse { RequestId = requestId, AuthorityFrameId = frameId }));
-    public void Reject(PeerConnection peer, ulong requestId, string reason) => _ = network.SendAsync(peer, MessageType.CommandRejected, ProtocolCodec.EncodeCommandResponse(new CommandResponse { RequestId = requestId, AuthorityFrameId = 0, Reason = reason }));
+    public void Accept(IRemotePeer peer, ulong requestId, long frameId) => _ = network.SendAsync(peer, MessageType.CommandAccepted, ProtocolCodec.EncodeCommandResponse(new CommandResponse { RequestId = requestId, AuthorityFrameId = frameId }));
+    public void Reject(IRemotePeer peer, ulong requestId, string reason) => _ = network.SendAsync(peer, MessageType.CommandRejected, ProtocolCodec.EncodeCommandResponse(new CommandResponse { RequestId = requestId, AuthorityFrameId = 0, Reason = reason }));
 
     public bool Authorize(CommandRequest request, int currentPlayerIndex, int currentRound, out string reason)
     {
@@ -213,7 +235,7 @@ internal sealed class HostSession : IDisposable
         };
     }
 
-    private async Task SendSnapshotAsync(PeerConnection peer)
+    private async Task SendSnapshotAsync(IRemotePeer peer)
     {
         var manifest = latestSnapshotManifest; var compressed = latestCompressedSnapshot;
         if (manifest is null || compressed is null) { await network.SendAsync(peer, MessageType.Reject, ProtocolCodec.EncodeString("No safe-boundary snapshot is available.")).ConfigureAwait(false); return; }
@@ -227,7 +249,7 @@ internal sealed class HostSession : IDisposable
         await network.SendAsync(peer, MessageType.SnapshotComplete, ProtocolCodec.EncodeGuid(manifest.SnapshotId)).ConfigureAwait(false);
     }
 
-    private void SendHistory(PeerConnection peer, long after)
+    private void SendHistory(IRemotePeer peer, long after)
     {
         if (journal is null) return;
         var frames = journal.After(after).ToArray();
@@ -235,7 +257,7 @@ internal sealed class HostSession : IDisposable
         _ = SendHistoryAsync(peer, frames, latestFrameId);
     }
 
-    private async Task SendHistoryAsync(PeerConnection peer, IReadOnlyList<AuthorityFrame> frames, long latestFrameId)
+    private async Task SendHistoryAsync(IRemotePeer peer, IReadOnlyList<AuthorityFrame> frames, long latestFrameId)
     {
         foreach (var frame in frames) await network.SendAsync(peer, MessageType.AuthorityFrame, ProtocolCodec.EncodeAuthorityFrame(frame)).ConfigureAwait(false);
         await network.SendAsync(peer, MessageType.HistoryComplete, ProtocolCodec.EncodeInt64(latestFrameId)).ConfigureAwait(false);
@@ -249,6 +271,6 @@ internal sealed class HostSession : IDisposable
         public string DisplayName { get; set; } = "";
         public DateTime LastSeenUtc { get; set; }
         public bool Disconnected { get; set; }
-        public PeerConnection? Peer { get; set; }
+        public IRemotePeer? Peer { get; set; }
     }
 }

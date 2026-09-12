@@ -9,7 +9,7 @@ using XingyiStarry.Mp.Protocol;
 
 namespace XingyiStarry.Mp.Infrastructure;
 
-internal sealed class NetworkHost : IDisposable
+internal sealed class NetworkHost : IHostTransport
 {
     private readonly TcpListener listener;
     private readonly CancellationTokenSource stop = new CancellationTokenSource();
@@ -45,7 +45,7 @@ internal sealed class NetworkHost : IDisposable
 
     public bool TryDequeue(out InboundEnvelope? envelope) => inbox.TryDequeue(out envelope);
     public bool TryDequeueError(out Exception? exception) => errors.TryDequeue(out exception);
-    public Task SendAsync(PeerConnection peer, MessageType type, byte[] payload) => peer.SendAsync(new Envelope { Type = type, Payload = payload });
+    public Task SendAsync(IRemotePeer peer, MessageType type, byte[] payload) => peer.SendAsync(new Envelope { Type = type, Payload = payload });
 
     public async Task BroadcastAsync(MessageType type, byte[] payload)
     {

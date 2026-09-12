@@ -36,6 +36,13 @@ internal static class NativeSkirmishLobby
         menu.pop_skirmish.SetActive(false); menu.OnBtn_SkirmishNew();
     }
 
+    internal static void EnterExisting(UI_MENU_POP_SkirmishSelect value)
+    {
+        CleanupUi();
+        Active = true; lastAppliedRevision = -1; lastSeatSignature = 0; lastDraftSignature = 0;
+        Ensure(value);
+    }
+
     internal static void Ensure(UI_MENU_POP_SkirmishSelect value)
     {
         if (!Active || value?.info_skirmish == null) return;

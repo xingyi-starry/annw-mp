@@ -8,7 +8,7 @@ namespace XingyiStarry.Mp.Session;
 internal sealed class RoomState
 {
     private readonly List<SeatInfo> seats = new List<SeatInfo>();
-    public Guid RoomId { get; } = Guid.NewGuid();
+    public Guid RoomId { get; }
     public IReadOnlyList<SeatInfo> Seats => seats;
     public bool MatchStarted { get; private set; }
     public int DraftRevision { get; private set; }
@@ -18,6 +18,8 @@ internal sealed class RoomState
     public int WinCondition { get; private set; }
     public int QuickStart { get; private set; }
     private string draftFingerprint = "";
+
+    public RoomState(Guid? roomId = null) => RoomId = roomId ?? Guid.NewGuid();
 
     public void ReplaceSeats(IEnumerable<SeatInfo> values)
     {

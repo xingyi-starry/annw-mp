@@ -7,6 +7,80 @@ public sealed class Envelope
 {
     public MessageType Type { get; set; }
     public byte[] Payload { get; set; } = Array.Empty<byte>();
+    public Guid? RoomId { get; set; }
+    public Guid? ClientId { get; set; }
+    public Guid? TargetClientId { get; set; }
+    public Delivery Delivery { get; set; }
+}
+
+public sealed class RelayRoomInfo
+{
+    public Guid RoomId { get; set; }
+    public string RoomName { get; set; } = "";
+    public string HostName { get; set; } = "";
+    public string MapTitle { get; set; } = "";
+    public int ConnectedPlayers { get; set; }
+    public int HumanSeats { get; set; }
+    public bool HasPassword { get; set; }
+    public RelayRoomStatus Status { get; set; }
+    public string PluginVersion { get; set; } = "";
+    public string GameFingerprint { get; set; } = "";
+    public string ContentFingerprint { get; set; } = "";
+}
+
+public sealed class RelayRegisterRoomRequest
+{
+    public ulong RequestId { get; set; }
+    public Guid RoomId { get; set; }
+    public string RoomName { get; set; } = "";
+    public string HostName { get; set; } = "";
+    public string Password { get; set; } = "";
+    public string PluginVersion { get; set; } = "";
+    public string GameFingerprint { get; set; } = "";
+    public string ContentFingerprint { get; set; } = "";
+}
+
+public sealed class RelayUpdateRoomRequest
+{
+    public ulong RequestId { get; set; }
+    public Guid RoomId { get; set; }
+    public string MapTitle { get; set; } = "";
+    public int ConnectedPlayers { get; set; }
+    public int HumanSeats { get; set; }
+    public RelayRoomStatus Status { get; set; }
+}
+
+public sealed class RelayListRoomsResponse
+{
+    public ulong RequestId { get; set; }
+    public List<RelayRoomInfo> Rooms { get; } = new List<RelayRoomInfo>();
+}
+
+public sealed class RelayJoinRoomRequest
+{
+    public ulong RequestId { get; set; }
+    public Guid RoomId { get; set; }
+    public string Password { get; set; } = "";
+}
+
+public sealed class RelayControlResponse
+{
+    public ulong RequestId { get; set; }
+    public bool Success { get; set; }
+    public string Reason { get; set; } = "";
+    public Guid? ClientId { get; set; }
+}
+
+public sealed class RelayRoomRequest
+{
+    public ulong RequestId { get; set; }
+    public Guid RoomId { get; set; }
+}
+
+public sealed class RelayPeerNotice
+{
+    public Guid ClientId { get; set; }
+    public string Reason { get; set; } = "";
 }
 
 public sealed class HelloMessage

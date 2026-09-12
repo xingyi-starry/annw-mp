@@ -3,6 +3,7 @@ using System.IO;
 using System.Collections.Generic;
 using System.Collections;
 using System.Linq;
+using System.Threading.Tasks;
 using ANNW;
 using BepInEx;
 using BepInEx.Configuration;
@@ -22,7 +23,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.4.0";
+    public const string PluginVersion = "0.5.0";
 
     private Harmony? harmony;
     private HostSession? host;
@@ -30,6 +31,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     private ConfigEntry<int>? defaultPort;
     private ConfigEntry<string>? defaultAddress;
     private ConfigEntry<string>? displayName;
+    private ConfigEntry<string>? relayEndpoint;
     private string gameFingerprint = "";
     private string contentFingerprint = "";
     private ulong nextRequestId;
@@ -60,7 +62,10 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     private bool applyingAuthorityMatchEnd;
     private bool turnAdvanceRunning;
     private bool authorityAiOperationActive;
-    private readonly Dictionary<string, PeerConnection> requestPeers = new Dictionary<string, PeerConnection>(StringComparer.Ordinal);
+    private bool relayJoiningClosed;
+    private bool relayStartPending;
+    private int connectionGeneration;
+    private readonly Dictionary<string, IRemotePeer> requestPeers = new Dictionary<string, IRemotePeer>(StringComparer.Ordinal);
 
     public static XingyiStarryMpPlugin? Instance { get; private set; }
     internal string Status { get; private set; } = "未连接";
@@ -75,6 +80,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     internal int ConfiguredPort { get => defaultPort?.Value ?? ProtocolConstants.DefaultPort; set { if (defaultPort is not null) defaultPort.Value = value; } }
     internal string ConfiguredAddress { get => defaultAddress?.Value ?? "127.0.0.1"; set { if (defaultAddress is not null) defaultAddress.Value = value; } }
     internal string ConfiguredDisplayName { get => displayName?.Value ?? Environment.UserName; set { if (displayName is not null) displayName.Value = value; } }
+    internal string ConfiguredRelayEndpoint => relayEndpoint?.Value ?? "60.205.147.182:24555";
     internal RoomSnapshot? CurrentRoom => host?.Room.Snapshot() ?? client?.Room;
     internal Guid? LocalClientId => client?.ClientId;
     internal Guid? LocalIdentityId => host?.LocalHostClientId ?? client?.ClientId;
@@ -127,6 +133,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         defaultPort = Config.Bind("Network", "Port", ProtocolConstants.DefaultPort, "创建或加入房间使用的 TCP 端口。");
         defaultAddress = Config.Bind("Network", "Address", "127.0.0.1", "默认加入的局域网主机地址。");
         displayName = Config.Bind("Network", "DisplayName", Environment.UserName, "局域网房间内显示的名称。");
+        relayEndpoint = Config.Bind("Relay", "Endpoint", "60.205.147.182:24555", "公共联机使用的中继服务器地址，格式为 host:port。");
         try
         {
             var assemblyCSharp = Path.Combine(Paths.ManagedPath, "Assembly-CSharp.dll");
@@ -156,6 +163,14 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     {
         host?.Pump(message => Logger.LogWarning(message), OnHostCommand, OnHostLobbyDraft, ShowParticipantNotice);
         client?.Pump(message => { Status = message; Logger.LogWarning(message); }, OnAuthorityFrame, OnSnapshotReceived, ShowParticipantNotice);
+        if (host?.ConnectionLost == true)
+        {
+            var reason = string.IsNullOrWhiteSpace(host.ConnectionError) ? "与公共中继服务器的连接已中断。" : host.ConnectionError;
+            host.Dispose(); host = null; InputGate.MultiplayerActive = false; InputGate.LocalSeatMayAct = false;
+            Status = "公共联机会话已结束：" + reason; pendingNativeNotice = reason; nativeNoticeEarliest = Time.unscaledTime + 0.25f;
+            if (GS_Battle.self?.game_running == true && SingletonMono<SS_ANNW_Game>.self is not null) SingletonMono<SS_ANNW_Game>.self.DoQuitOut();
+            else NativeSkirmishLobby.TerminateFromRemote();
+        }
         PumpAuthorityFrames();
         if (client?.ConnectionLost == true)
         {
@@ -170,6 +185,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         }
         client?.Tick();
         NativeLobbyPanel.Tick(this);
+        PublicLobbyPanel.Tick(this);
         NativeSkirmishLobby.Tick(this);
         if (client?.ClientId is not null) Status = $"已握手，ClientId={client.ClientId:N}，已验证帧={client.VerifiedFrameId}";
         InputGate.LocalSeatMayAct = false;
@@ -234,7 +250,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         return draft;
     }
 
-    private void OnHostLobbyDraft(RoomSnapshot draft, PeerConnection peer)
+    private void OnHostLobbyDraft(RoomSnapshot draft, IRemotePeer peer)
     {
         if (host is null || host.MatchId.HasValue || !NativeSkirmishLobby.ApplyRemoteSeatDraft(draft))
         {
@@ -267,9 +283,29 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         if (host is null) { Status = "请先创建房间"; return false; }
         SyncLobbyDraft(info, mapId);
         if (!host.Room.CanStart) { Status = "尚有真人席位未认领或未准备"; return false; }
+        if (host.UsesRelay && !relayJoiningClosed)
+        {
+            if (!relayStartPending) PrepareRelayStart(info);
+            return false;
+        }
         hostStartAuthorized = true;
         NativeSkirmishLobby.MarkStartingMatch();
         return true;
+    }
+
+    private async void PrepareRelayStart(UI_MENU_LevelSelect_InfoSkm info)
+    {
+        if (host is null || relayStartPending) return;
+        relayStartPending = true; Status = "正在关闭公共房间加入入口";
+        try
+        {
+            await host.CloseRelayJoiningAsync(++nextRequestId);
+            if (host is null) return;
+            relayJoiningClosed = true; Status = "公共房间已锁定，正在开始游戏";
+            info.StartLevel();
+        }
+        catch (Exception ex) { Status = "无法锁定公共房间：" + ex.Message; Logger.LogError(ex); }
+        finally { relayStartPending = false; }
     }
 
     internal void OnNativeStartGameFormal()
@@ -346,6 +382,35 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         catch (Exception ex) { Disconnect(); Status = "创建失败：" + ex.Message; Logger.LogError(ex); }
     }
 
+    internal async void HostPublic(string roomName, string password)
+    {
+        Disconnect();
+        var generation = connectionGeneration;
+        try
+        {
+            var name = NormalizeDisplayName(); var roomId = Guid.NewGuid();
+            var registration = new RelayRegisterRoomRequest
+            {
+                RequestId = ++nextRequestId, RoomId = roomId,
+                RoomName = string.IsNullOrWhiteSpace(roomName) ? name + " 的房间" : roomName.Trim(),
+                HostName = name, Password = password ?? "", PluginVersion = PluginVersion,
+                GameFingerprint = gameFingerprint, ContentFingerprint = contentFingerprint
+            };
+            Status = "正在连接公共中继服务器";
+            var transport = await RelayHostTransport.ConnectAsync(ConfiguredRelayEndpoint, registration);
+            if (generation != connectionGeneration) { transport.Dispose(); return; }
+            host = new HostSession(transport, PluginVersion, gameFingerprint, contentFingerprint, name,
+                transport.HostClientId, roomId);
+            host.Start(); relayJoiningClosed = false;
+            Status = "公共房间已创建";
+        }
+        catch (Exception ex)
+        {
+            if (generation != connectionGeneration) return;
+            Disconnect(); Status = "创建公共房间失败：" + ex.Message; Logger.LogError(ex);
+        }
+    }
+
     internal async void Join(string address, int port)
     {
         Disconnect();
@@ -358,6 +423,32 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         }
         catch (Exception ex) { Disconnect(); Status = "连接失败：" + ex.Message; Logger.LogError(ex); }
     }
+
+    internal async void JoinPublic(Guid roomId, string password)
+    {
+        Disconnect();
+        var generation = connectionGeneration;
+        try
+        {
+            NormalizeDisplayName(); var endpoint = RelayEndpoint.Parse(ConfiguredRelayEndpoint);
+            var connectingClient = new ClientSession(new RelayClientTransport(roomId, password, ++nextRequestId));
+            client = connectingClient;
+            Status = "正在加入公共房间";
+            await connectingClient.ConnectAsync(endpoint.Host, endpoint.Port, CreateHello());
+            if (generation != connectionGeneration) { connectingClient.Dispose(); return; }
+            Status = "已连接公共房间，等待主机握手";
+        }
+        catch (Exception ex)
+        {
+            if (generation != connectionGeneration) return;
+            Disconnect(); Status = "加入公共房间失败：" + ex.Message; Logger.LogError(ex);
+        }
+    }
+
+    internal Task<IReadOnlyList<RelayRoomInfo>> ListPublicRoomsAsync() =>
+        RelayDirectoryClient.ListRoomsAsync(ConfiguredRelayEndpoint, ++nextRequestId);
+    internal bool IsPublicRoomCompatible(RelayRoomInfo room) => room.PluginVersion == PluginVersion &&
+        room.GameFingerprint == gameFingerprint && room.ContentFingerprint == contentFingerprint;
 
     private HelloMessage CreateHello() => new HelloMessage
     {
@@ -442,7 +533,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         });
     }
 
-    private void OnHostCommand(CommandRequest request, PeerConnection peer)
+    private void OnHostCommand(CommandRequest request, IRemotePeer peer)
     {
         Logger.LogInfo($"Received command {request.Command.Kind} request={request.RequestId} from {request.ClientId}");
         var reason = "Host battle is not available.";
@@ -921,10 +1012,12 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 
     internal void Disconnect()
     {
+        connectionGeneration++;
         host?.Dispose(); host = null; client?.Dispose(); client = null;
         pendingAuthorityFrames.Clear(); ResetReplayState(); executor.Reset(); GameplayRandom.ActiveTape = null;
         hostStartAuthorized = false; nativeHostBattleStarted = false; hostBootstrapAttempted = false; hostShutdownPending = false; perspectivePlayerIndex = -1; previousLocalTurnOwned = false;
         pendingMatchEnd = null; applyingAuthorityMatchEnd = false; turnAdvanceRunning = false; authorityAiOperationActive = false;
+        relayJoiningClosed = false; relayStartPending = false;
         pendingLiveNotice = "";
         InputGate.MultiplayerActive = false; InputGate.LocalSeatMayAct = false; Status = "未连接";
     }

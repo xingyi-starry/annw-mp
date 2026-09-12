@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using XingyiStarry.Mp.Protocol;
@@ -22,8 +23,11 @@ internal static class Program
         Test("operation failure codec", OperationFailureRoundTrip);
         Test("protobuf wire format", ProtobufWireFormat);
         Test("all protobuf messages", AllProtobufMessagesRoundTrip);
+        Test("relay protobuf messages", RelayMessagesRoundTrip);
         await TestAsync("packet framing", PacketRoundTrip);
-        Console.WriteLine($"PASS {passed}/10"); return 0;
+        var relayEndpoint = Environment.GetEnvironmentVariable("XINGYI_RELAY_TEST_ENDPOINT");
+        if (!string.IsNullOrWhiteSpace(relayEndpoint)) await TestAsync("C# to Go relay integration", () => RelayIntegration(relayEndpoint));
+        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 11 : 12)}"); return 0;
     }
 
     private static void CommandRoundTrip()
@@ -100,18 +104,28 @@ internal static class Program
         var wireCommand = Wire.GameCommandMessage.Parser.ParseFrom(ProtocolCodec.EncodeCommand(command));
         Equal((uint)CommandKind.Move, wireCommand.Kind); Equal(17L, wireCommand.UnitIds[0]); Equal(-3, wireCommand.TargetX);
 
-        var encodedEnvelope = ProtocolCodec.EncodeEnvelope(new Envelope { Type = MessageType.CommandRequest, Payload = new byte[] { 4, 5 } });
+        var roomId = Guid.NewGuid(); var clientId = Guid.NewGuid(); var targetId = Guid.NewGuid();
+        var encodedEnvelope = ProtocolCodec.EncodeEnvelope(new Envelope { Type = MessageType.CommandRequest,
+            Payload = new byte[] { 4, 5 }, RoomId = roomId, ClientId = clientId,
+            TargetClientId = targetId, Delivery = Delivery.ToHost });
         var wireEnvelope = Wire.WireEnvelope.Parser.ParseFrom(encodedEnvelope);
         Equal((uint)ProtocolConstants.Version, wireEnvelope.ProtocolVersion);
         Equal((uint)MessageType.CommandRequest, wireEnvelope.MessageType);
         Equal(2, wireEnvelope.Payload.Length);
+        Equal(roomId, new Guid(wireEnvelope.RoomId.ToByteArray()));
+        Equal(clientId, new Guid(wireEnvelope.ClientId.ToByteArray()));
+        Equal(targetId, new Guid(wireEnvelope.TargetClientId.ToByteArray()));
+        Equal(Wire.Delivery.ToHost, wireEnvelope.Delivery);
+        var restoredEnvelope = ProtocolCodec.DecodeEnvelope(encodedEnvelope);
+        Equal(roomId, restoredEnvelope.RoomId); Equal(clientId, restoredEnvelope.ClientId);
+        Equal(targetId, restoredEnvelope.TargetClientId); Equal(Delivery.ToHost, restoredEnvelope.Delivery);
     }
 
     private static void AllProtobufMessagesRoundTrip()
     {
         var clientId = Guid.NewGuid(); var roomId = Guid.NewGuid(); var matchId = Guid.NewGuid();
         var hello = ProtocolCodec.DecodeHello(ProtocolCodec.EncodeHello(new HelloMessage
-            { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.4.0", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "玩家" }));
+            { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.5.0", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "玩家" }));
         Equal("玩家", hello.DisplayName); Equal(ProtocolConstants.Version, hello.ProtocolVersion);
 
         var welcome = ProtocolCodec.DecodeWelcome(ProtocolCodec.EncodeWelcome(new WelcomeMessage
@@ -122,6 +136,7 @@ internal static class Program
             { ClientId = clientId, RequestId = 12, SeatId = roomId, Round = 3, AppliedFrameId = 39,
               Command = new GameCommand { Kind = CommandKind.ToggleSleep, UnitIds = new long[] { 7 }, DesiredToggleState = true } }));
         Equal(12UL, request.RequestId); Equal(CommandKind.ToggleSleep, request.Command.Kind); Equal(true, request.Command.DesiredToggleState);
+        Equal(Guid.Empty, request.ClientId);
         var response = ProtocolCodec.DecodeCommandResponse(ProtocolCodec.EncodeCommandResponse(new CommandResponse
             { RequestId = 12, AuthorityFrameId = 42, Reason = "ok" }));
         Equal(42L, response.AuthorityFrameId); Equal("ok", response.Reason);
@@ -150,6 +165,92 @@ internal static class Program
         Equal(-27L, ProtocolCodec.DecodeInt64(ProtocolCodec.EncodeInt64(-27)));
         Equal(clientId, ProtocolCodec.DecodeGuid(ProtocolCodec.EncodeGuid(clientId)));
         Equal("通知", ProtocolCodec.DecodeString(ProtocolCodec.EncodeString("通知")));
+    }
+
+    private static void RelayMessagesRoundTrip()
+    {
+        var roomId = Guid.NewGuid(); var clientId = Guid.NewGuid();
+        var register = ProtocolCodec.DecodeRelayRegisterRoom(ProtocolCodec.EncodeRelayRegisterRoom(new RelayRegisterRoomRequest
+            { RequestId = 1, RoomId = roomId, RoomName = "公共房间", HostName = "主机", Password = "secret",
+              PluginVersion = "plugin", GameFingerprint = "game", ContentFingerprint = "content" }));
+        Equal(roomId, register.RoomId); Equal("secret", register.Password); Equal("主机", register.HostName);
+
+        var update = ProtocolCodec.DecodeRelayUpdateRoom(ProtocolCodec.EncodeRelayUpdateRoom(new RelayUpdateRoomRequest
+            { RequestId = 2, RoomId = roomId, MapTitle = "小型密林", ConnectedPlayers = 2, HumanSeats = 3, Status = RelayRoomStatus.Playing }));
+        Equal(2, update.ConnectedPlayers); Equal(RelayRoomStatus.Playing, update.Status);
+
+        Equal(3UL, ProtocolCodec.DecodeRelayListRoomsRequest(ProtocolCodec.EncodeRelayListRoomsRequest(3)));
+        var list = new RelayListRoomsResponse { RequestId = 3 };
+        list.Rooms.Add(new RelayRoomInfo { RoomId = roomId, RoomName = "公共房间", HostName = "主机", MapTitle = "小型密林",
+            ConnectedPlayers = 2, HumanSeats = 3, HasPassword = true, Status = RelayRoomStatus.Waiting,
+            PluginVersion = "plugin", GameFingerprint = "game", ContentFingerprint = "content" });
+        var restoredList = ProtocolCodec.DecodeRelayRoomList(ProtocolCodec.EncodeRelayRoomList(list));
+        Equal(1, restoredList.Rooms.Count); Equal(true, restoredList.Rooms[0].HasPassword); Equal("content", restoredList.Rooms[0].ContentFingerprint);
+
+        var join = ProtocolCodec.DecodeRelayJoinRoom(ProtocolCodec.EncodeRelayJoinRoom(new RelayJoinRoomRequest
+            { RequestId = 4, RoomId = roomId, Password = "secret" }));
+        Equal(roomId, join.RoomId); Equal("secret", join.Password);
+        var response = ProtocolCodec.DecodeRelayControlResponse(ProtocolCodec.EncodeRelayControlResponse(new RelayControlResponse
+            { RequestId = 4, Success = true, ClientId = clientId }));
+        Equal(true, response.Success); Equal(clientId, response.ClientId);
+        var roomRequest = ProtocolCodec.DecodeRelayRoomRequest(ProtocolCodec.EncodeRelayRoomRequest(new RelayRoomRequest { RequestId = 5, RoomId = roomId }));
+        Equal(roomId, roomRequest.RoomId);
+        var notice = ProtocolCodec.DecodeRelayPeerNotice(ProtocolCodec.EncodeRelayPeerNotice(new RelayPeerNotice { ClientId = clientId, Reason = "left" }));
+        Equal(clientId, notice.ClientId); Equal("left", notice.Reason);
+    }
+
+    private static async Task RelayIntegration(string endpoint)
+    {
+        var split = endpoint.LastIndexOf(':'); var hostName = endpoint.Substring(0, split); var port = int.Parse(endpoint.Substring(split + 1));
+        using var host = new TcpClient(); using var browser = new TcpClient(); using var client = new TcpClient();
+        await host.ConnectAsync(hostName, port); await browser.ConnectAsync(hostName, port); await client.ConnectAsync(hostName, port);
+        var roomId = Guid.NewGuid();
+        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RelayRegisterRoom, Delivery = Delivery.RelayControl,
+            Payload = ProtocolCodec.EncodeRelayRegisterRoom(new RelayRegisterRoomRequest { RequestId = 101, RoomId = roomId,
+                RoomName = "interop", HostName = "host", Password = "secret", PluginVersion = "0.5.0", GameFingerprint = "game", ContentFingerprint = "content" }) }, CancellationToken.None);
+        var registered = ProtocolCodec.DecodeRelayControlResponse((await ReadType(host, MessageType.RelayControlResponse)).Payload);
+        True(registered.Success); True(registered.ClientId.HasValue);
+
+        await PacketFraming.WriteAsync(browser.GetStream(), new Envelope { Type = MessageType.RelayListRooms, Delivery = Delivery.RelayControl,
+            Payload = ProtocolCodec.EncodeRelayListRoomsRequest(102) }, CancellationToken.None);
+        var rooms = ProtocolCodec.DecodeRelayRoomList((await ReadType(browser, MessageType.RelayRoomList)).Payload);
+        True(rooms.Rooms.Exists(value => value.RoomId == roomId && value.HasPassword));
+
+        await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Type = MessageType.RelayJoinRoom, Delivery = Delivery.RelayControl,
+            Payload = ProtocolCodec.EncodeRelayJoinRoom(new RelayJoinRoomRequest { RequestId = 103, RoomId = roomId, Password = "secret" }) }, CancellationToken.None);
+        var joined = ProtocolCodec.DecodeRelayControlResponse((await ReadType(client, MessageType.RelayControlResponse)).Payload);
+        True(joined.Success); True(joined.ClientId.HasValue); var clientId = joined.ClientId!.Value;
+        await ReadType(host, MessageType.RelayPeerJoined);
+
+        await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Type = MessageType.Hello, Delivery = Delivery.ToHost,
+            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeHello(new HelloMessage { PluginVersion = "0.5.0",
+                GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "client" }) }, CancellationToken.None);
+        var hello = await ReadType(host, MessageType.Hello); Equal(clientId, hello.ClientId); Equal(Delivery.ToHost, hello.Delivery);
+
+        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.Welcome, Delivery = Delivery.ToClient,
+            RoomId = roomId, ClientId = registered.ClientId, TargetClientId = clientId,
+            Payload = ProtocolCodec.EncodeWelcome(new WelcomeMessage { ClientId = clientId, RoomId = roomId }) }, CancellationToken.None);
+        await ReadType(client, MessageType.Welcome);
+        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RoomState, Delivery = Delivery.Broadcast,
+            RoomId = roomId, ClientId = registered.ClientId, Payload = ProtocolCodec.EncodeRoom(new RoomSnapshot { RoomId = roomId }) }, CancellationToken.None);
+        await ReadType(client, MessageType.RoomState);
+
+        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RelayCloseJoining, Delivery = Delivery.RelayControl,
+            RoomId = roomId, ClientId = registered.ClientId,
+            Payload = ProtocolCodec.EncodeRelayRoomRequest(new RelayRoomRequest { RequestId = 104, RoomId = roomId }) }, CancellationToken.None);
+        True(ProtocolCodec.DecodeRelayControlResponse((await ReadType(host, MessageType.RelayControlResponse)).Payload).Success);
+    }
+
+    private static async Task<Envelope> ReadType(TcpClient client, MessageType type)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (true)
+        {
+            var envelope = await PacketFraming.ReadAsync(client.GetStream(), timeout.Token) ?? throw new EndOfStreamException();
+            if (envelope.Type == MessageType.Heartbeat) continue;
+            if (envelope.Type != type) throw new InvalidDataException($"Expected {type}, got {envelope.Type}.");
+            return envelope;
+        }
     }
 
     private static void Test(string name, Action action) { action(); passed++; Console.WriteLine("ok  " + name); }

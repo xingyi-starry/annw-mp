@@ -27,7 +27,7 @@ internal static class MainMenuEntry
         foreach (var localized in clone.GetComponentsInChildren<Localized_Txt>(true)) Object.Destroy(localized);
         var button = clone.GetComponent<Button>() ?? clone.GetComponentInChildren<Button>(true);
         button.onClick = new Button.ButtonClickedEvent();
-        button.onClick.AddListener(new UnityAction(() => NativeLobbyPanel.Open(menu)));
+        button.onClick.AddListener(new UnityAction(() => PublicLobbyPanel.Open(menu)));
     }
 
     public static void EnsureVersionText()

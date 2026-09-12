@@ -3,11 +3,23 @@ syntax = "proto3";
 package xingyistarry.mp.v1;
 
 option csharp_namespace = "XingyiStarry.Mp.Protocol.Wire";
+option go_package = "mprelay/internal/wire;wire";
+
+enum Delivery {
+  RELAY_CONTROL   = 0;
+  TO_HOST         = 1;
+  TO_CLIENT       = 2;
+  BROADCAST       = 3;
+}
 
 message WireEnvelope {
   uint32 protocol_version = 1;
   uint32 message_type     = 2;
   bytes  payload          = 3;
+  optional bytes room_id          = 4;
+  optional bytes client_id        = 5;
+  optional bytes target_client_id = 6;
+  Delivery delivery               = 7;
 }
 
 message GuidValue {
@@ -103,12 +115,85 @@ message GameCommandMessage {
 }
 
 message CommandRequestMessage {
-  bytes              client_id        = 1;
+  reserved 1;
+  reserved "client_id";
   uint64             request_id       = 2;
   bytes              seat_id          = 3;
   int32              round            = 4;
   int64              applied_frame_id = 5;
   GameCommandMessage command          = 6;
+}
+
+enum RelayRoomStatus {
+  RELAY_ROOM_WAITING = 0;
+  RELAY_ROOM_CLOSED  = 1;
+  RELAY_ROOM_PLAYING = 2;
+}
+
+message RelayRoomInfo {
+  bytes room_id = 1;
+  string room_name = 2;
+  string host_name = 3;
+  string map_title = 4;
+  int32 connected_players = 5;
+  int32 human_seats = 6;
+  bool has_password = 7;
+  RelayRoomStatus status = 8;
+  string plugin_version = 9;
+  string game_fingerprint = 10;
+  string content_fingerprint = 11;
+}
+
+message RelayRegisterRoomRequest {
+  uint64 request_id = 1;
+  bytes room_id = 2;
+  string room_name = 3;
+  string host_name = 4;
+  string password = 5;
+  string plugin_version = 6;
+  string game_fingerprint = 7;
+  string content_fingerprint = 8;
+}
+
+message RelayUpdateRoomRequest {
+  uint64 request_id = 1;
+  bytes room_id = 2;
+  string map_title = 3;
+  int32 connected_players = 4;
+  int32 human_seats = 5;
+  RelayRoomStatus status = 6;
+}
+
+message RelayListRoomsRequest {
+  uint64 request_id = 1;
+}
+
+message RelayListRoomsResponse {
+  uint64 request_id = 1;
+  repeated RelayRoomInfo rooms = 2;
+}
+
+message RelayJoinRoomRequest {
+  uint64 request_id = 1;
+  bytes room_id = 2;
+  string password = 3;
+}
+
+message RelayControlResponse {
+  uint64 request_id = 1;
+  bool success = 2;
+  string reason = 3;
+  optional bytes client_id = 4;
+}
+
+message RelayRoomRequest {
+  uint64 request_id = 1;
+  bytes room_id = 2;
+}
+
+message RelayPeerNotice {
+  bytes client_id = 1;
+  string reason = 2;
 }
 
 message CommandResponseMessage {
