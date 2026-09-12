@@ -33,7 +33,13 @@ internal static class UnitsDoMoveCapturePatch
             var info = UXM_MovePath.AcquireMovePathInfo(units[i]); var target = HexLogic.QubicToOffset(info.to);
             ids[i] = units[i].unit_id; xs[i] = target.x; ys[i] = target.y;
         }
-        XingyiStarryMpPlugin.Instance?.SubmitCommand(new GameCommand { Kind = CommandKind.Move, UnitIds = ids, UnitTargetXs = xs, UnitTargetYs = ys });
+        var firstInfo = units.Count > 0 ? UXM_MovePath.AcquireMovePathInfo(units[0]) : null;
+        XingyiStarryMpPlugin.Instance?.SubmitCommand(new GameCommand
+        {
+            Kind = CommandKind.Move, UnitIds = ids, UnitTargetXs = xs, UnitTargetYs = ys,
+            TargetX = firstInfo?.goal.x ?? 0, TargetY = firstInfo?.goal.y ?? 0,
+            DesiredToggleState = units.Exists(unit => UXM_MovePath.AcquireMovePathInfo(unit).forced_stay)
+        });
         __result = Empty(); return false;
     }
     private static IEnumerator Empty() { yield break; }

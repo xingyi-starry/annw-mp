@@ -22,7 +22,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.3.14";
+    public const string PluginVersion = "0.4.0";
 
     private Harmony? harmony;
     private HostSession? host;
@@ -543,7 +543,8 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         command.Kind == CommandKind.Move || command.Kind == CommandKind.UndoMove || command.Kind == CommandKind.AutoGuideCancel ||
         command.Kind == CommandKind.DebugAddResources || command.Kind == CommandKind.DebugFillSkill ||
         command.Kind == CommandKind.Surrender || command.Kind == CommandKind.BuildWithMove ||
-        command.Kind == CommandKind.Action && (command.ActionCategory == (int)ActionCate.BUILD || command.ActionCategory == (int)ActionCate.QUICK_BUILD_MINER) ||
+        command.Kind == CommandKind.ToggleStandby || command.Kind == CommandKind.ToggleSleep || command.Kind == CommandKind.Stay ||
+        command.Kind == CommandKind.Action && (command.ActionCategory == (int)ActionCate.BUILD || command.ActionCategory == (int)ActionCate.QUICK_BUILD_MINER || command.ActionCategory == (int)ActionCate.TRAIN) ||
         (command.Kind == CommandKind.Skill || command.Kind == CommandKind.AiSkill) && IsKnownNonRandomSkill();
 
     private static bool IsKnownNonRandomEquipmentMoveAction(GameCommand command) =>

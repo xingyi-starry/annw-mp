@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using XingyiStarry.Mp.Protocol;
+using Wire = XingyiStarry.Mp.Protocol.Wire;
 
 namespace XingyiStarry.Mp.Tests;
 
@@ -19,8 +20,10 @@ internal static class Program
         Test("room round trip", RoomRoundTrip);
         Test("snapshot assembly", SnapshotAssembly);
         Test("operation failure codec", OperationFailureRoundTrip);
+        Test("protobuf wire format", ProtobufWireFormat);
+        Test("all protobuf messages", AllProtobufMessagesRoundTrip);
         await TestAsync("packet framing", PacketRoundTrip);
-        Console.WriteLine($"PASS {passed}/8"); return 0;
+        Console.WriteLine($"PASS {passed}/10"); return 0;
     }
 
     private static void CommandRoundTrip()
@@ -89,6 +92,64 @@ internal static class Program
         var source = new OperationFailedPayload { OperationId = Guid.NewGuid(), Reason = "failed safely" };
         var restored = ProtocolCodec.DecodeOperationFailed(ProtocolCodec.EncodeOperationFailed(source));
         Equal(source.OperationId, restored.OperationId); Equal(source.Reason, restored.Reason);
+    }
+
+    private static void ProtobufWireFormat()
+    {
+        var command = new GameCommand { Kind = CommandKind.Move, UnitIds = new long[] { 17 }, TargetX = -3, TargetY = 8 };
+        var wireCommand = Wire.GameCommandMessage.Parser.ParseFrom(ProtocolCodec.EncodeCommand(command));
+        Equal((uint)CommandKind.Move, wireCommand.Kind); Equal(17L, wireCommand.UnitIds[0]); Equal(-3, wireCommand.TargetX);
+
+        var encodedEnvelope = ProtocolCodec.EncodeEnvelope(new Envelope { Type = MessageType.CommandRequest, Payload = new byte[] { 4, 5 } });
+        var wireEnvelope = Wire.WireEnvelope.Parser.ParseFrom(encodedEnvelope);
+        Equal((uint)ProtocolConstants.Version, wireEnvelope.ProtocolVersion);
+        Equal((uint)MessageType.CommandRequest, wireEnvelope.MessageType);
+        Equal(2, wireEnvelope.Payload.Length);
+    }
+
+    private static void AllProtobufMessagesRoundTrip()
+    {
+        var clientId = Guid.NewGuid(); var roomId = Guid.NewGuid(); var matchId = Guid.NewGuid();
+        var hello = ProtocolCodec.DecodeHello(ProtocolCodec.EncodeHello(new HelloMessage
+            { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.4.0", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "玩家" }));
+        Equal("玩家", hello.DisplayName); Equal(ProtocolConstants.Version, hello.ProtocolVersion);
+
+        var welcome = ProtocolCodec.DecodeWelcome(ProtocolCodec.EncodeWelcome(new WelcomeMessage
+            { ClientId = clientId, RoomId = roomId, MatchId = matchId, LatestFrameId = 41 }));
+        Equal(clientId, welcome.ClientId); Equal(matchId, welcome.MatchId); Equal(41L, welcome.LatestFrameId);
+
+        var request = ProtocolCodec.DecodeCommandRequest(ProtocolCodec.EncodeCommandRequest(new CommandRequest
+            { ClientId = clientId, RequestId = 12, SeatId = roomId, Round = 3, AppliedFrameId = 39,
+              Command = new GameCommand { Kind = CommandKind.ToggleSleep, UnitIds = new long[] { 7 }, DesiredToggleState = true } }));
+        Equal(12UL, request.RequestId); Equal(CommandKind.ToggleSleep, request.Command.Kind); Equal(true, request.Command.DesiredToggleState);
+        var response = ProtocolCodec.DecodeCommandResponse(ProtocolCodec.EncodeCommandResponse(new CommandResponse
+            { RequestId = 12, AuthorityFrameId = 42, Reason = "ok" }));
+        Equal(42L, response.AuthorityFrameId); Equal("ok", response.Reason);
+
+        var operationId = Guid.NewGuid();
+        var begin = ProtocolCodec.DecodeOperationBegin(ProtocolCodec.EncodeOperationBegin(new OperationBeginPayload
+            { OperationId = operationId, SeatId = roomId, RequestId = 12, Round = 3, Command = request.Command }));
+        Equal(operationId, begin.OperationId); Equal(CommandKind.ToggleSleep, begin.Command.Kind);
+        Equal(operationId, ProtocolCodec.DecodeOperationEnd(ProtocolCodec.EncodeOperationEnd(new OperationEndPayload { OperationId = operationId })).OperationId);
+
+        var resolutionSource = new ResolutionPayload { OperationId = operationId, StageId = 2, SettlementOrdinal = 4 };
+        resolutionSource.RandomRecords.Add(new RandomRecord { CallSite = "hurt", Ordinal = 1, ValueKind = 2, IntegerValue = -5, FloatingValue = 0.25 });
+        var resolution = ProtocolCodec.DecodeResolution(ProtocolCodec.EncodeResolution(resolutionSource));
+        Equal(2, resolution.StageId); Equal("hurt", resolution.RandomRecords[0].CallSite); Equal(-5L, resolution.RandomRecords[0].IntegerValue);
+
+        var chain = new AuthorityHashChain(matchId); var frameSource = chain.Append(AuthorityFrameType.Resolution, ProtocolCodec.EncodeResolution(resolutionSource));
+        var frame = ProtocolCodec.DecodeAuthorityFrame(ProtocolCodec.EncodeAuthorityFrame(frameSource));
+        Equal(frameSource.FrameId, frame.FrameId); True(AuthorityHashChain.FixedEquals(frameSource.Hash, frame.Hash));
+
+        var snapshotId = Guid.NewGuid(); var hash = SnapshotCodec.Hash(new byte[] { 1, 2, 3 });
+        var manifest = ProtocolCodec.DecodeSnapshotManifest(ProtocolCodec.EncodeSnapshotManifest(new SnapshotManifest
+            { SnapshotId = snapshotId, MatchId = matchId, FrameId = 42, FrameHash = hash, CompressedLength = 3, ChunkCount = 1, ContentHash = hash }));
+        Equal(snapshotId, manifest.SnapshotId); Equal(42L, manifest.FrameId);
+        var chunk = ProtocolCodec.DecodeSnapshotChunk(ProtocolCodec.EncodeSnapshotChunk(new SnapshotChunk { SnapshotId = snapshotId, Index = 0, Data = new byte[] { 1, 2, 3 } }));
+        Equal(3, chunk.Data.Length);
+        Equal(-27L, ProtocolCodec.DecodeInt64(ProtocolCodec.EncodeInt64(-27)));
+        Equal(clientId, ProtocolCodec.DecodeGuid(ProtocolCodec.EncodeGuid(clientId)));
+        Equal("通知", ProtocolCodec.DecodeString(ProtocolCodec.EncodeString("通知")));
     }
 
     private static void Test(string name, Action action) { action(); passed++; Console.WriteLine("ok  " + name); }

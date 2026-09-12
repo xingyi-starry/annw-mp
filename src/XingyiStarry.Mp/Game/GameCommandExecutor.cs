@@ -169,6 +169,9 @@ internal sealed class GameCommandExecutor
             case CommandKind.AiSkill: return ExecuteAiSkill(command);
             case CommandKind.TurnAdvance: return ExecuteTurnAdvance();
             case CommandKind.Surrender: return ExecuteSurrender(command);
+            case CommandKind.ToggleStandby: return ExecuteToggleState(command, sleep: false);
+            case CommandKind.ToggleSleep: return ExecuteToggleState(command, sleep: true);
+            case CommandKind.Stay: return ExecuteStay(command);
             default: return Unsupported(command.Kind);
         }
     }
@@ -324,12 +327,53 @@ internal sealed class GameCommandExecutor
         {
             var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[i]);
             var target = new Inctor2(command.UnitTargetXs[i], command.UnitTargetYs[i]);
-            var info = new MovePathInfo { unit = unit, from = HexLogic.OffsetToQubic(unit.pos), to = HexLogic.OffsetToQubic(target), cost_remain = unit.move.value };
+            var goal = new Inctor2(command.TargetX, command.TargetY);
+            var goalField = new GoalDistField(goal, unit.template.sd_unit.chassis);
+            var forcedStay = command.DesiredToggleState &&
+                (bool)(HarmonyLib.AccessTools.Method(typeof(UnitData), "IsStayAttack")?.Invoke(unit, null) ?? false);
+            var info = new MovePathInfo
+            {
+                unit = unit, from = HexLogic.OffsetToQubic(unit.pos), to = HexLogic.OffsetToQubic(target), cost_remain = unit.move.value,
+                goal = goal, goal_clipped = target != goal, goal_reachable = goalField.IsReachable(unit.pos), forced_stay = forcedStay
+            };
             var getMovePath = HarmonyLib.AccessTools.Method(typeof(UnitData), "GetMovePath");
             info.path_ipos = (System.Collections.Generic.List<Inctor2>)getMovePath.Invoke(unit, new object?[] { target, null, info, false });
             GS_Battle.self.selected_units.Add(unit); ordered.Add(unit); infos.Add(unit, info);
         }
         yield return UX_Manager.self.proc_UnitsDoMove();
+    }
+
+    private static IEnumerator ExecuteToggleState(GameCommand command, bool sleep)
+    {
+        var players = new System.Collections.Generic.HashSet<Player>();
+        foreach (var unit in ResolveUnits(command))
+        {
+            if (sleep)
+            {
+                unit.sleeping = command.DesiredToggleState;
+                unit.skipping = false;
+            }
+            else
+            {
+                unit.skipping = command.DesiredToggleState;
+                unit.sleeping = false;
+            }
+            HarmonyLib.AccessTools.Method(typeof(UnitData), "ReDraw")?.Invoke(unit, new object[] { false });
+            if (unit.player is not null) players.Add(unit.player);
+        }
+        var updateCount = HarmonyLib.AccessTools.Method(typeof(Player), "UpdateUnactionedUnitCount");
+        foreach (var player in players) updateCount?.Invoke(player, null);
+        yield break;
+    }
+
+    private static IEnumerator ExecuteStay(GameCommand command)
+    {
+        var units = ResolveUnits(command);
+        foreach (var unit in units) unit.DoMove(unit.pos);
+        while (units.Exists(unit => unit.in_animation)) yield return 0f;
+        UXM_MovePath.ClearMovePathInfos();
+        BattleEventBus.self.TriggerUnitMovedAll();
+        UX_Manager.self.CheckUnitsAndSetUXState();
     }
 
     private static IEnumerator ExecuteEquipmentAction(GameCommand command)

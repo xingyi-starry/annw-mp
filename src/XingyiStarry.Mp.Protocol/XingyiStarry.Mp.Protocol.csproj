@@ -4,4 +4,9 @@
     <AssemblyName>XingyiStarry.Mp.Protocol</AssemblyName>
     <RootNamespace>XingyiStarry.Mp.Protocol</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.25.3" />
+    <PackageReference Include="Grpc.Tools" Version="2.62.0" PrivateAssets="All" />
+    <Protobuf Include="Protos\multiplayer.proto" GrpcServices="None" />
+  </ItemGroup>
 </Project>

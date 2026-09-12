@@ -1,280 +1,289 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using Google.Protobuf;
+using Wire = XingyiStarry.Mp.Protocol.Wire;
 
 namespace XingyiStarry.Mp.Protocol;
 
 public static class ProtocolCodec
 {
+    private const int MaxSeats = 64;
+    private const int MaxUnits = 4096;
+    private const int MaxRandomRecords = 65536;
+
+    public static byte[] EncodeEnvelope(Envelope value) => Serialize(new Wire.WireEnvelope
+    {
+        ProtocolVersion = ProtocolConstants.Version,
+        MessageType = (uint)value.Type,
+        Payload = ByteString.CopyFrom(value.Payload)
+    });
+
+    public static Envelope DecodeEnvelope(byte[] bytes)
+    {
+        var wire = Parse(Wire.WireEnvelope.Parser, bytes);
+        if (wire.ProtocolVersion != ProtocolConstants.Version) throw new InvalidDataException("Unsupported envelope version.");
+        var type = (MessageType)wire.MessageType;
+        if (!Enum.IsDefined(typeof(MessageType), type)) throw new InvalidDataException("Unknown message type.");
+        return new Envelope { Type = type, Payload = wire.Payload.ToByteArray() };
+    }
+
+    public static byte[] EncodeHello(HelloMessage value) => Serialize(new Wire.Hello
+    {
+        ProtocolVersion = value.ProtocolVersion, PluginVersion = value.PluginVersion,
+        GameFingerprint = value.GameFingerprint, ContentFingerprint = value.ContentFingerprint,
+        DisplayName = value.DisplayName
+    });
+
+    public static HelloMessage DecodeHello(byte[] bytes)
+    {
+        var wire = Parse(Wire.Hello.Parser, bytes);
+        return new HelloMessage { ProtocolVersion = CheckedUShort(wire.ProtocolVersion), PluginVersion = wire.PluginVersion,
+            GameFingerprint = wire.GameFingerprint, ContentFingerprint = wire.ContentFingerprint, DisplayName = wire.DisplayName };
+    }
+
     public static byte[] EncodeWelcome(WelcomeMessage value)
     {
-        using var w = new CanonicalWriter();
-        w.Write(value.ClientId); w.Write(value.RoomId); w.Write(value.MatchId.HasValue);
-        if (value.MatchId.HasValue) w.Write(value.MatchId.Value);
-        w.Write(value.LatestFrameId); return w.ToArray();
+        var wire = new Wire.Welcome { ClientId = GuidBytes(value.ClientId), RoomId = GuidBytes(value.RoomId), LatestFrameId = value.LatestFrameId };
+        if (value.MatchId.HasValue) wire.MatchId = GuidBytes(value.MatchId.Value);
+        return Serialize(wire);
     }
 
     public static WelcomeMessage DecodeWelcome(byte[] bytes)
     {
-        using var r = new CanonicalReader(bytes);
-        var value = new WelcomeMessage { ClientId = r.ReadGuid(), RoomId = r.ReadGuid() };
-        if (r.ReadBoolean()) value.MatchId = r.ReadGuid();
-        value.LatestFrameId = r.ReadInt64(); r.EnsureEnd(); return value;
+        var wire = Parse(Wire.Welcome.Parser, bytes);
+        return new WelcomeMessage { ClientId = ReadGuid(wire.ClientId), RoomId = ReadGuid(wire.RoomId),
+            MatchId = wire.HasMatchId ? ReadGuid(wire.MatchId) : null, LatestFrameId = wire.LatestFrameId };
     }
-
-    public static byte[] EncodeCommandRequest(CommandRequest value)
-    {
-        using var w = new CanonicalWriter();
-        w.Write(value.ClientId); w.Write(value.RequestId); w.Write(value.SeatId); w.Write(value.Round);
-        w.Write(value.AppliedFrameId); w.Write(EncodeCommand(value.Command)); return w.ToArray();
-    }
-
-    public static CommandRequest DecodeCommandRequest(byte[] bytes)
-    {
-        using var r = new CanonicalReader(bytes);
-        var value = new CommandRequest { ClientId = r.ReadGuid(), RequestId = r.ReadUInt64(), SeatId = r.ReadGuid(), Round = r.ReadInt32(), AppliedFrameId = r.ReadInt64(), Command = DecodeCommand(r.ReadBytes()) };
-        r.EnsureEnd(); return value;
-    }
-
-    public static byte[] EncodeCommandResponse(CommandResponse value)
-    {
-        using var w = new CanonicalWriter(); w.Write(value.RequestId); w.Write(value.AuthorityFrameId); w.Write(value.Reason); return w.ToArray();
-    }
-
-    public static CommandResponse DecodeCommandResponse(byte[] bytes)
-    {
-        using var r = new CanonicalReader(bytes);
-        var value = new CommandResponse { RequestId = r.ReadUInt64(), AuthorityFrameId = r.ReadInt64(), Reason = r.ReadStringValue() };
-        r.EnsureEnd(); return value;
-    }
-
-    public static byte[] EncodeInt64(long value) { using var w = new CanonicalWriter(); w.Write(value); return w.ToArray(); }
-    public static long DecodeInt64(byte[] bytes) { using var r = new CanonicalReader(bytes); var value = r.ReadInt64(); r.EnsureEnd(); return value; }
-    public static byte[] EncodeGuid(Guid value) { using var w = new CanonicalWriter(); w.Write(value); return w.ToArray(); }
-    public static Guid DecodeGuid(byte[] bytes) { using var r = new CanonicalReader(bytes); var value = r.ReadGuid(); r.EnsureEnd(); return value; }
-    public static byte[] EncodeString(string value) { using var w = new CanonicalWriter(); w.Write(value); return w.ToArray(); }
-    public static string DecodeString(byte[] bytes) { using var r = new CanonicalReader(bytes); var value = r.ReadStringValue(); r.EnsureEnd(); return value; }
 
     public static byte[] EncodeRoom(RoomSnapshot value)
     {
-        using var w = new CanonicalWriter();
-        w.Write(value.RoomId); w.Write(value.MatchId.HasValue); if (value.MatchId.HasValue) w.Write(value.MatchId.Value); w.Write(value.MatchStarted);
-        w.Write(value.DraftRevision); w.Write(value.MapId); w.Write(value.MapTitle); w.Write(value.FowType); w.Write(value.WinCondition); w.Write(value.QuickStart);
-        w.Write(value.Seats.Count);
+        if (value.Seats.Count > MaxSeats) throw new InvalidDataException("Invalid seat count.");
+        var wire = new Wire.Room { RoomId = GuidBytes(value.RoomId), MatchStarted = value.MatchStarted,
+            DraftRevision = value.DraftRevision, MapId = value.MapId, MapTitle = value.MapTitle,
+            FowType = value.FowType, WinCondition = value.WinCondition, QuickStart = value.QuickStart };
+        if (value.MatchId.HasValue) wire.MatchId = GuidBytes(value.MatchId.Value);
         foreach (var seat in value.Seats)
         {
-            w.Write(seat.SeatId); w.Write(seat.LobbySlotIndex); w.Write(seat.PlayerIndex); w.Write(seat.DisplayName); w.Write(seat.OriginallyHuman);
-            w.Write(seat.Connected); w.Write(seat.Ready); w.Write(seat.AiControlled); w.Write(seat.ClientId.HasValue);
-            if (seat.ClientId.HasValue) w.Write(seat.ClientId.Value);
-            w.Write(seat.Controller); w.Write(seat.Team); w.Write(seat.Color); w.Write(seat.Position); w.Write(seat.PositionRandom);
-            w.Write(seat.ResourceMultiplier); w.Write(seat.AiIntelligence); w.Write(seat.CommanderId);
-            w.Write(seat.CommanderMode); w.Write(seat.SkillId); w.Write(seat.PassiveIds.Count);
-            foreach (var passive in seat.PassiveIds) w.Write(passive);
+            if (seat.PassiveIds.Count > MaxSeats) throw new InvalidDataException("Invalid commander passive count.");
+            var item = new Wire.Seat { SeatId = GuidBytes(seat.SeatId), LobbySlotIndex = seat.LobbySlotIndex,
+                PlayerIndex = seat.PlayerIndex, DisplayName = seat.DisplayName, OriginallyHuman = seat.OriginallyHuman,
+                Connected = seat.Connected, Ready = seat.Ready, AiControlled = seat.AiControlled,
+                Controller = seat.Controller, Team = seat.Team, Color = seat.Color, Position = seat.Position,
+                PositionRandom = seat.PositionRandom, ResourceMultiplier = seat.ResourceMultiplier,
+                AiIntelligence = seat.AiIntelligence, CommanderId = seat.CommanderId,
+                CommanderMode = seat.CommanderMode, SkillId = seat.SkillId };
+            if (seat.ClientId.HasValue) item.ClientId = GuidBytes(seat.ClientId.Value);
+            item.PassiveIds.Add(seat.PassiveIds);
+            wire.Seats.Add(item);
         }
-        return w.ToArray();
+        return Serialize(wire);
     }
 
     public static RoomSnapshot DecodeRoom(byte[] bytes)
     {
-        using var r = new CanonicalReader(bytes);
-        var value = new RoomSnapshot { RoomId = r.ReadGuid() };
-        if (r.ReadBoolean()) value.MatchId = r.ReadGuid();
-        value.MatchStarted = r.ReadBoolean();
-        value.DraftRevision = r.ReadInt32(); value.MapId = r.ReadStringValue(); value.MapTitle = r.ReadStringValue();
-        value.FowType = r.ReadInt32(); value.WinCondition = r.ReadInt32(); value.QuickStart = r.ReadInt32();
-        var count = r.ReadInt32();
-        if (count < 0 || count > 64) throw new InvalidDataException("Invalid seat count.");
-        for (var i = 0; i < count; i++)
+        var wire = Parse(Wire.Room.Parser, bytes);
+        if (wire.Seats.Count > MaxSeats) throw new InvalidDataException("Invalid seat count.");
+        var value = new RoomSnapshot { RoomId = ReadGuid(wire.RoomId), MatchId = wire.HasMatchId ? ReadGuid(wire.MatchId) : null,
+            MatchStarted = wire.MatchStarted, DraftRevision = wire.DraftRevision, MapId = wire.MapId,
+            MapTitle = wire.MapTitle, FowType = wire.FowType, WinCondition = wire.WinCondition, QuickStart = wire.QuickStart };
+        foreach (var seat in wire.Seats)
         {
-            var seat = new SeatInfo { SeatId = r.ReadGuid(), LobbySlotIndex = r.ReadInt32(), PlayerIndex = r.ReadInt32(), DisplayName = r.ReadStringValue(), OriginallyHuman = r.ReadBoolean(), Connected = r.ReadBoolean(), Ready = r.ReadBoolean(), AiControlled = r.ReadBoolean() };
-            if (r.ReadBoolean()) seat.ClientId = r.ReadGuid();
-            seat.Controller = r.ReadInt32(); seat.Team = r.ReadInt32(); seat.Color = r.ReadInt32(); seat.Position = r.ReadInt32(); seat.PositionRandom = r.ReadBoolean();
-            seat.ResourceMultiplier = r.ReadSingle(); seat.AiIntelligence = r.ReadSingle(); seat.CommanderId = r.ReadStringValue();
-            seat.CommanderMode = r.ReadInt32(); seat.SkillId = r.ReadStringValue();
-            var passiveCount = r.ReadInt32();
-            if (passiveCount < 0 || passiveCount > 64) throw new InvalidDataException("Invalid commander passive count.");
-            for (var passiveIndex = 0; passiveIndex < passiveCount; passiveIndex++) seat.PassiveIds.Add(r.ReadStringValue());
-            value.Seats.Add(seat);
+            if (seat.PassiveIds.Count > MaxSeats) throw new InvalidDataException("Invalid commander passive count.");
+            var item = new SeatInfo { SeatId = ReadGuid(seat.SeatId), LobbySlotIndex = seat.LobbySlotIndex,
+                PlayerIndex = seat.PlayerIndex, DisplayName = seat.DisplayName, OriginallyHuman = seat.OriginallyHuman,
+                Connected = seat.Connected, Ready = seat.Ready, AiControlled = seat.AiControlled,
+                ClientId = seat.HasClientId ? ReadGuid(seat.ClientId) : null, Controller = seat.Controller,
+                Team = seat.Team, Color = seat.Color, Position = seat.Position, PositionRandom = seat.PositionRandom,
+                ResourceMultiplier = seat.ResourceMultiplier, AiIntelligence = seat.AiIntelligence,
+                CommanderId = seat.CommanderId, CommanderMode = seat.CommanderMode, SkillId = seat.SkillId };
+            item.PassiveIds.AddRange(seat.PassiveIds);
+            value.Seats.Add(item);
         }
-        r.EnsureEnd(); return value;
+        return value;
     }
 
-    public static byte[] EncodeEnvelope(Envelope envelope)
+    public static byte[] EncodeCommand(GameCommand value) => Serialize(ToWire(value));
+    public static GameCommand DecodeCommand(byte[] bytes) => FromWire(Parse(Wire.GameCommandMessage.Parser, bytes));
+
+    public static byte[] EncodeCommandRequest(CommandRequest value) => Serialize(new Wire.CommandRequestMessage
     {
-        using var w = new CanonicalWriter();
-        w.Write(ProtocolConstants.Version);
-        w.Write((ushort)envelope.Type);
-        w.Write(envelope.Payload);
-        return w.ToArray();
+        ClientId = GuidBytes(value.ClientId), RequestId = value.RequestId, SeatId = GuidBytes(value.SeatId),
+        Round = value.Round, AppliedFrameId = value.AppliedFrameId, Command = ToWire(value.Command)
+    });
+
+    public static CommandRequest DecodeCommandRequest(byte[] bytes)
+    {
+        var wire = Parse(Wire.CommandRequestMessage.Parser, bytes);
+        if (wire.Command is null) throw new InvalidDataException("Command request has no command.");
+        return new CommandRequest { ClientId = ReadGuid(wire.ClientId), RequestId = wire.RequestId,
+            SeatId = ReadGuid(wire.SeatId), Round = wire.Round, AppliedFrameId = wire.AppliedFrameId,
+            Command = FromWire(wire.Command) };
     }
 
-    public static Envelope DecodeEnvelope(byte[] bytes)
+    public static byte[] EncodeCommandResponse(CommandResponse value) => Serialize(new Wire.CommandResponseMessage
+        { RequestId = value.RequestId, AuthorityFrameId = value.AuthorityFrameId, Reason = value.Reason });
+
+    public static CommandResponse DecodeCommandResponse(byte[] bytes)
     {
-        using var r = new CanonicalReader(bytes);
-        var version = r.ReadUInt16();
-        if (version != ProtocolConstants.Version) throw new InvalidDataException("Unsupported envelope version.");
-        var result = new Envelope { Type = (MessageType)r.ReadUInt16(), Payload = r.ReadBytes() };
-        r.EnsureEnd();
-        if (!Enum.IsDefined(typeof(MessageType), result.Type)) throw new InvalidDataException("Unknown message type.");
-        return result;
+        var wire = Parse(Wire.CommandResponseMessage.Parser, bytes);
+        return new CommandResponse { RequestId = wire.RequestId, AuthorityFrameId = wire.AuthorityFrameId, Reason = wire.Reason };
     }
 
-    public static byte[] EncodeHello(HelloMessage value)
+    public static byte[] EncodeOperationBegin(OperationBeginPayload value) => Serialize(new Wire.OperationBegin
+        { OperationId = GuidBytes(value.OperationId), SeatId = GuidBytes(value.SeatId), RequestId = value.RequestId,
+          Round = value.Round, Command = ToWire(value.Command) });
+
+    public static OperationBeginPayload DecodeOperationBegin(byte[] bytes)
     {
-        using var w = new CanonicalWriter();
-        w.Write(value.ProtocolVersion); w.Write(value.PluginVersion); w.Write(value.GameFingerprint);
-        w.Write(value.ContentFingerprint); w.Write(value.DisplayName);
-        return w.ToArray();
+        var wire = Parse(Wire.OperationBegin.Parser, bytes);
+        if (wire.Command is null) throw new InvalidDataException("Operation has no command.");
+        return new OperationBeginPayload { OperationId = ReadGuid(wire.OperationId), SeatId = ReadGuid(wire.SeatId),
+            RequestId = wire.RequestId, Round = wire.Round, Command = FromWire(wire.Command) };
     }
 
-    public static HelloMessage DecodeHello(byte[] bytes)
-    {
-        using var r = new CanonicalReader(bytes);
-        var value = new HelloMessage { ProtocolVersion = r.ReadUInt16(), PluginVersion = r.ReadStringValue(), GameFingerprint = r.ReadStringValue(), ContentFingerprint = r.ReadStringValue(), DisplayName = r.ReadStringValue() };
-        r.EnsureEnd(); return value;
-    }
+    public static byte[] EncodeOperationEnd(OperationEndPayload value) => Serialize(new Wire.OperationEnd { OperationId = GuidBytes(value.OperationId) });
+    public static OperationEndPayload DecodeOperationEnd(byte[] bytes) => new OperationEndPayload { OperationId = ReadGuid(Parse(Wire.OperationEnd.Parser, bytes).OperationId) };
 
-    public static byte[] EncodeCommand(GameCommand value)
+    public static byte[] EncodeOperationFailed(OperationFailedPayload value) => Serialize(new Wire.OperationFailed { OperationId = GuidBytes(value.OperationId), Reason = value.Reason });
+    public static OperationFailedPayload DecodeOperationFailed(byte[] bytes)
     {
-        using var w = new CanonicalWriter();
-        w.Write((ushort)value.Kind); w.Write(value.UnitIds.Length);
-        foreach (var id in value.UnitIds) w.Write(id);
-        w.Write(value.TargetX); w.Write(value.TargetY);
-        if (value.UnitTargetXs.Length != value.UnitTargetYs.Length) throw new InvalidDataException("Move target arrays have different lengths.");
-        w.Write(value.UnitTargetXs.Length);
-        for (var i = 0; i < value.UnitTargetXs.Length; i++) { w.Write(value.UnitTargetXs[i]); w.Write(value.UnitTargetYs[i]); }
-        w.Write(value.ActionCategory); w.Write(value.ActionId);
-        w.Write(value.TemplateId); w.Write(value.PassengerUnitId); w.Write(value.DesiredToggleState);
-        w.Write(value.DebugPlayerIndex); w.Write(value.DebugMetalDelta); w.Write(value.DebugPowerDelta); w.Write(value.AiActionType);
-        return w.ToArray();
-    }
-
-    public static GameCommand DecodeCommand(byte[] bytes)
-    {
-        using var r = new CanonicalReader(bytes);
-        var value = new GameCommand { Kind = (CommandKind)r.ReadUInt16() };
-        var count = r.ReadInt32();
-        if (count < 0 || count > 4096) throw new InvalidDataException("Invalid unit count.");
-        value.UnitIds = new long[count];
-        for (var i = 0; i < count; i++) value.UnitIds[i] = r.ReadInt64();
-        value.TargetX = r.ReadInt32(); value.TargetY = r.ReadInt32();
-        var targetCount = r.ReadInt32();
-        if (targetCount < 0 || targetCount > 4096) throw new InvalidDataException("Invalid move target count.");
-        value.UnitTargetXs = new int[targetCount]; value.UnitTargetYs = new int[targetCount];
-        for (var i = 0; i < targetCount; i++) { value.UnitTargetXs[i] = r.ReadInt32(); value.UnitTargetYs[i] = r.ReadInt32(); }
-        value.ActionCategory = r.ReadInt32();
-        value.ActionId = r.ReadStringValue(); value.TemplateId = r.ReadStringValue(); value.PassengerUnitId = r.ReadInt64();
-        value.DesiredToggleState = r.ReadBoolean();
-        value.DebugPlayerIndex = r.ReadInt32(); value.DebugMetalDelta = r.ReadInt32(); value.DebugPowerDelta = r.ReadInt32(); value.AiActionType = r.ReadInt32();
-        r.EnsureEnd(); return value;
+        var wire = Parse(Wire.OperationFailed.Parser, bytes);
+        return new OperationFailedPayload { OperationId = ReadGuid(wire.OperationId), Reason = wire.Reason };
     }
 
     public static byte[] EncodeResolution(ResolutionPayload value)
     {
-        using var w = new CanonicalWriter();
-        w.Write(value.OperationId); w.Write(value.StageId); w.Write(value.SettlementOrdinal); w.Write(value.RandomRecords.Count);
-        foreach (var item in value.RandomRecords)
-        {
-            w.Write(item.CallSite); w.Write(item.Ordinal); w.Write(item.ValueKind); w.Write(item.IntegerValue); w.Write(item.FloatingValue);
-        }
-        return w.ToArray();
-    }
-
-    public static byte[] EncodeOperationBegin(OperationBeginPayload value)
-    {
-        using var w = new CanonicalWriter();
-        w.Write(value.OperationId); w.Write(value.SeatId); w.Write(value.RequestId); w.Write(value.Round); w.Write(EncodeCommand(value.Command));
-        return w.ToArray();
-    }
-
-    public static OperationBeginPayload DecodeOperationBegin(byte[] bytes)
-    {
-        using var r = new CanonicalReader(bytes);
-        var value = new OperationBeginPayload { OperationId = r.ReadGuid(), SeatId = r.ReadGuid(), RequestId = r.ReadUInt64(), Round = r.ReadInt32(), Command = DecodeCommand(r.ReadBytes()) };
-        r.EnsureEnd(); return value;
-    }
-
-    public static byte[] EncodeOperationEnd(OperationEndPayload value)
-    {
-        using var w = new CanonicalWriter(); w.Write(value.OperationId); return w.ToArray();
-    }
-
-    public static OperationEndPayload DecodeOperationEnd(byte[] bytes)
-    {
-        using var r = new CanonicalReader(bytes);
-        var value = new OperationEndPayload { OperationId = r.ReadGuid() };
-        r.EnsureEnd(); return value;
-    }
-
-    public static byte[] EncodeOperationFailed(OperationFailedPayload value)
-    {
-        using var w = new CanonicalWriter(); w.Write(value.OperationId); w.Write(value.Reason); return w.ToArray();
-    }
-
-    public static OperationFailedPayload DecodeOperationFailed(byte[] bytes)
-    {
-        using var r = new CanonicalReader(bytes);
-        var value = new OperationFailedPayload { OperationId = r.ReadGuid(), Reason = r.ReadStringValue() };
-        r.EnsureEnd(); return value;
+        if (value.RandomRecords.Count > MaxRandomRecords) throw new InvalidDataException("Invalid random record count.");
+        var wire = new Wire.Resolution { OperationId = GuidBytes(value.OperationId), StageId = value.StageId, SettlementOrdinal = value.SettlementOrdinal };
+        wire.RandomRecords.Add(value.RandomRecords.Select(x => new Wire.RandomRecordMessage { CallSite = x.CallSite,
+            Ordinal = x.Ordinal, ValueKind = x.ValueKind, IntegerValue = x.IntegerValue, FloatingValue = x.FloatingValue }));
+        return Serialize(wire);
     }
 
     public static ResolutionPayload DecodeResolution(byte[] bytes)
     {
-        using var r = new CanonicalReader(bytes);
-        var value = new ResolutionPayload { OperationId = r.ReadGuid(), StageId = r.ReadInt32(), SettlementOrdinal = r.ReadInt32() };
-        var count = r.ReadInt32();
-        if (count < 0 || count > 65536) throw new InvalidDataException("Invalid random record count.");
-        for (var i = 0; i < count; i++) value.RandomRecords.Add(new RandomRecord { CallSite = r.ReadStringValue(), Ordinal = r.ReadInt32(), ValueKind = r.ReadByte(), IntegerValue = r.ReadInt64(), FloatingValue = r.ReadDouble() });
-        r.EnsureEnd(); return value;
-    }
-
-    public static byte[] EncodeAuthorityFrameForHash(AuthorityFrame value)
-    {
-        using var w = new CanonicalWriter();
-        w.Write(ProtocolConstants.HashDomain); w.Write(value.MatchId); w.Write(value.FrameId); w.Write(value.PrevHash);
-        w.Write((byte)value.FrameType); w.Write(value.Payload);
-        return w.ToArray();
-    }
-
-    public static byte[] EncodeAuthorityFrame(AuthorityFrame value)
-    {
-        using var w = new CanonicalWriter();
-        w.Write(value.MatchId); w.Write(value.FrameId); w.Write(value.PrevHash); w.Write((byte)value.FrameType); w.Write(value.Payload); w.Write(value.Hash);
-        return w.ToArray();
-    }
-
-    public static AuthorityFrame DecodeAuthorityFrame(byte[] bytes)
-    {
-        using var r = new CanonicalReader(bytes);
-        var value = new AuthorityFrame { MatchId = r.ReadGuid(), FrameId = r.ReadInt64(), PrevHash = r.ReadBytes(64), FrameType = (AuthorityFrameType)r.ReadByte(), Payload = r.ReadBytes(), Hash = r.ReadBytes(64) };
-        r.EnsureEnd(); return value;
-    }
-
-    public static byte[] EncodeSnapshotManifest(SnapshotManifest value)
-    {
-        using var w = new CanonicalWriter();
-        w.Write(value.SnapshotId); w.Write(value.MatchId); w.Write(value.FrameId); w.Write(value.FrameHash);
-        w.Write(value.CompressedLength); w.Write(value.ChunkCount); w.Write(value.ContentHash); return w.ToArray();
-    }
-
-    public static SnapshotManifest DecodeSnapshotManifest(byte[] bytes)
-    {
-        using var r = new CanonicalReader(bytes);
-        var value = new SnapshotManifest { SnapshotId = r.ReadGuid(), MatchId = r.ReadGuid(), FrameId = r.ReadInt64(), FrameHash = r.ReadBytes(64), CompressedLength = r.ReadInt32(), ChunkCount = r.ReadInt32(), ContentHash = r.ReadBytes(64) };
-        r.EnsureEnd();
-        if (value.CompressedLength < 0 || value.CompressedLength > ProtocolConstants.MaxSnapshotBytes || value.ChunkCount < 0 || value.ChunkCount > 65536) throw new InvalidDataException("Invalid snapshot manifest bounds.");
+        var wire = Parse(Wire.Resolution.Parser, bytes);
+        if (wire.RandomRecords.Count > MaxRandomRecords) throw new InvalidDataException("Invalid random record count.");
+        var value = new ResolutionPayload { OperationId = ReadGuid(wire.OperationId), StageId = wire.StageId, SettlementOrdinal = wire.SettlementOrdinal };
+        value.RandomRecords.AddRange(wire.RandomRecords.Select(x => new RandomRecord { CallSite = x.CallSite,
+            Ordinal = x.Ordinal, ValueKind = CheckedByte(x.ValueKind), IntegerValue = x.IntegerValue, FloatingValue = x.FloatingValue }));
         return value;
     }
 
-    public static byte[] EncodeSnapshotChunk(SnapshotChunk value)
+    public static byte[] EncodeAuthorityFrame(AuthorityFrame value) => Serialize(new Wire.AuthorityFrameMessage
     {
-        using var w = new CanonicalWriter(); w.Write(value.SnapshotId); w.Write(value.Index); w.Write(value.Data); return w.ToArray();
+        MatchId = GuidBytes(value.MatchId), FrameId = value.FrameId, PreviousHash = ByteString.CopyFrom(value.PrevHash),
+        FrameType = (uint)value.FrameType, Payload = ByteString.CopyFrom(value.Payload), Hash = ByteString.CopyFrom(value.Hash)
+    });
+
+    public static AuthorityFrame DecodeAuthorityFrame(byte[] bytes)
+    {
+        var wire = Parse(Wire.AuthorityFrameMessage.Parser, bytes);
+        var type = (AuthorityFrameType)wire.FrameType;
+        if (!Enum.IsDefined(typeof(AuthorityFrameType), type)) throw new InvalidDataException("Unknown authority frame type.");
+        return new AuthorityFrame { MatchId = ReadGuid(wire.MatchId), FrameId = wire.FrameId,
+            PrevHash = CheckedHash(wire.PreviousHash), FrameType = type, Payload = wire.Payload.ToByteArray(), Hash = CheckedHash(wire.Hash) };
     }
+
+    public static byte[] EncodeAuthorityFrameForHash(AuthorityFrame value) => Serialize(new Wire.AuthorityHashInput
+    {
+        Domain = ProtocolConstants.HashDomain, MatchId = GuidBytes(value.MatchId), FrameId = value.FrameId,
+        PreviousHash = ByteString.CopyFrom(value.PrevHash), FrameType = (uint)value.FrameType,
+        Payload = ByteString.CopyFrom(value.Payload)
+    });
+
+    public static byte[] EncodeSnapshotManifest(SnapshotManifest value) => Serialize(new Wire.SnapshotManifestMessage
+    {
+        SnapshotId = GuidBytes(value.SnapshotId), MatchId = GuidBytes(value.MatchId), FrameId = value.FrameId,
+        FrameHash = ByteString.CopyFrom(value.FrameHash), CompressedLength = value.CompressedLength,
+        ChunkCount = value.ChunkCount, ContentHash = ByteString.CopyFrom(value.ContentHash)
+    });
+
+    public static SnapshotManifest DecodeSnapshotManifest(byte[] bytes)
+    {
+        var wire = Parse(Wire.SnapshotManifestMessage.Parser, bytes);
+        var value = new SnapshotManifest { SnapshotId = ReadGuid(wire.SnapshotId), MatchId = ReadGuid(wire.MatchId),
+            FrameId = wire.FrameId, FrameHash = CheckedHash(wire.FrameHash), CompressedLength = wire.CompressedLength,
+            ChunkCount = wire.ChunkCount, ContentHash = CheckedHash(wire.ContentHash) };
+        if (value.CompressedLength < 0 || value.CompressedLength > ProtocolConstants.MaxSnapshotBytes || value.ChunkCount < 0 || value.ChunkCount > 65536)
+            throw new InvalidDataException("Invalid snapshot manifest bounds.");
+        return value;
+    }
+
+    public static byte[] EncodeSnapshotChunk(SnapshotChunk value) => Serialize(new Wire.SnapshotChunkMessage
+        { SnapshotId = GuidBytes(value.SnapshotId), Index = value.Index, Data = ByteString.CopyFrom(value.Data) });
 
     public static SnapshotChunk DecodeSnapshotChunk(byte[] bytes)
     {
-        using var r = new CanonicalReader(bytes);
-        var value = new SnapshotChunk { SnapshotId = r.ReadGuid(), Index = r.ReadInt32(), Data = r.ReadBytes(ProtocolConstants.SnapshotChunkBytes) };
-        r.EnsureEnd(); return value;
+        var wire = Parse(Wire.SnapshotChunkMessage.Parser, bytes);
+        if (wire.Data.Length > ProtocolConstants.SnapshotChunkBytes) throw new InvalidDataException("Snapshot chunk is too large.");
+        return new SnapshotChunk { SnapshotId = ReadGuid(wire.SnapshotId), Index = wire.Index, Data = wire.Data.ToByteArray() };
+    }
+
+    public static byte[] EncodeInt64(long value) => Serialize(new Wire.Int64Value { Value = value });
+    public static long DecodeInt64(byte[] bytes) => Parse(Wire.Int64Value.Parser, bytes).Value;
+    public static byte[] EncodeGuid(Guid value) => Serialize(new Wire.GuidValue { Value = GuidBytes(value) });
+    public static Guid DecodeGuid(byte[] bytes) => ReadGuid(Parse(Wire.GuidValue.Parser, bytes).Value);
+    public static byte[] EncodeString(string value) => Serialize(new Wire.StringValue { Value = value });
+    public static string DecodeString(byte[] bytes) => Parse(Wire.StringValue.Parser, bytes).Value;
+
+    private static Wire.GameCommandMessage ToWire(GameCommand value)
+    {
+        if (value.UnitIds.Length > MaxUnits || value.UnitTargetXs.Length > MaxUnits || value.UnitTargetXs.Length != value.UnitTargetYs.Length)
+            throw new InvalidDataException("Invalid command unit or target count.");
+        var wire = new Wire.GameCommandMessage { Kind = (uint)value.Kind, TargetX = value.TargetX, TargetY = value.TargetY,
+            ActionCategory = value.ActionCategory, ActionId = value.ActionId, TemplateId = value.TemplateId,
+            PassengerUnitId = value.PassengerUnitId, DesiredToggleState = value.DesiredToggleState,
+            DebugPlayerIndex = value.DebugPlayerIndex, DebugMetalDelta = value.DebugMetalDelta,
+            DebugPowerDelta = value.DebugPowerDelta, AiActionType = value.AiActionType };
+        wire.UnitIds.Add(value.UnitIds); wire.UnitTargetXs.Add(value.UnitTargetXs); wire.UnitTargetYs.Add(value.UnitTargetYs);
+        return wire;
+    }
+
+    private static GameCommand FromWire(Wire.GameCommandMessage wire)
+    {
+        if (wire.UnitIds.Count > MaxUnits || wire.UnitTargetXs.Count > MaxUnits || wire.UnitTargetXs.Count != wire.UnitTargetYs.Count)
+            throw new InvalidDataException("Invalid command unit or target count.");
+        var kind = (CommandKind)wire.Kind;
+        if (!Enum.IsDefined(typeof(CommandKind), kind)) throw new InvalidDataException("Unknown command kind.");
+        return new GameCommand { Kind = kind, UnitIds = wire.UnitIds.ToArray(), TargetX = wire.TargetX, TargetY = wire.TargetY,
+            UnitTargetXs = wire.UnitTargetXs.ToArray(), UnitTargetYs = wire.UnitTargetYs.ToArray(),
+            ActionCategory = wire.ActionCategory, ActionId = wire.ActionId, TemplateId = wire.TemplateId,
+            PassengerUnitId = wire.PassengerUnitId, DesiredToggleState = wire.DesiredToggleState,
+            DebugPlayerIndex = wire.DebugPlayerIndex, DebugMetalDelta = wire.DebugMetalDelta,
+            DebugPowerDelta = wire.DebugPowerDelta, AiActionType = wire.AiActionType };
+    }
+
+    private static byte[] Serialize(IMessage value) => value.ToByteArray();
+    private static T Parse<T>(MessageParser<T> parser, byte[] bytes) where T : IMessage<T>
+    {
+        try { return parser.ParseFrom(bytes); }
+        catch (InvalidProtocolBufferException ex) { throw new InvalidDataException("Invalid protobuf payload.", ex); }
+    }
+
+    private static ByteString GuidBytes(Guid value) => ByteString.CopyFrom(value.ToByteArray());
+    private static Guid ReadGuid(ByteString value)
+    {
+        if (value.Length != 16) throw new InvalidDataException("Invalid GUID length.");
+        return new Guid(value.ToByteArray());
+    }
+
+    private static byte[] CheckedHash(ByteString value)
+    {
+        if (value.Length != AuthorityHashChain.HashLength) throw new InvalidDataException("Invalid SHA-256 hash length.");
+        return value.ToByteArray();
+    }
+
+    private static ushort CheckedUShort(uint value)
+    {
+        if (value > ushort.MaxValue) throw new InvalidDataException("Protocol version is outside UInt16 range.");
+        return (ushort)value;
+    }
+
+    private static byte CheckedByte(uint value)
+    {
+        if (value > byte.MaxValue) throw new InvalidDataException("Random value kind is outside byte range.");
+        return (byte)value;
     }
 }

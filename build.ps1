@@ -13,7 +13,17 @@ $package = Join-Path $projectRoot 'dist\BepInEx\plugins\XingyiStarry.Mp'
 $patcherPackage = Join-Path $projectRoot 'dist\BepInEx\patchers'
 New-Item -ItemType Directory -Force -Path $package, $patcherPackage | Out-Null
 $pluginOutput = Join-Path $projectRoot "src\XingyiStarry.Mp\bin\$Configuration\netstandard2.1"
-Copy-Item -Force -LiteralPath (Join-Path $pluginOutput 'XingyiStarry.Mp.dll') -Destination $package
-Copy-Item -Force -LiteralPath (Join-Path $pluginOutput 'XingyiStarry.Mp.Protocol.dll') -Destination $package
+$runtimeFiles = @(
+    'XingyiStarry.Mp.dll',
+    'XingyiStarry.Mp.Protocol.dll',
+    'Google.Protobuf.dll',
+    'System.Buffers.dll',
+    'System.Memory.dll',
+    'System.Numerics.Vectors.dll',
+    'System.Runtime.CompilerServices.Unsafe.dll'
+)
+foreach ($file in $runtimeFiles) {
+    Copy-Item -Force -LiteralPath (Join-Path $pluginOutput $file) -Destination $package
+}
 Copy-Item -Force -LiteralPath (Join-Path $projectRoot "src\XingyiStarry.Mp.EarlyPatcher\bin\$Configuration\netstandard2.0\XingyiStarry.Mp.EarlyPatcher.dll") -Destination $patcherPackage
 Write-Host "Package ready: $package"
