@@ -635,12 +635,16 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         command.Kind == CommandKind.DebugAddResources || command.Kind == CommandKind.DebugFillSkill ||
         command.Kind == CommandKind.Surrender || command.Kind == CommandKind.BuildWithMove ||
         command.Kind == CommandKind.ToggleStandby || command.Kind == CommandKind.ToggleSleep || command.Kind == CommandKind.Stay ||
-        command.Kind == CommandKind.Action && (command.ActionCategory == (int)ActionCate.BUILD || command.ActionCategory == (int)ActionCate.QUICK_BUILD_MINER || command.ActionCategory == (int)ActionCate.TRAIN) ||
+        command.Kind == CommandKind.Action && (IsKnownNonRandomBuildAction(command.ActionCategory) || command.ActionCategory == (int)ActionCate.TRAIN) ||
         (command.Kind == CommandKind.Skill || command.Kind == CommandKind.AiSkill) && IsKnownNonRandomSkill();
+
+    private static bool IsKnownNonRandomBuildAction(int actionCategory) =>
+        actionCategory == (int)ActionCate.BUILD || actionCategory == (int)ActionCate.HELP_BUILD ||
+        actionCategory == (int)ActionCate.QUICK_BUILD_MINER;
 
     private static bool IsKnownNonRandomEquipmentMoveAction(GameCommand command) =>
         command.Kind == CommandKind.EquipmentMoveAction &&
-        (command.ActionCategory == (int)ActionCate.BUILD || command.ActionCategory == (int)ActionCate.QUICK_BUILD_MINER);
+        IsKnownNonRandomBuildAction(command.ActionCategory);
 
     private static bool IsKnownNonRandomSkill()
     {
