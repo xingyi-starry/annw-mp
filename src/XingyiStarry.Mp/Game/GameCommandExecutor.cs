@@ -45,6 +45,8 @@ internal sealed class GameCommandExecutor
             var unit = GS_Battle.self.all_unit.GetUnitByID((int)id);
             if (unit is null) return "Unit does not exist: " + id;
             if (unit.player != GS_Battle.self.cur_player) return "Unit is not owned by the current player: " + id;
+            if ((command.Kind == CommandKind.Move || command.Kind == CommandKind.Stay) && unit.moved)
+                return "Unit cannot move again this turn: " + id;
         }
         if (command.Kind == CommandKind.Move && (command.UnitTargetXs.Length != command.UnitIds.Length || command.UnitTargetYs.Length != command.UnitIds.Length)) return "Move target count mismatch.";
         if (command.Kind == CommandKind.AiUnitAction)
@@ -65,9 +67,22 @@ internal sealed class GameCommandExecutor
                 var unit = GS_Battle.self.all_unit.GetUnitByID((int)id);
                 var action = unit.GetAction((ActionCate)command.ActionCategory);
                 if (action is null) return "Unit does not have the requested action.";
+                if (unit.actioned && !action.AlwaysCanDo) return "Unit has already acted this turn: " + id;
                 if (!string.IsNullOrEmpty(command.TemplateId)) action.train_template = UnitTemplate.Acquire(command.TemplateId);
                 if (action.CanDoAction(tile) != REASON_CANTDO.OK || !action.CanAfford(tile)) return "Original action validation rejected the command.";
             }
+        }
+        if (command.Kind == CommandKind.EquipmentMoveAction)
+        {
+            if (command.UnitIds.Length != 1) return "Equipment move action must contain exactly one unit.";
+            var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
+            if (unit.actioned || unit.moved) return "Unit cannot perform another move action this turn: " + command.UnitIds[0];
+        }
+        if (command.Kind == CommandKind.BuildWithMove)
+        {
+            if (command.UnitIds.Length != 1) return "Build-with-move must contain exactly one unit.";
+            var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
+            if (unit.actioned || unit.moved) return "Unit cannot build after moving or acting this turn: " + command.UnitIds[0];
         }
         return null;
     }
@@ -85,27 +100,29 @@ internal sealed class GameCommandExecutor
         var validation = Validate(command);
         if (validation is not null) { failed(new InvalidOperationException(validation)); return; }
         IsBusy = true;
-        GameController.self.StartCoroutine(RunInner(ExecuteEquipmentMovePrelude(command), origin, completed, failed), "XingyiStarryMpMovePrelude");
+        GameController.self.StartCoroutine(RunInner(command, ExecuteEquipmentMovePrelude(command), origin, completed, failed), "XingyiStarryMpMovePrelude");
     }
 
     public void StartEquipmentMoveResolution(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
     {
         if (IsBusy) { failed(new InvalidOperationException("Another operation is running.")); return; }
         IsBusy = true;
-        GameController.self.StartCoroutine(RunInner(ExecuteEquipmentMoveResolution(command), origin, completed, failed), "XingyiStarryMpMoveResolution");
+        GameController.self.StartCoroutine(RunInner(command, ExecuteEquipmentMoveResolution(command), origin, completed, failed), "XingyiStarryMpMoveResolution");
     }
 
     public void StartBuildMoveResolution(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
     {
         if (IsBusy) { failed(new InvalidOperationException("Another operation is running.")); return; }
         IsBusy = true;
-        GameController.self.StartCoroutine(RunInner(ExecuteBuildMoveResolution(command), origin, completed, failed), "XingyiStarryMpBuildResolution");
+        GameController.self.StartCoroutine(RunInner(command, ExecuteBuildMoveResolution(command), origin, completed, failed), "XingyiStarryMpBuildResolution");
     }
 
     private IEnumerator Run(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
     {
         IEnumerator inner;
         var detachedAuthority = command.Kind == CommandKind.AutoGuideStart;
+        var tracksClientUnits = origin == ExecutionOrigin.ClientReplay;
+        if (tracksClientUnits) MultiplayerUnitStates.BeginAuthorityExecution(command);
         if (detachedAuthority) ExecutionContext.DetachedAuthoritativeExecution = true;
         using (ExecutionContext.Enter(origin)) inner = Create(command);
         while (true)
@@ -119,17 +136,25 @@ internal sealed class GameCommandExecutor
                     if (more) current = inner.Current;
                 }
             }
-            catch (Exception ex) { if (detachedAuthority) ExecutionContext.DetachedAuthoritativeExecution = false; IsBusy = false; failed(ex); yield break; }
+            catch (Exception ex)
+            {
+                if (detachedAuthority) ExecutionContext.DetachedAuthoritativeExecution = false;
+                if (tracksClientUnits) MultiplayerUnitStates.EndAuthorityExecution(command);
+                IsBusy = false; failed(ex); yield break;
+            }
             if (!more) break;
             yield return current;
         }
         if (detachedAuthority) ExecutionContext.DetachedAuthoritativeExecution = false;
+        if (tracksClientUnits) MultiplayerUnitStates.EndAuthorityExecution(command);
         IsBusy = false;
         completed();
     }
 
-    private IEnumerator RunInner(IEnumerator inner, ExecutionOrigin origin, Action completed, Action<Exception> failed)
+    private IEnumerator RunInner(GameCommand command, IEnumerator inner, ExecutionOrigin origin, Action completed, Action<Exception> failed)
     {
+        var tracksClientUnits = origin == ExecutionOrigin.ClientReplay;
+        if (tracksClientUnits) MultiplayerUnitStates.BeginAuthorityExecution(command);
         while (true)
         {
             bool more; object? current = null;
@@ -141,10 +166,15 @@ internal sealed class GameCommandExecutor
                     if (more) current = inner.Current;
                 }
             }
-            catch (Exception ex) { IsBusy = false; failed(ex); yield break; }
+            catch (Exception ex)
+            {
+                if (tracksClientUnits) MultiplayerUnitStates.EndAuthorityExecution(command);
+                IsBusy = false; failed(ex); yield break;
+            }
             if (!more) break;
             yield return current;
         }
+        if (tracksClientUnits) MultiplayerUnitStates.EndAuthorityExecution(command);
         IsBusy = false;
         completed();
     }

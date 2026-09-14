@@ -25,7 +25,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.6.0";
+    public const string PluginVersion = "0.6.1";
 
     private Harmony? harmony;
     private HostSession? host;
@@ -709,8 +709,10 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             return;
         }
         if (client?.ClientId is not Guid clientId) { Status = "尚未连接权威主机"; return; }
+        if (!MultiplayerUnitStates.TryEnterAwaitingAuthority(command)) { Status = "该单位正在等待主机响应"; return; }
         var seatId = client.Room?.Seats.Find(s => s.ClientId == clientId)?.SeatId ?? Guid.Empty;
-        _ = client.SendCommandAsync(new CommandRequest { ClientId = clientId, RequestId = ++nextRequestId, SeatId = seatId, Round = GS_Battle.self?.turns ?? 0, AppliedFrameId = client.AppliedFrameId, Command = command });
+        var requestId = ++nextRequestId;
+        _ = client.SendCommandAsync(new CommandRequest { ClientId = clientId, RequestId = requestId, SeatId = seatId, Round = GS_Battle.self?.turns ?? 0, AppliedFrameId = client.AppliedFrameId, Command = command });
     }
 
     internal void SubmitSurrender()
