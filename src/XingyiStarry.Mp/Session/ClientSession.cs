@@ -19,6 +19,10 @@ internal sealed class ClientSession : IDisposable
     private SnapshotAssembler? snapshotAssembler;
     private bool hasSnapshotAnchor;
     private bool snapshotRequested;
+    private string connectedHost = "";
+    private int connectedPort;
+    private WelcomeMode welcomeMode;
+    private Guid sessionRoomId;
     public Guid? ClientId { get; private set; }
     public long VerifiedFrameId { get; private set; }
     public long AppliedFrameId { get; private set; }
@@ -27,12 +31,18 @@ internal sealed class ClientSession : IDisposable
     public bool SnapshotRequested => snapshotRequested;
     public bool ConnectionLost { get; private set; }
     public string ConnectionError { get; private set; } = "";
+    public Guid? MatchId => matchId;
+    public bool JoinedMatch { get; private set; }
+    public bool RequiresJoinSelection => welcomeMode == WelcomeMode.JoinSelection && !JoinedMatch;
+    public bool CanFastReconnect => ClientId.HasValue && matchId.HasValue && JoinedMatch;
+    public int ReconnectAcceptedGeneration { get; private set; }
 
     public ClientSession() : this(new NetworkClient()) { }
     public ClientSession(IClientTransport network) => this.network = network;
 
     public async Task ConnectAsync(string host, int port, HelloMessage hello)
     {
+        connectedHost = host; connectedPort = port;
         await network.ConnectAsync(host, port).ConfigureAwait(false);
         await network.SendAsync(MessageType.Hello, ProtocolCodec.EncodeHello(hello)).ConfigureAwait(false);
     }
@@ -50,8 +60,20 @@ internal sealed class ClientSession : IDisposable
                 switch (envelope.Type)
                 {
                     case MessageType.Welcome:
-                        var welcome = ProtocolCodec.DecodeWelcome(envelope.Payload); ClientId = welcome.ClientId; matchId = welcome.MatchId;
-                        if (matchId.HasValue) _ = RequestSnapshotAsync();
+                        var welcome = ProtocolCodec.DecodeWelcome(envelope.Payload); ClientId = welcome.ClientId; sessionRoomId = welcome.RoomId; matchId = welcome.MatchId; welcomeMode = welcome.Mode;
+                        JoinedMatch = welcome.Mode == WelcomeMode.ActiveMatch;
+                        if (JoinedMatch && matchId.HasValue) _ = RequestSnapshotAsync();
+                        break;
+                    case MessageType.JoinMatchAccepted:
+                        JoinedMatch = true; welcomeMode = WelcomeMode.ActiveMatch; IsCaughtUp = false;
+                        break;
+                    case MessageType.ResumeSessionAccepted:
+                        var resumed = ProtocolCodec.DecodeResumeSessionAccepted(envelope.Payload);
+                        if (ClientId != resumed.ClientId || matchId != resumed.MatchId) throw new InvalidDataException("快速重连身份响应不匹配。");
+                        ConnectionLost = false; ConnectionError = ""; ReconnectAcceptedGeneration++; IsCaughtUp = false;
+                        break;
+                    case MessageType.ResumeSessionRejected:
+                        ConnectionError = ProtocolCodec.DecodeString(envelope.Payload);
                         break;
                     case MessageType.AuthorityFrame:
                         var frame = ProtocolCodec.DecodeAuthorityFrame(envelope.Payload);
@@ -61,7 +83,11 @@ internal sealed class ClientSession : IDisposable
                         var room = ProtocolCodec.DecodeRoom(envelope.Payload);
                         var newlyStarted = room.MatchStarted && room.MatchId.HasValue && !hasSnapshotAnchor && !snapshotRequested;
                         Room = room;
-                        if (newlyStarted) { matchId = room.MatchId; snapshotRequested = true; _ = RequestSnapshotAsync(); }
+                        var ownsSeat = ClientId.HasValue && room.Seats.Exists(value => value.Connected && value.ClientId == ClientId.Value);
+                        if (newlyStarted && welcomeMode != WelcomeMode.JoinSelection && ownsSeat)
+                        { matchId = room.MatchId; JoinedMatch = true; snapshotRequested = true; _ = RequestSnapshotAsync(); }
+                        else if (newlyStarted && !ownsSeat)
+                        { matchId = room.MatchId; welcomeMode = WelcomeMode.JoinSelection; JoinedMatch = false; }
                         break;
                     case MessageType.HistoryComplete:
                         var latestFrameId = ProtocolCodec.DecodeInt64(envelope.Payload);
@@ -110,6 +136,8 @@ internal sealed class ClientSession : IDisposable
     }
 
     public Task ClaimSeatAsync(int lobbySlotIndex) => network.SendAsync(MessageType.ClaimSeat, ProtocolCodec.EncodeInt64(lobbySlotIndex));
+    public Task ReleaseSeatAsync() => network.SendAsync(MessageType.ReleaseSeat, Array.Empty<byte>());
+    public Task JoinMatchAsync(Guid seatId) => network.SendAsync(MessageType.JoinMatchRequest, ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest { SeatId = seatId }));
     public Task SetReadyAsync(bool ready) => network.SendAsync(MessageType.SetReady, ProtocolCodec.EncodeInt64(ready ? 1 : 0));
     public Task SendLobbyDraftAsync(RoomSnapshot draft) => network.SendAsync(MessageType.LobbyDraftChange, ProtocolCodec.EncodeRoom(draft));
     public Task RequestSnapshotAsync()
@@ -118,6 +146,17 @@ internal sealed class ClientSession : IDisposable
         return network.SendAsync(MessageType.SnapshotRequest, ProtocolCodec.EncodeInt64(AppliedFrameId));
     }
     public Task RequestHistoryAsync() => network.SendAsync(MessageType.HistoryRequest, ProtocolCodec.EncodeInt64(VerifiedFrameId));
+
+    public async Task ReconnectAttemptAsync(ulong requestId)
+    {
+        if (!ClientId.HasValue || !matchId.HasValue) throw new InvalidOperationException("没有可恢复的联机会话。");
+        await network.ReconnectAsync(connectedHost, connectedPort, sessionRoomId, ClientId.Value, matchId.Value, requestId).ConfigureAwait(false);
+        await network.SendAsync(MessageType.ResumeSession, ProtocolCodec.EncodeResumeSession(new ResumeSessionRequest
+            { RoomId = sessionRoomId, MatchId = matchId.Value, ClientId = ClientId.Value,
+              AppliedFrameId = AppliedFrameId, VerifiedFrameId = VerifiedFrameId })).ConfigureAwait(false);
+    }
+
+    public Task LeaveAsync() => network.IsConnected ? network.SendAsync(MessageType.LeaveSession, Array.Empty<byte>()) : Task.CompletedTask;
 
     public void AcceptSnapshotAnchor(SnapshotManifest manifest)
     {
@@ -160,5 +199,9 @@ internal sealed class ClientSession : IDisposable
         return network.SendAsync(MessageType.CommandRequest, ProtocolCodec.EncodeCommandRequest(request));
     }
 
-    public void Dispose() => network.Dispose();
+    public void Dispose()
+    {
+        try { if (network.IsConnected && ClientId.HasValue) LeaveAsync().Wait(TimeSpan.FromMilliseconds(250)); } catch { }
+        network.Dispose();
+    }
 }

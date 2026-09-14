@@ -2,7 +2,7 @@ namespace XingyiStarry.Mp.Protocol;
 
 public static class ProtocolConstants
 {
-    public const ushort Version = 11;
+    public const ushort Version = 12;
     public const int DefaultPort = 24555;
     public const int MaxPacketBytes = 16 * 1024 * 1024;
     public const int MaxSnapshotBytes = 256 * 1024 * 1024;
@@ -12,15 +12,54 @@ public static class ProtocolConstants
 
 public enum MessageType : ushort
 {
-    Hello = 1, Welcome, Reject, Heartbeat,
-    RoomState, ClaimSeat, SetReady, StartMatch,
-    CommandRequest, CommandAccepted, CommandRejected,
-    AuthorityFrame, HistoryRequest, HistoryComplete,
-    SnapshotRequest, SnapshotManifest, SnapshotChunk, SnapshotComplete,
-    CatchUpComplete, SessionEnded, LobbyDraftChange, ParticipantNotice,
-    RelayRegisterRoom, RelayUpdateRoom, RelayListRooms, RelayRoomList,
-    RelayJoinRoom, RelayControlResponse, RelayCloseJoining, RelayLeaveRoom,
-    RelayCloseRoom, RelayPeerJoined, RelayPeerLeft
+    Hello = 1,
+    Welcome = 2,
+    Reject = 3,
+    Heartbeat = 4,
+    RoomState = 5,
+    ClaimSeat = 6,
+    SetReady = 7,
+    StartMatch = 8,
+    CommandRequest = 9,
+    CommandAccepted = 10,
+    CommandRejected = 11,
+    AuthorityFrame = 12,
+    HistoryRequest = 13,
+    HistoryComplete = 14,
+    SnapshotRequest = 15,
+    SnapshotManifest = 16,
+    SnapshotChunk = 17,
+    SnapshotComplete = 18,
+    CatchUpComplete = 19,
+    SessionEnded = 20,
+    LobbyDraftChange = 21,
+    ParticipantNotice = 22,
+    RelayRegisterRoom = 23,
+    RelayUpdateRoom = 24,
+    RelayListRooms = 25,
+    RelayRoomList = 26,
+    RelayJoinRoom = 27,
+    RelayControlResponse = 28,
+    RelayCloseJoining = 29,
+    RelayLeaveRoom = 30,
+    RelayCloseRoom = 31,
+    RelayPeerJoined = 32,
+    RelayPeerLeft = 33,
+    ReleaseSeat = 34,
+    JoinMatchRequest = 35,
+    JoinMatchAccepted = 36,
+    ResumeSession = 37,
+    ResumeSessionAccepted = 38,
+    ResumeSessionRejected = 39,
+    LeaveSession = 40,
+    RelayResumeRoom = 41
+}
+
+public enum WelcomeMode : byte
+{
+    Lobby = 0,
+    JoinSelection = 1,
+    ActiveMatch = 2
 }
 
 public enum Delivery : byte
@@ -41,42 +80,42 @@ public enum RelayRoomStatus : byte
 public enum AuthorityFrameType : byte
 {
     OperationBegin = 1,
-    Resolution,
-    OperationEnd,
-    TurnPhase,
-    SeatChanged,
-    MatchEnded,
-    OperationFailed
+    Resolution = 2,
+    OperationEnd = 3,
+    TurnPhase = 4,
+    SeatChanged = 5,
+    MatchEnded = 6,
+    OperationFailed = 7
 }
 
 public enum CommandKind : ushort
 {
     Move = 1,
-    Action,
-    EquipmentAction,
-    EquipmentMoveAction,
-    BuildWithMove,
-    Skill,
-    UndoMove,
-    EndTurn,
-    AutoGuideStart,
-    AutoGuideCancel,
-    DebugAddResources,
-    DebugFillSkill,
-    AiUnitAction,
-    AiSkill,
-    TurnAdvance,
-    Surrender,
-    ToggleStandby,
-    ToggleSleep,
-    Stay
+    Action = 2,
+    EquipmentAction = 3,
+    EquipmentMoveAction = 4,
+    BuildWithMove = 5,
+    Skill = 6,
+    UndoMove = 7,
+    EndTurn = 8,
+    AutoGuideStart = 9,
+    AutoGuideCancel = 10,
+    DebugAddResources = 11,
+    DebugFillSkill = 12,
+    AiUnitAction = 13,
+    AiSkill = 14,
+    TurnAdvance = 15,
+    Surrender = 16,
+    ToggleStandby = 17,
+    ToggleSleep = 18,
+    Stay = 19
 }
 
 public enum TurnPhase : byte
 {
     RoundStarted = 1,
-    SeatTurnStarting,
-    SeatTurnReady,
-    SeatTurnEnding,
-    SeatTurnEnded
+    SeatTurnStarting = 2,
+    SeatTurnReady = 3,
+    SeatTurnEnding = 4,
+    SeatTurnEnded = 5
 }

@@ -207,6 +207,7 @@ internal static class PublicLobbyPanel
         createPasswordInput = AddInputRow(body, "密码", "", "可选");
         createPasswordInput.contentType = TMP_InputField.ContentType.Password;
         NativeButton(body, "Create", "创建房间", CreateRoom);
+        NativeButton(body, "CreateFromSave", "从存档创建房间", CreateRoomFromSave);
         AddSeparator(body);
         AddText(body, "加入房间", 24f, 38f, TextAlignmentOptions.MidlineLeft);
         selectedRoomText = AddText(body, "请先在左侧选择一个房间", 16f, 58f, TextAlignmentOptions.TopLeft);
@@ -363,6 +364,21 @@ internal static class PublicLobbyPanel
         XingyiStarryMpPlugin.Instance?.HostPublic(name, password);
     }
 
+    private static void CreateRoomFromSave()
+    {
+        if (busy || enteringRoom || !ApplyName()) return;
+        if (menu == null || root == null) return;
+        var name = roomNameInput?.text.Trim() ?? ""; var password = createPasswordInput?.text ?? "";
+        if (name.Length == 0 || name.Length > 48) { if (status != null) status.text = "房间名长度必须为 1–48 个字符"; return; }
+        if (password.Length > 64) { if (status != null) status.text = "房间密码不能超过 64 个字符"; return; }
+        root.SetActive(false);
+        SavedRoomFlow.Open(menu, path =>
+        {
+            enteringRoom = true; if (root != null) { root.SetActive(true); root.transform.SetAsLastSibling(); }
+            XingyiStarryMpPlugin.Instance?.HostPublicFromSave(name, password, path);
+        }, () => { if (root != null) { root.SetActive(true); root.transform.SetAsLastSibling(); } });
+    }
+
     private static async void RefreshRooms()
     {
         if (busy || enteringRoom) return;
@@ -414,10 +430,10 @@ internal static class PublicLobbyPanel
             var state = room.Status == RelayRoomStatus.Waiting ? "等待中" : room.Status == RelayRoomStatus.Playing ? "游戏中" : "已关闭";
             var selected = selectedRoom?.RoomId == room.RoomId ? "▶  " : "";
             var label = plugin.IsPublicRoomCompatible(room)
-                ? $"{selected}{room.RoomName}{lockText}    {map}    {room.ConnectedPlayers}/{room.HumanSeats}    {room.HostName}    {state}"
+                ? $"{selected}{room.RoomName}{lockText}    {map}    {room.ConnectedPlayers}/{room.HumanSeats}    可选 {room.AvailableSeats}    {room.HostName}    {state}"
                 : $"{room.RoomName}    版本不兼容";
             var button = NativeButton(roomContent, "Room_" + room.RoomId.ToString("N"), label, () => SelectRoom(captured), 0f, 46f);
-            button.interactable = room.Status == RelayRoomStatus.Waiting && plugin.IsPublicRoomCompatible(room);
+            button.interactable = (room.Status == RelayRoomStatus.Waiting || room.Status == RelayRoomStatus.Playing && room.AvailableSeats > 0) && plugin.IsPublicRoomCompatible(room);
         }
     }
 
@@ -445,7 +461,7 @@ internal static class PublicLobbyPanel
         selectedRoomText.text = $"{room.RoomName}\n主机：{room.HostName}    地图：{map}";
         joinPasswordInput.interactable = room.HasPassword;
         if (!room.HasPassword) joinPasswordInput.text = "";
-        joinButton.interactable = room.Status == RelayRoomStatus.Waiting && plugin.IsPublicRoomCompatible(room);
+        joinButton.interactable = (room.Status == RelayRoomStatus.Waiting || room.Status == RelayRoomStatus.Playing && room.AvailableSeats > 0) && plugin.IsPublicRoomCompatible(room);
     }
 
     private static void JoinSelected()

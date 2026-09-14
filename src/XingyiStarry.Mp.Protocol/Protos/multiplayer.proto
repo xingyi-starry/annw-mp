@@ -13,13 +13,12 @@ enum Delivery {
 }
 
 message WireEnvelope {
-  uint32 protocol_version = 1;
-  uint32 message_type     = 2;
-  bytes  payload          = 3;
-  optional bytes room_id          = 4;
-  optional bytes client_id        = 5;
-  optional bytes target_client_id = 6;
-  Delivery delivery               = 7;
+  uint32 message_type     = 1;
+  bytes  payload          = 2;
+  optional bytes room_id          = 3;
+  optional bytes client_id        = 4;
+  optional bytes target_client_id = 5;
+  Delivery delivery               = 6;
 }
 
 message GuidValue {
@@ -47,9 +46,17 @@ message Welcome {
   bytes          room_id         = 2;
   optional bytes match_id        = 3;
   int64          latest_frame_id = 4;
+  WelcomeMode    mode            = 5;
 }
 
-message Seat {  bytes  seat_id          = 1;
+enum WelcomeMode {
+  WELCOME_LOBBY = 0;
+  WELCOME_JOIN_SELECTION = 1;
+  WELCOME_ACTIVE_MATCH = 2;
+}
+
+message Seat {
+  bytes  seat_id          = 1;
   int32  lobby_slot_index = 2;
   int32  player_index     = 3;
   string display_name     = 4;
@@ -73,7 +80,8 @@ message Seat {  bytes  seat_id          = 1;
 
   string          skill_id    = 19;
   repeated string passive_ids = 20;
-
+  bool defeated = 21;
+  bool pending_activation = 22;
 }
 
 message Room {
@@ -89,6 +97,7 @@ message Room {
   int32  quick_start   = 9;
 
   repeated Seat seats = 10;
+  bool saved_game = 11;
 
 }
 
@@ -142,6 +151,7 @@ message RelayRoomInfo {
   string plugin_version = 9;
   string game_fingerprint = 10;
   string content_fingerprint = 11;
+  int32 available_seats = 12;
 }
 
 message RelayRegisterRoomRequest {
@@ -162,6 +172,8 @@ message RelayUpdateRoomRequest {
   int32 connected_players = 4;
   int32 human_seats = 5;
   RelayRoomStatus status = 6;
+  int32 available_seats = 7;
+  optional bytes match_id = 8;
 }
 
 message RelayListRoomsRequest {
@@ -179,6 +191,13 @@ message RelayJoinRoomRequest {
   string password = 3;
 }
 
+message RelayResumeRoomRequest {
+  uint64 request_id = 1;
+  bytes room_id = 2;
+  bytes client_id = 3;
+  bytes match_id = 4;
+}
+
 message RelayControlResponse {
   uint64 request_id = 1;
   bool success = 2;
@@ -194,6 +213,32 @@ message RelayRoomRequest {
 message RelayPeerNotice {
   bytes client_id = 1;
   string reason = 2;
+}
+
+message JoinMatchRequest {
+  bytes seat_id = 1;
+}
+
+message ResumeSessionRequest {
+  bytes room_id = 1;
+  bytes match_id = 2;
+  bytes client_id = 3;
+  int64 applied_frame_id = 4;
+  int64 verified_frame_id = 5;
+}
+
+message ResumeSessionAccepted {
+  bytes room_id = 1;
+  bytes match_id = 2;
+  bytes client_id = 3;
+  int64 latest_frame_id = 4;
+}
+
+message SeatControlChanged {
+  bytes seat_id = 1;
+  int32 player_index = 2;
+  bool ai_controlled = 3;
+  string reason = 4;
 }
 
 message CommandResponseMessage {

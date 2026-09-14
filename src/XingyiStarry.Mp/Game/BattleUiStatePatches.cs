@@ -11,7 +11,11 @@ internal static class MultiplayerPauseMenuPatch
     private static void Postfix(UI_POP_PauseMenu __instance)
     {
         if (!InputGate.MultiplayerActive) return;
-        if (__instance.btn_save is not null) __instance.btn_save.interactable = false;
+        if (__instance.btn_save is not null)
+        {
+            var canSave = XingyiStarryMpPlugin.Instance?.CanMultiplayerSave == true;
+            __instance.btn_save.interactable = canSave;
+        }
         if (__instance.btn_restart is not null) __instance.btn_restart.interactable = false;
         if (__instance.btn_load is null) return;
         __instance.btn_load.gameObject.SetActive(true);
@@ -38,11 +42,24 @@ internal static class MultiplayerPauseMenuUnsafeActionsPatch
 {
     private static System.Collections.Generic.IEnumerable<System.Reflection.MethodBase> TargetMethods()
     {
-        yield return AccessTools.Method(typeof(UI_POP_PauseMenu), nameof(UI_POP_PauseMenu.OnBtn_Save));
         yield return AccessTools.Method(typeof(UI_POP_PauseMenu), nameof(UI_POP_PauseMenu.OnBtn_Restart));
     }
 
     private static bool Prefix() => !InputGate.MultiplayerActive;
+}
+
+[HarmonyPatch(typeof(GS_Battle), nameof(GS_Battle.TryQuickSave))]
+internal static class MultiplayerQuickSavePatch
+{
+    private static bool Prefix()
+    {
+        if (!InputGate.MultiplayerActive) return true;
+        if (XingyiStarryMpPlugin.Instance?.CanMultiplayerSave != true) return false;
+        AccessTools.Method(typeof(BattleAndMapFileSystem), "TryQuickSave_Skirmish")?.Invoke(
+            Singleton<BattleAndMapFileSystem>.self,
+            new object[] { "Quick_" + GS_Battle.self.map_name + "Turn" + GS_Battle.self.turns });
+        return false;
+    }
 }
 
 [HarmonyPatch(typeof(UI_Player_Info), nameof(UI_Player_Info.RenderCO))]

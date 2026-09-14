@@ -13,3 +13,9 @@ internal static class MultiplayerBattleLeavePatch
 {
     private static void Postfix() => XingyiStarryMpPlugin.Instance?.OnNativeBattleLeft();
 }
+
+[HarmonyPatch(typeof(GS_Battle), "ResumeGame")]
+internal static class MultiplayerLoadedBattleResumePatch
+{
+    private static void Postfix() => XingyiStarryMpPlugin.Instance?.OnNativeLoadedGameResumed();
+}

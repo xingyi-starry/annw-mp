@@ -26,6 +26,7 @@ public sealed class RelayRoomInfo
     public string PluginVersion { get; set; } = "";
     public string GameFingerprint { get; set; } = "";
     public string ContentFingerprint { get; set; } = "";
+    public int AvailableSeats { get; set; }
 }
 
 public sealed class RelayRegisterRoomRequest
@@ -48,6 +49,8 @@ public sealed class RelayUpdateRoomRequest
     public int ConnectedPlayers { get; set; }
     public int HumanSeats { get; set; }
     public RelayRoomStatus Status { get; set; }
+    public int AvailableSeats { get; set; }
+    public Guid? MatchId { get; set; }
 }
 
 public sealed class RelayListRoomsResponse
@@ -61,6 +64,14 @@ public sealed class RelayJoinRoomRequest
     public ulong RequestId { get; set; }
     public Guid RoomId { get; set; }
     public string Password { get; set; } = "";
+}
+
+public sealed class RelayResumeRoomRequest
+{
+    public ulong RequestId { get; set; }
+    public Guid RoomId { get; set; }
+    public Guid ClientId { get; set; }
+    public Guid MatchId { get; set; }
 }
 
 public sealed class RelayControlResponse
@@ -98,6 +109,7 @@ public sealed class WelcomeMessage
     public Guid RoomId { get; set; }
     public Guid? MatchId { get; set; }
     public long LatestFrameId { get; set; }
+    public WelcomeMode Mode { get; set; }
 }
 
 public sealed class SeatInfo
@@ -122,6 +134,38 @@ public sealed class SeatInfo
     public int CommanderMode { get; set; } = 1;
     public string SkillId { get; set; } = "";
     public List<string> PassiveIds { get; } = new List<string>();
+    public bool Defeated { get; set; }
+    public bool PendingActivation { get; set; }
+}
+
+public sealed class JoinMatchRequest
+{
+    public Guid SeatId { get; set; }
+}
+
+public sealed class ResumeSessionRequest
+{
+    public Guid RoomId { get; set; }
+    public Guid MatchId { get; set; }
+    public Guid ClientId { get; set; }
+    public long AppliedFrameId { get; set; }
+    public long VerifiedFrameId { get; set; }
+}
+
+public sealed class ResumeSessionAccepted
+{
+    public Guid RoomId { get; set; }
+    public Guid MatchId { get; set; }
+    public Guid ClientId { get; set; }
+    public long LatestFrameId { get; set; }
+}
+
+public sealed class SeatControlChanged
+{
+    public Guid SeatId { get; set; }
+    public int PlayerIndex { get; set; }
+    public bool AiControlled { get; set; }
+    public string Reason { get; set; } = "";
 }
 
 public sealed class RoomSnapshot
@@ -136,6 +180,7 @@ public sealed class RoomSnapshot
     public int WinCondition { get; set; }
     public int QuickStart { get; set; }
     public List<SeatInfo> Seats { get; } = new List<SeatInfo>();
+    public bool SavedGame { get; set; }
 }
 
 public sealed class CommandRequest

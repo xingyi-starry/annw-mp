@@ -16,7 +16,6 @@ public static class ProtocolCodec
     {
         var wire = new Wire.WireEnvelope
         {
-            ProtocolVersion = ProtocolConstants.Version,
             MessageType = (uint)value.Type,
             Payload = ByteString.CopyFrom(value.Payload),
             Delivery = (Wire.Delivery)value.Delivery
@@ -30,7 +29,6 @@ public static class ProtocolCodec
     public static Envelope DecodeEnvelope(byte[] bytes)
     {
         var wire = Parse(Wire.WireEnvelope.Parser, bytes);
-        if (wire.ProtocolVersion != ProtocolConstants.Version) throw new InvalidDataException("Unsupported envelope version.");
         var type = (MessageType)wire.MessageType;
         if (!Enum.IsDefined(typeof(MessageType), type)) throw new InvalidDataException("Unknown message type.");
         var delivery = (Delivery)wire.Delivery;
@@ -60,7 +58,7 @@ public static class ProtocolCodec
 
     public static byte[] EncodeWelcome(WelcomeMessage value)
     {
-        var wire = new Wire.Welcome { ClientId = GuidBytes(value.ClientId), RoomId = GuidBytes(value.RoomId), LatestFrameId = value.LatestFrameId };
+        var wire = new Wire.Welcome { ClientId = GuidBytes(value.ClientId), RoomId = GuidBytes(value.RoomId), LatestFrameId = value.LatestFrameId, Mode = (Wire.WelcomeMode)value.Mode };
         if (value.MatchId.HasValue) wire.MatchId = GuidBytes(value.MatchId.Value);
         return Serialize(wire);
     }
@@ -69,7 +67,7 @@ public static class ProtocolCodec
     {
         var wire = Parse(Wire.Welcome.Parser, bytes);
         return new WelcomeMessage { ClientId = ReadGuid(wire.ClientId), RoomId = ReadGuid(wire.RoomId),
-            MatchId = wire.HasMatchId ? ReadGuid(wire.MatchId) : null, LatestFrameId = wire.LatestFrameId };
+            MatchId = wire.HasMatchId ? ReadGuid(wire.MatchId) : null, LatestFrameId = wire.LatestFrameId, Mode = (WelcomeMode)wire.Mode };
     }
 
     public static byte[] EncodeRoom(RoomSnapshot value)
@@ -77,7 +75,7 @@ public static class ProtocolCodec
         if (value.Seats.Count > MaxSeats) throw new InvalidDataException("Invalid seat count.");
         var wire = new Wire.Room { RoomId = GuidBytes(value.RoomId), MatchStarted = value.MatchStarted,
             DraftRevision = value.DraftRevision, MapId = value.MapId, MapTitle = value.MapTitle,
-            FowType = value.FowType, WinCondition = value.WinCondition, QuickStart = value.QuickStart };
+            FowType = value.FowType, WinCondition = value.WinCondition, QuickStart = value.QuickStart, SavedGame = value.SavedGame };
         if (value.MatchId.HasValue) wire.MatchId = GuidBytes(value.MatchId.Value);
         foreach (var seat in value.Seats)
         {
@@ -88,7 +86,8 @@ public static class ProtocolCodec
                 Controller = seat.Controller, Team = seat.Team, Color = seat.Color, Position = seat.Position,
                 PositionRandom = seat.PositionRandom, ResourceMultiplier = seat.ResourceMultiplier,
                 AiIntelligence = seat.AiIntelligence, CommanderId = seat.CommanderId,
-                CommanderMode = seat.CommanderMode, SkillId = seat.SkillId };
+                CommanderMode = seat.CommanderMode, SkillId = seat.SkillId, Defeated = seat.Defeated,
+                PendingActivation = seat.PendingActivation };
             if (seat.ClientId.HasValue) item.ClientId = GuidBytes(seat.ClientId.Value);
             item.PassiveIds.Add(seat.PassiveIds);
             wire.Seats.Add(item);
@@ -102,7 +101,7 @@ public static class ProtocolCodec
         if (wire.Seats.Count > MaxSeats) throw new InvalidDataException("Invalid seat count.");
         var value = new RoomSnapshot { RoomId = ReadGuid(wire.RoomId), MatchId = wire.HasMatchId ? ReadGuid(wire.MatchId) : null,
             MatchStarted = wire.MatchStarted, DraftRevision = wire.DraftRevision, MapId = wire.MapId,
-            MapTitle = wire.MapTitle, FowType = wire.FowType, WinCondition = wire.WinCondition, QuickStart = wire.QuickStart };
+            MapTitle = wire.MapTitle, FowType = wire.FowType, WinCondition = wire.WinCondition, QuickStart = wire.QuickStart, SavedGame = wire.SavedGame };
         foreach (var seat in wire.Seats)
         {
             if (seat.PassiveIds.Count > MaxSeats) throw new InvalidDataException("Invalid commander passive count.");
@@ -112,7 +111,8 @@ public static class ProtocolCodec
                 ClientId = seat.HasClientId ? ReadGuid(seat.ClientId) : null, Controller = seat.Controller,
                 Team = seat.Team, Color = seat.Color, Position = seat.Position, PositionRandom = seat.PositionRandom,
                 ResourceMultiplier = seat.ResourceMultiplier, AiIntelligence = seat.AiIntelligence,
-                CommanderId = seat.CommanderId, CommanderMode = seat.CommanderMode, SkillId = seat.SkillId };
+                CommanderId = seat.CommanderId, CommanderMode = seat.CommanderMode, SkillId = seat.SkillId,
+                Defeated = seat.Defeated, PendingActivation = seat.PendingActivation };
             item.PassiveIds.AddRange(seat.PassiveIds);
             value.Seats.Add(item);
         }
@@ -153,18 +153,22 @@ public static class ProtocolCodec
             ContentFingerprint = wire.ContentFingerprint };
     }
 
-    public static byte[] EncodeRelayUpdateRoom(RelayUpdateRoomRequest value) => Serialize(new Wire.RelayUpdateRoomRequest
+    public static byte[] EncodeRelayUpdateRoom(RelayUpdateRoomRequest value)
     {
-        RequestId = value.RequestId, RoomId = GuidBytes(value.RoomId), MapTitle = value.MapTitle,
-        ConnectedPlayers = value.ConnectedPlayers, HumanSeats = value.HumanSeats, Status = (Wire.RelayRoomStatus)value.Status
-    });
+        var wire = new Wire.RelayUpdateRoomRequest { RequestId = value.RequestId, RoomId = GuidBytes(value.RoomId), MapTitle = value.MapTitle,
+            ConnectedPlayers = value.ConnectedPlayers, HumanSeats = value.HumanSeats, Status = (Wire.RelayRoomStatus)value.Status,
+            AvailableSeats = value.AvailableSeats };
+        if (value.MatchId.HasValue) wire.MatchId = GuidBytes(value.MatchId.Value);
+        return Serialize(wire);
+    }
 
     public static RelayUpdateRoomRequest DecodeRelayUpdateRoom(byte[] bytes)
     {
         var wire = Parse(Wire.RelayUpdateRoomRequest.Parser, bytes);
         var status = CheckedRelayRoomStatus(wire.Status);
         return new RelayUpdateRoomRequest { RequestId = wire.RequestId, RoomId = ReadGuid(wire.RoomId),
-            MapTitle = wire.MapTitle, ConnectedPlayers = wire.ConnectedPlayers, HumanSeats = wire.HumanSeats, Status = status };
+            MapTitle = wire.MapTitle, ConnectedPlayers = wire.ConnectedPlayers, HumanSeats = wire.HumanSeats, Status = status,
+            AvailableSeats = wire.AvailableSeats, MatchId = wire.HasMatchId ? ReadGuid(wire.MatchId) : null };
     }
 
     public static byte[] EncodeRelayListRoomsRequest(ulong requestId) => Serialize(new Wire.RelayListRoomsRequest { RequestId = requestId });
@@ -194,6 +198,16 @@ public static class ProtocolCodec
     {
         var wire = Parse(Wire.RelayJoinRoomRequest.Parser, bytes);
         return new RelayJoinRoomRequest { RequestId = wire.RequestId, RoomId = ReadGuid(wire.RoomId), Password = wire.Password };
+    }
+
+    public static byte[] EncodeRelayResumeRoom(RelayResumeRoomRequest value) => Serialize(new Wire.RelayResumeRoomRequest
+        { RequestId = value.RequestId, RoomId = GuidBytes(value.RoomId), ClientId = GuidBytes(value.ClientId), MatchId = GuidBytes(value.MatchId) });
+
+    public static RelayResumeRoomRequest DecodeRelayResumeRoom(byte[] bytes)
+    {
+        var wire = Parse(Wire.RelayResumeRoomRequest.Parser, bytes);
+        return new RelayResumeRoomRequest { RequestId = wire.RequestId, RoomId = ReadGuid(wire.RoomId),
+            ClientId = ReadGuid(wire.ClientId), MatchId = ReadGuid(wire.MatchId) };
     }
 
     public static byte[] EncodeRelayControlResponse(RelayControlResponse value)
@@ -226,6 +240,39 @@ public static class ProtocolCodec
     {
         var wire = Parse(Wire.RelayPeerNotice.Parser, bytes);
         return new RelayPeerNotice { ClientId = ReadGuid(wire.ClientId), Reason = wire.Reason };
+    }
+
+    public static byte[] EncodeJoinMatchRequest(JoinMatchRequest value) => Serialize(new Wire.JoinMatchRequest { SeatId = GuidBytes(value.SeatId) });
+    public static JoinMatchRequest DecodeJoinMatchRequest(byte[] bytes) => new JoinMatchRequest { SeatId = ReadGuid(Parse(Wire.JoinMatchRequest.Parser, bytes).SeatId) };
+
+    public static byte[] EncodeResumeSession(ResumeSessionRequest value) => Serialize(new Wire.ResumeSessionRequest
+        { RoomId = GuidBytes(value.RoomId), MatchId = GuidBytes(value.MatchId), ClientId = GuidBytes(value.ClientId),
+          AppliedFrameId = value.AppliedFrameId, VerifiedFrameId = value.VerifiedFrameId });
+
+    public static ResumeSessionRequest DecodeResumeSession(byte[] bytes)
+    {
+        var wire = Parse(Wire.ResumeSessionRequest.Parser, bytes);
+        return new ResumeSessionRequest { RoomId = ReadGuid(wire.RoomId), MatchId = ReadGuid(wire.MatchId), ClientId = ReadGuid(wire.ClientId),
+            AppliedFrameId = wire.AppliedFrameId, VerifiedFrameId = wire.VerifiedFrameId };
+    }
+
+    public static byte[] EncodeResumeSessionAccepted(ResumeSessionAccepted value) => Serialize(new Wire.ResumeSessionAccepted
+        { RoomId = GuidBytes(value.RoomId), MatchId = GuidBytes(value.MatchId), ClientId = GuidBytes(value.ClientId), LatestFrameId = value.LatestFrameId });
+
+    public static ResumeSessionAccepted DecodeResumeSessionAccepted(byte[] bytes)
+    {
+        var wire = Parse(Wire.ResumeSessionAccepted.Parser, bytes);
+        return new ResumeSessionAccepted { RoomId = ReadGuid(wire.RoomId), MatchId = ReadGuid(wire.MatchId), ClientId = ReadGuid(wire.ClientId), LatestFrameId = wire.LatestFrameId };
+    }
+
+    public static byte[] EncodeSeatControlChanged(SeatControlChanged value) => Serialize(new Wire.SeatControlChanged
+        { SeatId = GuidBytes(value.SeatId), PlayerIndex = value.PlayerIndex, AiControlled = value.AiControlled, Reason = value.Reason });
+
+    public static SeatControlChanged DecodeSeatControlChanged(byte[] bytes)
+    {
+        var wire = Parse(Wire.SeatControlChanged.Parser, bytes);
+        return new SeatControlChanged { SeatId = ReadGuid(wire.SeatId), PlayerIndex = wire.PlayerIndex,
+            AiControlled = wire.AiControlled, Reason = wire.Reason };
     }
 
     public static ulong DecodeRelayControlRequestId(byte[] bytes, MessageType type)
@@ -351,7 +398,7 @@ public static class ProtocolCodec
         MapTitle = value.MapTitle, ConnectedPlayers = value.ConnectedPlayers, HumanSeats = value.HumanSeats,
         HasPassword = value.HasPassword, Status = (Wire.RelayRoomStatus)value.Status,
         PluginVersion = value.PluginVersion, GameFingerprint = value.GameFingerprint,
-        ContentFingerprint = value.ContentFingerprint
+        ContentFingerprint = value.ContentFingerprint, AvailableSeats = value.AvailableSeats
     };
 
     private static RelayRoomInfo FromWire(Wire.RelayRoomInfo wire) => new RelayRoomInfo
@@ -360,7 +407,7 @@ public static class ProtocolCodec
         MapTitle = wire.MapTitle, ConnectedPlayers = wire.ConnectedPlayers, HumanSeats = wire.HumanSeats,
         HasPassword = wire.HasPassword, Status = CheckedRelayRoomStatus(wire.Status),
         PluginVersion = wire.PluginVersion, GameFingerprint = wire.GameFingerprint,
-        ContentFingerprint = wire.ContentFingerprint
+        ContentFingerprint = wire.ContentFingerprint, AvailableSeats = wire.AvailableSeats
     };
 
     private static Wire.GameCommandMessage ToWire(GameCommand value)

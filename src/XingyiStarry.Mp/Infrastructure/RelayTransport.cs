@@ -66,7 +66,16 @@ internal sealed class RelayHostTransport : IHostTransport
             if (wire.Delivery == Delivery.RelayControl && wire.Type == MessageType.RelayPeerLeft)
             {
                 var notice = ProtocolCodec.DecodeRelayPeerNotice(wire.Payload);
-                lock (peerLock) if (peers.TryGetValue(notice.ClientId, out var peer)) peer.MarkClosed();
+                RelayRemotePeer? disconnected = null;
+                lock (peerLock) if (peers.TryGetValue(notice.ClientId, out disconnected)) disconnected.MarkClosed();
+                if (notice.Reason == "left" && disconnected is not null)
+                {
+                    envelope = new InboundEnvelope(disconnected, new Envelope { Type = MessageType.LeaveSession });
+                    return true;
+                }
+                // Let HostSession observe the logical disconnect and enter its grace state
+                // before a fast ResumeSession from the replacement socket is dispatched.
+                envelope = null; return false;
             }
         }
         envelope = null; return false;
@@ -128,19 +137,45 @@ internal sealed class RelayClientTransport : IClientTransport
     private readonly ulong joinRequestId;
     private RelaySocket? socket;
     private Guid clientId;
+    private int connectionGeneration;
     public bool IsConnected => socket?.IsConnected == true;
     public RelayClientTransport(Guid roomId, string password, ulong joinRequestId)
     { this.roomId = roomId; this.password = password ?? ""; this.joinRequestId = joinRequestId; }
 
     public async Task ConnectAsync(string host, int port)
     {
-        socket = new RelaySocket(); await socket.ConnectAsync(host, port).ConfigureAwait(false);
-        var envelope = await socket.RequestAsync(new Envelope { Type = MessageType.RelayJoinRoom, Delivery = Delivery.RelayControl,
-            Payload = ProtocolCodec.EncodeRelayJoinRoom(new RelayJoinRoomRequest { RequestId = joinRequestId, RoomId = roomId, Password = password }) },
-            MessageType.RelayControlResponse, joinRequestId, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-        var response = ProtocolCodec.DecodeRelayControlResponse(envelope.Payload);
-        if (!response.Success || !response.ClientId.HasValue) throw new InvalidDataException(response.Reason.Length == 0 ? "中继服务器拒绝加入房间。" : response.Reason);
-        clientId = response.ClientId.Value;
+        var generation = ++connectionGeneration; var nextSocket = new RelaySocket();
+        try
+        {
+            await nextSocket.ConnectAsync(host, port).ConfigureAwait(false);
+            var envelope = await nextSocket.RequestAsync(new Envelope { Type = MessageType.RelayJoinRoom, Delivery = Delivery.RelayControl,
+                Payload = ProtocolCodec.EncodeRelayJoinRoom(new RelayJoinRoomRequest { RequestId = joinRequestId, RoomId = roomId, Password = password }) },
+                MessageType.RelayControlResponse, joinRequestId, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+            var response = ProtocolCodec.DecodeRelayControlResponse(envelope.Payload);
+            if (!response.Success || !response.ClientId.HasValue) throw new InvalidDataException(response.Reason.Length == 0 ? "中继服务器拒绝加入房间。" : response.Reason);
+            if (generation != connectionGeneration) throw new OperationCanceledException("A newer connection attempt replaced this one.");
+            socket?.Dispose(); socket = nextSocket; nextSocket = null!;
+            clientId = response.ClientId.Value;
+        }
+        finally { nextSocket?.Dispose(); }
+    }
+    public async Task ReconnectAsync(string host, int port, Guid expectedRoomId, Guid expectedClientId, Guid matchId, ulong requestId)
+    {
+        var generation = ++connectionGeneration; var previous = socket; socket = null; previous?.Dispose();
+        var nextSocket = new RelaySocket();
+        try
+        {
+            await nextSocket.ConnectAsync(host, port).ConfigureAwait(false);
+            var envelope = await nextSocket.RequestAsync(new Envelope { Type = MessageType.RelayResumeRoom, Delivery = Delivery.RelayControl,
+                Payload = ProtocolCodec.EncodeRelayResumeRoom(new RelayResumeRoomRequest { RequestId = requestId, RoomId = expectedRoomId,
+                    ClientId = expectedClientId, MatchId = matchId }) }, MessageType.RelayControlResponse, requestId, TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+            var response = ProtocolCodec.DecodeRelayControlResponse(envelope.Payload);
+            if (!response.Success || response.ClientId != expectedClientId) throw new InvalidDataException(response.Reason.Length == 0 ? "中继服务器拒绝快速重连。" : response.Reason);
+            if (generation != connectionGeneration) throw new OperationCanceledException("A newer reconnect attempt replaced this one.");
+            socket = nextSocket; nextSocket = null!;
+            clientId = expectedClientId;
+        }
+        finally { nextSocket?.Dispose(); }
     }
     public bool TryDequeue(out Envelope? envelope)
     {
@@ -165,9 +200,10 @@ internal sealed class RelayClientTransport : IClientTransport
     }
     public void Dispose()
     {
+        connectionGeneration++;
         try { if (socket is not null) _ = socket.SendAsync(new Envelope { Type = MessageType.RelayLeaveRoom, RoomId = roomId,
             ClientId = clientId, Delivery = Delivery.RelayControl, Payload = ProtocolCodec.EncodeRelayRoomRequest(new RelayRoomRequest { RoomId = roomId }) }); } catch { }
-        socket?.Dispose(); socket = null;
+        var previous = socket; socket = null; previous?.Dispose();
     }
 }
 

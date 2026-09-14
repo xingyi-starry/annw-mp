@@ -26,6 +26,7 @@ internal interface IClientTransport : IDisposable
 {
     bool IsConnected { get; }
     Task ConnectAsync(string host, int port);
+    Task ReconnectAsync(string host, int port, Guid roomId, Guid clientId, Guid matchId, ulong requestId);
     bool TryDequeue(out Envelope? envelope);
     bool TryDequeueError(out Exception? exception);
     Task SendAsync(MessageType type, byte[] payload);

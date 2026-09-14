@@ -52,6 +52,7 @@ internal static class NativeLobbyPanel
         var row = GameUiKit.Rect("Actions", body); row.gameObject.AddComponent<LayoutElement>().preferredHeight = 48f;
         var horizontal = row.gameObject.AddComponent<HorizontalLayoutGroup>(); horizontal.spacing = 12f; horizontal.childControlHeight = true; horizontal.childControlWidth = true; horizontal.childForceExpandWidth = true;
         GameUiKit.Button(row, "Host", "创建房间", OnHost);
+        GameUiKit.Button(row, "HostSave", "从存档创建", OnHostSave);
         GameUiKit.Button(row, "Join", "连接房间", OnJoin);
         GameUiKit.Button(row, "Close", "返回", Close);
         status = AddFixedText(body, "未连接", 17f, 48f, TextAlignmentOptions.Center);
@@ -84,6 +85,19 @@ internal static class NativeLobbyPanel
     {
         var plugin = ApplyInputs(); if (plugin == null) return;
         waitingForHandshake = true; plugin.Join(plugin.ConfiguredAddress, plugin.ConfiguredPort);
+    }
+
+    private static void OnHostSave()
+    {
+        var plugin = ApplyInputs(); if (plugin == null) return;
+        if (menu == null || root == null) return;
+        root.SetActive(false);
+        SavedRoomFlow.Open(menu, path =>
+        {
+            plugin.HostFromSave(plugin.ConfiguredPort, path);
+            if (plugin.IsHost) EnterConfiguration();
+            else if (root != null) root.SetActive(true);
+        }, () => { if (root != null) { root.SetActive(true); root.transform.SetAsLastSibling(); } });
     }
 
     private static XingyiStarryMpPlugin? ApplyInputs()
