@@ -24,7 +24,7 @@ internal static class Program
         Test("protobuf wire format", ProtobufWireFormat);
         Test("all protobuf messages", AllProtobufMessagesRoundTrip);
         Test("relay protobuf messages", RelayMessagesRoundTrip);
-        Test("v13 session messages", SessionMessagesRoundTrip);
+        Test("v14 session messages", SessionMessagesRoundTrip);
         await TestAsync("packet framing", PacketRoundTrip);
         var relayEndpoint = Environment.GetEnvironmentVariable("XINGYI_RELAY_TEST_ENDPOINT");
         if (!string.IsNullOrWhiteSpace(relayEndpoint)) await TestAsync("C# to Go relay integration", () => RelayIntegration(relayEndpoint));
@@ -39,6 +39,10 @@ internal static class Program
         Equal(3, decoded.DebugPlayerIndex); Equal(1200, decoded.DebugMetalDelta); Equal(800, decoded.DebugPowerDelta); Equal(2, decoded.AiActionType);
         var surrender = ProtocolCodec.DecodeCommand(ProtocolCodec.EncodeCommand(new GameCommand { Kind = CommandKind.Surrender, TargetX = 4 }));
         Equal(CommandKind.Surrender, surrender.Kind); Equal(4, surrender.TargetX);
+        Equal((ushort)20, (ushort)CommandKind.SelfDestruct);
+        var selfDestruct = ProtocolCodec.DecodeCommand(ProtocolCodec.EncodeCommand(new GameCommand
+            { Kind = CommandKind.SelfDestruct, UnitIds = new long[] { 17 } }));
+        Equal(CommandKind.SelfDestruct, selfDestruct.Kind); Equal(17L, selfDestruct.UnitIds[0]);
     }
 
     private static void AuthorityChain()
@@ -127,7 +131,7 @@ internal static class Program
     {
         var clientId = Guid.NewGuid(); var roomId = Guid.NewGuid(); var matchId = Guid.NewGuid();
         var hello = ProtocolCodec.DecodeHello(ProtocolCodec.EncodeHello(new HelloMessage
-            { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.6.0", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "玩家" }));
+            { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.6.3", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "玩家" }));
         Equal("玩家", hello.DisplayName); Equal(ProtocolConstants.Version, hello.ProtocolVersion);
 
         var welcome = ProtocolCodec.DecodeWelcome(ProtocolCodec.EncodeWelcome(new WelcomeMessage
@@ -228,7 +232,7 @@ internal static class Program
         var roomId = Guid.NewGuid();
         await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RelayRegisterRoom, Delivery = Delivery.RelayControl,
             Payload = ProtocolCodec.EncodeRelayRegisterRoom(new RelayRegisterRoomRequest { RequestId = 101, RoomId = roomId,
-                RoomName = "interop", HostName = "host", Password = "secret", PluginVersion = "0.6.2", GameFingerprint = "game", ContentFingerprint = "content" }) }, CancellationToken.None);
+                RoomName = "interop", HostName = "host", Password = "secret", PluginVersion = "0.6.3", GameFingerprint = "game", ContentFingerprint = "content" }) }, CancellationToken.None);
         var registered = ProtocolCodec.DecodeRelayControlResponse((await ReadType(host, MessageType.RelayControlResponse)).Payload);
         True(registered.Success); True(registered.ClientId.HasValue);
 
@@ -244,7 +248,7 @@ internal static class Program
         await ReadType(host, MessageType.RelayPeerJoined);
 
         await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Type = MessageType.Hello, Delivery = Delivery.ToHost,
-            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeHello(new HelloMessage { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.6.2",
+            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeHello(new HelloMessage { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.6.3",
                 GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "client" }) }, CancellationToken.None);
         var hello = await ReadType(host, MessageType.Hello); Equal(clientId, hello.ClientId); Equal(Delivery.ToHost, hello.Delivery);
 
@@ -259,6 +263,12 @@ internal static class Program
         var forwardedRoom = ProtocolCodec.DecodeRoom((await ReadType(client, MessageType.RoomState)).Payload);
         Equal("local-map", forwardedRoom.MapId); Equal(true, forwardedRoom.UserMap);
         True(AuthorityHashChain.FixedEquals(preview, forwardedRoom.MapPreview));
+
+        await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Type = MessageType.CommandRequest, Delivery = Delivery.ToHost,
+            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeCommandRequest(new CommandRequest
+            { ClientId = clientId, RequestId = 106, Command = new GameCommand { Kind = CommandKind.SelfDestruct, UnitIds = new long[] { 17 } } }) }, CancellationToken.None);
+        var forwardedSelfDestruct = ProtocolCodec.DecodeCommandRequest((await ReadType(host, MessageType.CommandRequest)).Payload);
+        Equal(CommandKind.SelfDestruct, forwardedSelfDestruct.Command.Kind); Equal(17L, forwardedSelfDestruct.Command.UnitIds[0]);
 
         var matchId = Guid.NewGuid();
         await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RelayUpdateRoom, Delivery = Delivery.RelayControl,

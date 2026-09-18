@@ -25,7 +25,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.6.2";
+    public const string PluginVersion = "0.6.3";
 
     private Harmony? harmony;
     private HostSession? host;

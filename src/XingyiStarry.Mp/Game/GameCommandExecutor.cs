@@ -49,6 +49,12 @@ internal sealed class GameCommandExecutor
                 return "Unit cannot move again this turn: " + id;
         }
         if (command.Kind == CommandKind.Move && (command.UnitTargetXs.Length != command.UnitIds.Length || command.UnitTargetYs.Length != command.UnitIds.Length)) return "Move target count mismatch.";
+        if (command.Kind == CommandKind.SelfDestruct)
+        {
+            if (command.UnitIds.Length != 1) return "Self-destruct must contain exactly one unit.";
+            var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
+            if (unit.dying || !GameAPI.self.CanDoSelfDestruct(unit)) return "Original self-destruct validation rejected the command.";
+        }
         if (command.Kind == CommandKind.AiUnitAction)
         {
             if (!GS_Battle.self.cur_player.is_ai) return "Current player is not AI controlled.";
@@ -202,6 +208,7 @@ internal sealed class GameCommandExecutor
             case CommandKind.ToggleStandby: return ExecuteToggleState(command, sleep: false);
             case CommandKind.ToggleSleep: return ExecuteToggleState(command, sleep: true);
             case CommandKind.Stay: return ExecuteStay(command);
+            case CommandKind.SelfDestruct: return ExecuteSelfDestruct(command);
             default: return Unsupported(command.Kind);
         }
     }
@@ -347,6 +354,17 @@ internal sealed class GameCommandExecutor
             if (command.PassengerUnitId != 0) GS_Battle.self.ux_unload_unit = GS_Battle.self.all_unit.GetUnitByID((int)command.PassengerUnitId);
             yield return GameController.self.ExecuteAction(unit, (ActionCate)command.ActionCategory, target);
         }
+    }
+
+    private static IEnumerator ExecuteSelfDestruct(GameCommand command)
+    {
+        var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
+        var die = HarmonyLib.AccessTools.Method(typeof(UnitData), "Die");
+        if (die is null) throw new MissingMethodException(typeof(UnitData).FullName, "Die");
+        die.Invoke(unit, new object?[] { DieReason.DELETE, 0f, null, null, true, null });
+        // DELETE starts the native death coroutine. Wait for its state-changing DescendUnit
+        // before the authority captures a safe snapshot or admits the next command.
+        while (unit.dying && !unit.dead) yield return 0f;
     }
 
     private static IEnumerator ExecuteMove(GameCommand command)

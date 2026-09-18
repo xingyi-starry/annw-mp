@@ -2,7 +2,7 @@ namespace XingyiStarry.Mp.Protocol;
 
 public static class ProtocolConstants
 {
-    public const ushort Version = 13;
+    public const ushort Version = 14;
     // Keep a room update well below the relay's default 8 MiB per-peer write queue.
     public const int MaxMapPreviewBytes = 4 * 1024 * 1024;
     public const int MaxExpandedMapPreviewBytes = 32 * 1024 * 1024;
@@ -111,7 +111,8 @@ public enum CommandKind : ushort
     Surrender = 16,
     ToggleStandby = 17,
     ToggleSleep = 18,
-    Stay = 19
+    Stay = 19,
+    SelfDestruct = 20
 }
 
 public enum TurnPhase : byte

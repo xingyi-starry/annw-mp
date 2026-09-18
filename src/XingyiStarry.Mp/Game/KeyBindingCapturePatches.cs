@@ -19,6 +19,11 @@ internal static class KeyBindingCommandCapturePatch
     private static void Postfix(InputAction action, ref bool __result)
     {
         if (!__result || !KeyboardInputScopePatch.Active || !InputGate.MultiplayerActive) return;
+        if (action == InputAction.SelfDestroy)
+        {
+            if (!InputGate.MaySubmit) __result = false;
+            return;
+        }
         if (action != InputAction.StandByAndNext && action != InputAction.ToggleStandby &&
             action != InputAction.ToggleSleep && action != InputAction.SetUnitToStay) return;
 
