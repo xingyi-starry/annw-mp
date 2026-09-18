@@ -98,7 +98,8 @@ message Room {
 
   repeated Seat seats = 10;
   bool saved_game = 11;
-
+  bool user_map = 12;
+  bytes map_preview = 13;
 }
 
 message GameCommandMessage {

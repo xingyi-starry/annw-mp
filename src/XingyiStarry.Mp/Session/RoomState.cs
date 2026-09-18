@@ -18,6 +18,8 @@ internal sealed class RoomState
     public int WinCondition { get; private set; }
     public int QuickStart { get; private set; }
     public bool SavedGame { get; private set; }
+    public bool UserMap { get; private set; }
+    public byte[] MapPreview { get; private set; } = Array.Empty<byte>();
     private string draftFingerprint = "";
 
     public RoomState(Guid? roomId = null) => RoomId = roomId ?? Guid.NewGuid();
@@ -31,15 +33,16 @@ internal sealed class RoomState
     public void ConfigureSavedGame(string mapId, string mapTitle, int fowType, int winCondition, int quickStart, IEnumerable<SeatInfo> values)
     {
         if (MatchStarted) throw new InvalidOperationException("Cannot configure a saved game after match start.");
-        SavedGame = true; MapId = mapId; MapTitle = mapTitle; FowType = fowType; WinCondition = winCondition; QuickStart = quickStart;
+        SavedGame = true; UserMap = false; MapPreview = Array.Empty<byte>(); MapId = mapId; MapTitle = mapTitle; FowType = fowType; WinCondition = winCondition; QuickStart = quickStart;
         seats.Clear(); seats.AddRange(values); ClearReady(); DraftRevision++;
     }
 
-    public bool SyncDraft(string mapId, string mapTitle, int fowType, int winCondition, int quickStart, string fingerprint, IEnumerable<SeatInfo> values)
+    public bool SyncDraft(string mapId, string mapTitle, int fowType, int winCondition, int quickStart, bool userMap, byte[] mapPreview, string fingerprint, IEnumerable<SeatInfo> values)
     {
         if (MatchStarted) return false;
         var desired = values.OrderBy(value => value.LobbySlotIndex).ToList();
-        var changed = MapId != mapId || MapTitle != mapTitle || FowType != fowType || WinCondition != winCondition || QuickStart != quickStart || draftFingerprint != fingerprint ||
+        var changed = MapId != mapId || MapTitle != mapTitle || FowType != fowType || WinCondition != winCondition || QuickStart != quickStart ||
+            UserMap != userMap || !MapPreview.SequenceEqual(mapPreview) || draftFingerprint != fingerprint ||
             seats.Count != desired.Count || seats.Zip(desired, (left, right) => left.LobbySlotIndex != right.LobbySlotIndex || left.OriginallyHuman != right.OriginallyHuman).Any(value => value);
         if (!changed) return false;
 
@@ -55,7 +58,8 @@ internal sealed class RoomState
             item.Ready = !item.OriginallyHuman;
             seats.Add(item);
         }
-        MapId = mapId; MapTitle = mapTitle; FowType = fowType; WinCondition = winCondition; QuickStart = quickStart; draftFingerprint = fingerprint;
+        MapId = mapId; MapTitle = mapTitle; FowType = fowType; WinCondition = winCondition; QuickStart = quickStart;
+        UserMap = userMap; MapPreview = (byte[])mapPreview.Clone(); draftFingerprint = fingerprint;
         DraftRevision++;
         return true;
     }
@@ -116,7 +120,7 @@ internal sealed class RoomState
 
     public RoomSnapshot Snapshot()
     {
-        var snapshot = new RoomSnapshot { RoomId = RoomId, MatchStarted = MatchStarted, DraftRevision = DraftRevision, MapId = MapId, MapTitle = MapTitle, FowType = FowType, WinCondition = WinCondition, QuickStart = QuickStart, SavedGame = SavedGame };
+        var snapshot = new RoomSnapshot { RoomId = RoomId, MatchStarted = MatchStarted, DraftRevision = DraftRevision, MapId = MapId, MapTitle = MapTitle, FowType = FowType, WinCondition = WinCondition, QuickStart = QuickStart, SavedGame = SavedGame, UserMap = UserMap, MapPreview = (byte[])MapPreview.Clone() };
         foreach (var seat in seats) snapshot.Seats.Add(new SeatInfo
         {
             SeatId = seat.SeatId, LobbySlotIndex = seat.LobbySlotIndex, PlayerIndex = seat.PlayerIndex, DisplayName = seat.DisplayName,

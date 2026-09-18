@@ -25,7 +25,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.6.1";
+    public const string PluginVersion = "0.6.2";
 
     private Harmony? harmony;
     private HostSession? host;
@@ -339,15 +339,21 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         fastReconnectPopup = null;
     }
 
-    internal void SyncLobbyDraft(UI_MENU_LevelSelect_InfoSkm info, string mapId)
+    internal bool SyncLobbyDraft(UI_MENU_LevelSelect_InfoSkm info, string mapId)
     {
-        if ((host is null && client is null) || CurrentRoom?.SavedGame == true || host?.MatchId.HasValue == true || info?.group is null || string.IsNullOrEmpty(mapId)) return;
+        if ((host is null && client is null) || CurrentRoom?.SavedGame == true || host?.MatchId.HasValue == true || info?.group is null || string.IsNullOrEmpty(mapId)) return false;
         var players = info.group.GenerateData();
         var draft = CreateLobbyDraft(mapId, info, players);
         if (host is not null)
+        {
+            try { draft.MapPreview = NativeSkirmishLobby.CaptureMapPreview(info, out var userMap); draft.UserMap = userMap; }
+            catch (Exception ex) { Status = "地图预览同步失败：" + ex.Message; NativeSkirmishLobby.ShowMapError(Status); Logger.LogWarning(ex); return false; }
             host.UpdateLobbyDraft(draft, players);
+            return true;
+        }
         else if (client is not null)
             _ = client.SendLobbyDraftAsync(draft);
+        return true;
     }
 
     private static RoomSnapshot CreateLobbyDraft(string mapId, UI_MENU_LevelSelect_InfoSkm info, IReadOnlyList<SGS_Player> players)
@@ -439,7 +445,8 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             if (!host.Room.CanStart) { Status = "主机需选择席位，且所有已选席玩家必须准备"; return false; }
             StartSavedGame(); return false;
         }
-        SyncLobbyDraft(info, mapId);
+        if (!SyncLobbyDraft(info, mapId) || host.Room.MapId != mapId || host.Room.MapPreview.Length == 0)
+        { Status = "主机尚未同步当前地图预览"; return false; }
         if (!host.Room.CanStart) { Status = "尚有真人席位未认领或未准备"; return false; }
         hostStartAuthorized = true;
         NativeSkirmishLobby.MarkStartingMatch();

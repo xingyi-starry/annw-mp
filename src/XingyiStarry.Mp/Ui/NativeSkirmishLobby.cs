@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using ANNW;
 using HarmonyLib;
 using TMPro;
@@ -27,6 +28,9 @@ internal static class NativeSkirmishLobby
     private static int lastSeatSignature;
     private static int lastDraftSignature;
     private static float nextRefresh;
+    private static byte[]? cachedMapPreview;
+    private static bool cachedUserMap;
+    private static string previewError = "";
 
     internal static bool Active { get; private set; }
     internal static UI_MENU_LevelSelect_InfoSkm? CurrentInfo => info;
@@ -55,6 +59,7 @@ internal static class NativeSkirmishLobby
     internal static void OnInfoRendered(UI_MENU_LevelSelect_InfoSkm value)
     {
         if (!Active) return;
+        cachedMapPreview = null; previewError = "";
         info = value;
         var plugin = XingyiStarryMpPlugin.Instance; var mapId = CurrentMapId();
         if (plugin?.IsHost == true && plugin.CurrentRoom?.SavedGame != true && !string.IsNullOrEmpty(mapId))
@@ -76,7 +81,17 @@ internal static class NativeSkirmishLobby
             var signature = DraftSignature(info, mapId);
             if (signature != lastDraftSignature) { lastDraftSignature = signature; plugin.SyncLobbyDraft(info, mapId); }
         }
-        if (room != null && (plugin.IsClient || room.SavedGame)) ApplyGuestDraft(room);
+        if (room != null && (plugin.IsClient || room.SavedGame))
+        {
+            try { ApplyGuestDraft(room); }
+            catch (Exception ex)
+            {
+                previewError = "主机地图预览无效：" + ex.Message;
+                lastAppliedRevision = room.DraftRevision;
+                info.gameObject.SetActive(false);
+                Debug.LogError("[XingyiStarry MP] " + previewError);
+            }
+        }
         if (plugin.IsClient && room?.MatchStarted != true && room?.SavedGame != true && !string.IsNullOrEmpty(mapId))
         {
             var signature = DraftSignature(info, mapId);
@@ -97,6 +112,34 @@ internal static class NativeSkirmishLobby
         var path = AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_map")?.GetValue(info) as string;
         return string.IsNullOrEmpty(path) ? "" : Path.GetFileNameWithoutExtension(path);
     }
+
+    internal static byte[] CaptureMapPreview(UI_MENU_LevelSelect_InfoSkm value, out bool userMap)
+    {
+        if (cachedMapPreview is not null) { userMap = cachedUserMap; return cachedMapPreview; }
+        var selected = AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_ob")?.GetValue(value) as DynOb;
+        userMap = selected is null;
+        if (userMap)
+        {
+            var path = AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_map")?.GetValue(value) as string;
+            selected = Singleton<BattleAndMapFileSystem>.self.ReadFileWithMeta_Local(path ?? "");
+        }
+        if (selected is null) throw new InvalidDataException("原版未能读取地图预览。");
+        var preview = new DynOb();
+        preview.SetKey("terrain", selected.GetKey_Obj("terrain"));
+        preview.SetKey("commander", selected.GetKey_Obj("commander"));
+        if (selected.HasKey("units")) preview.SetKey("units", selected.GetKey_Obj("units"));
+        if (selected.HasKey("lock_fow_setting")) preview.SetKey("lock_fow_setting", selected.GetKey_Enum("lock_fow_setting", FOW_Type.None));
+        if (selected.HasKey("lock_win_condition")) preview.SetKey("lock_win_condition", selected.GetKey_Enum("lock_win_condition", SkirmishWinCondition.None));
+        if (selected.HasKey("lock_quick_start")) preview.SetKey("lock_quick_start", selected.GetKey_Enum("lock_quick_start", QuickStartSetting.None));
+        var plain = Encoding.UTF8.GetBytes(preview.ToString());
+        if (plain.Length > ProtocolConstants.MaxExpandedMapPreviewBytes) throw new InvalidDataException("地图预览数据过大。");
+        var compressed = SnapshotCodec.Compress(plain);
+        if (compressed.Length > ProtocolConstants.MaxMapPreviewBytes) throw new InvalidDataException("地图预览压缩数据过大。");
+        cachedUserMap = userMap; cachedMapPreview = compressed;
+        return compressed;
+    }
+
+    internal static void ShowMapError(string message) => previewError = message;
 
     internal static void MarkStartingMatch() => CleanupUi();
 
@@ -155,12 +198,21 @@ internal static class NativeSkirmishLobby
     private static void ApplyGuestDraft(RoomSnapshot room)
     {
         if (info == null || screen == null || room.DraftRevision == lastAppliedRevision || string.IsNullOrEmpty(room.MapId)) return;
-        var asset = Resources.Load<TextAsset>("Skirmish/" + room.MapId);
-        if (asset == null) return;
+        if (room.MapPreview.Length == 0) return;
+        var bytes = SnapshotCodec.Decompress(room.MapPreview, ProtocolConstants.MaxExpandedMapPreviewBytes);
+        var preview = DynOb.Parse(Encoding.UTF8.GetString(bytes)) as DynOb;
+        if (preview is null) throw new InvalidDataException("无法解析主机地图预览。");
         info.gameObject.SetActive(true);
-        screen.OnSelectMap(asset);
+        AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_ob")?.SetValue(info, preview);
+        AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_ob_name")?.SetValue(info, room.MapId);
+        AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_map")?.SetValue(info, null);
+        if (info.txt_info_title != null) info.txt_info_title.text = room.MapTitle;
+        AccessTools.Method(typeof(UI_MENU_LevelSelect_InfoSkm), "RenderForOb")?.Invoke(info, new object[] { preview });
+        AccessTools.Method(typeof(UI_MENU_LevelSelect_InfoSkm), "ReadLocks")?.Invoke(info, new object[] { preview });
+        AccessTools.Method(typeof(UI_MENU_LevelSelect_InfoSkm), "SetUpOptions")?.Invoke(info, Array.Empty<object>());
         info.dd_fow.SetValueWithoutNotify(room.FowType); info.dd_condition.SetValueWithoutNotify(room.WinCondition); info.dd_quickStart.SetValueWithoutNotify(room.QuickStart);
         ApplySeatSettings(room);
+        previewError = "";
         lastAppliedRevision = room.DraftRevision;
         lastDraftSignature = DraftSignature(info, room.MapId);
     }
@@ -372,6 +424,7 @@ internal static class NativeSkirmishLobby
     private static void RefreshStatus(XingyiStarryMpPlugin plugin, RoomSnapshot? room)
     {
         if (statusText == null) return;
+        if (previewError.Length != 0) { statusText.text = previewError; return; }
         var local = plugin.LocalIdentityId is Guid id ? room?.Seats.Find(value => value.ClientId == id) : null;
         if (room == null || string.IsNullOrEmpty(room.MapId)) statusText.text = plugin.IsHost ? "请选择地图并设置 Human / AI" : "等待主机选择地图";
         else if (local == null) statusText.text = room.MatchStarted ? "选择右侧可接管席位，然后点击加入游戏" : "选择席位行右侧按钮；已占用席位会置灰";
@@ -436,6 +489,7 @@ internal static class NativeSkirmishLobby
         if (roomRoot != null) UnityEngine.Object.Destroy(roomRoot);
         roomRoot = null; roomRect = null; actionsRow = null; statusText = null; syntheticSeatRoot = null; screen = null; info = null;
         lastAppliedRevision = -1; lastSeatSignature = 0; lastDraftSignature = 0;
+        cachedMapPreview = null; previewError = "";
     }
 
     private static string SeatLabel(SeatInfo seat) => seat.Defeated ? "已战败" : !seat.Connected ? "选择" : $"{seat.DisplayName}{(seat.Ready ? " ✓" : "")}";

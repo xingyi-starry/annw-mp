@@ -233,7 +233,8 @@ internal sealed class HostSession : IDisposable
                 .Append(',').Append(intent?.CommanderId ?? "").Append(',').Append(intent?.SkillId ?? "");
             if (intent is not null) foreach (var passive in intent.PassiveIds) fingerprint.Append(',').Append(passive);
         }
-        if (Room.SyncDraft(draft.MapId, draft.MapTitle, draft.FowType, draft.WinCondition, draft.QuickStart, fingerprint.ToString(), values)) BroadcastRoom();
+        if (Room.SyncDraft(draft.MapId, draft.MapTitle, draft.FowType, draft.WinCondition, draft.QuickStart,
+            draft.UserMap, draft.MapPreview, fingerprint.ToString(), values)) BroadcastRoom();
     }
 
     public void ConfigureSavedGame(DynOb save, StartGameSetting settings)

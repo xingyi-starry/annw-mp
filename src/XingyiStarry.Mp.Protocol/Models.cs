@@ -181,6 +181,8 @@ public sealed class RoomSnapshot
     public int QuickStart { get; set; }
     public List<SeatInfo> Seats { get; } = new List<SeatInfo>();
     public bool SavedGame { get; set; }
+    public bool UserMap { get; set; }
+    public byte[] MapPreview { get; set; } = Array.Empty<byte>();
 }
 
 public sealed class CommandRequest
