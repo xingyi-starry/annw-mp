@@ -11,6 +11,15 @@ internal static class MultiplayerPauseMenuPatch
     private static void Postfix(UI_POP_PauseMenu __instance)
     {
         if (!InputGate.MultiplayerActive) return;
+        Refresh(__instance);
+        if (__instance.btn_load is null) return;
+        foreach (var label in __instance.btn_load.GetComponentsInChildren<TMP_Text>(true))
+            label.text = "重新同步";
+    }
+
+    internal static void Refresh(UI_POP_PauseMenu __instance)
+    {
+        if (!InputGate.MultiplayerActive) return;
         if (__instance.btn_save is not null)
         {
             var canSave = XingyiStarryMpPlugin.Instance?.CanMultiplayerSave == true;
@@ -20,8 +29,45 @@ internal static class MultiplayerPauseMenuPatch
         if (__instance.btn_load is null) return;
         __instance.btn_load.gameObject.SetActive(true);
         __instance.btn_load.interactable = XingyiStarryMpPlugin.Instance?.CanManualResync == true;
-        foreach (var label in __instance.btn_load.GetComponentsInChildren<TMP_Text>(true))
-            label.text = "重新同步";
+    }
+}
+
+[HarmonyPatch(typeof(UI_POP_PauseMenu), nameof(UI_POP_PauseMenu.OnBtn_EnableEditor))]
+internal static class MultiplayerEditorEnablePatch
+{
+    private static bool Prefix() => !InputGate.MultiplayerActive;
+}
+
+[HarmonyPatch(typeof(UI_TopRightButtons), nameof(UI_TopRightButtons.OnClick_Editor))]
+internal static class MultiplayerEditorButtonPatch
+{
+    private static bool Prefix() => !InputGate.MultiplayerActive;
+}
+
+[HarmonyPatch(typeof(UI_TopRightButtons), "Update")]
+internal static class MultiplayerEditorButtonVisibilityPatch
+{
+    private static void Postfix(UI_TopRightButtons __instance)
+    {
+        if (InputGate.MultiplayerActive && __instance.Btn_Editor is not null)
+            __instance.Btn_Editor.SetActive(false);
+    }
+}
+
+[HarmonyPatch(typeof(SUI_DBG_BATTLE), nameof(SUI_DBG_BATTLE.Show))]
+internal static class MultiplayerEditorPanelPatch
+{
+    private static bool Prefix() => !InputGate.MultiplayerActive;
+}
+
+[HarmonyPatch(typeof(UI_POP_PauseMenu), nameof(UI_POP_PauseMenu.UpdateButtonVisibility))]
+internal static class MultiplayerEditorPauseVisibilityPatch
+{
+    private static void Postfix(UI_POP_PauseMenu __instance)
+    {
+        if (!InputGate.MultiplayerActive) return;
+        if (__instance.btn_enable_editor is not null) __instance.btn_enable_editor.gameObject.SetActive(false);
+        if (__instance.btn_disable_editor is not null) __instance.btn_disable_editor.gameObject.SetActive(false);
     }
 }
 

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Threading;
 using ANNW;
 using UnityEngine;
 using XingyiStarry.Mp.Protocol;
@@ -18,18 +19,23 @@ internal static class MultiplayerUnitStates
     {
         public MultiplayerUnitState State;
         public float AwaitingUntil;
+        public long AttemptToken;
     }
 
     private static readonly ConditionalWeakTable<UnitData, StateSlot> States = new ConditionalWeakTable<UnitData, StateSlot>();
 
-    public static bool TryEnterAwaitingAuthority(GameCommand command)
+    private static long nextAttemptToken;
+
+    public static bool TryEnterAwaitingAuthority(GameCommand command, out long token)
     {
+        token = 0;
         foreach (var id in command.UnitIds)
         {
             var unit = Resolve(id);
             if (unit is not null && GetState(unit) != MultiplayerUnitState.Ready) return false;
         }
 
+        token = Interlocked.Increment(ref nextAttemptToken);
         var deadline = Time.realtimeSinceStartup + 3f;
         foreach (var id in command.UnitIds)
         {
@@ -38,8 +44,22 @@ internal static class MultiplayerUnitStates
             var slot = States.GetOrCreateValue(unit);
             slot.State = MultiplayerUnitState.AwaitingAuthority;
             slot.AwaitingUntil = deadline;
+            slot.AttemptToken = token;
         }
         return true;
+    }
+
+    public static void RejectAwaitingAuthority(GameCommand command, long token)
+    {
+        foreach (var id in command.UnitIds)
+        {
+            var unit = Resolve(id);
+            if (unit is null || !States.TryGetValue(unit, out var slot) ||
+                slot.State != MultiplayerUnitState.AwaitingAuthority || slot.AttemptToken != token) continue;
+            slot.State = MultiplayerUnitState.Ready;
+            slot.AwaitingUntil = 0f;
+            slot.AttemptToken = 0;
+        }
     }
 
     public static void BeginAuthorityExecution(GameCommand command)
@@ -51,6 +71,7 @@ internal static class MultiplayerUnitStates
             var slot = States.GetOrCreateValue(unit);
             slot.State = MultiplayerUnitState.AuthorityExecution;
             slot.AwaitingUntil = 0f;
+            slot.AttemptToken = 0;
         }
     }
 
@@ -62,6 +83,7 @@ internal static class MultiplayerUnitStates
             if (unit is null || !States.TryGetValue(unit, out var slot)) continue;
             slot.State = MultiplayerUnitState.Ready;
             slot.AwaitingUntil = 0f;
+            slot.AttemptToken = 0;
         }
     }
 
@@ -72,6 +94,7 @@ internal static class MultiplayerUnitStates
         {
             slot.State = MultiplayerUnitState.Ready;
             slot.AwaitingUntil = 0f;
+            slot.AttemptToken = 0;
         }
         return slot.State;
     }

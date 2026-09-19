@@ -22,7 +22,8 @@ internal static class ImmediateActionCapturePatch
             AutoGuideCapturePatches.SubmitSelected(); return false;
         }
         if (!Immediate.Contains(__instance.cate)) return true;
-        var units = GS_Battle.self.sel_group_units; var ids = new long[units.Count]; var xs = new int[units.Count]; var ys = new int[units.Count];
+        var units = LocalCommandUnits.Filter(GS_Battle.self.sel_group_units); var ids = new long[units.Count]; var xs = new int[units.Count]; var ys = new int[units.Count];
+        if (units.Count == 0) { XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits(); return false; }
         for (var i = 0; i < units.Count; i++) { ids[i] = units[i].unit_id; xs[i] = units[i].pos.x; ys[i] = units[i].pos.y; }
         var switchField = AccessTools.Field(typeof(UI_ActionBtn), "switch_state");
         var currentState = switchField is not null && (bool)switchField.GetValue(__instance);

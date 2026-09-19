@@ -13,6 +13,7 @@ internal sealed class RandomTape
 
     public bool IsRecording { get; private set; }
     public bool IsReplaying => replayRecords is not null;
+    public RandomRecord? FirstUnused => replayRecords is { Count: > 0 } ? replayRecords.Peek() : null;
 
     public void BeginRecording() { Reset(); IsRecording = true; }
     public void BeginReplay(IEnumerable<RandomRecord> records) { Reset(); replayRecords = new Queue<RandomRecord>(records); }

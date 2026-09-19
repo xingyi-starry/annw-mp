@@ -13,6 +13,18 @@ internal static class KeyboardInputScopePatch
     private static void Finalizer() => Active = false;
 }
 
+[HarmonyPatch(typeof(FUI_WorldCursor), "ConfirmAtCursor")]
+internal static class KeyboardCursorConfirmPatch
+{
+    private static bool Prefix() => !InputGate.MultiplayerActive || InputGate.MaySubmit;
+}
+
+[HarmonyPatch(typeof(FUI_WorldCursor), "CancelAtCursor")]
+internal static class KeyboardCursorCancelPatch
+{
+    private static bool Prefix() => !InputGate.MultiplayerActive || InputGate.MaySubmit;
+}
+
 [HarmonyPatch(typeof(InputKeybinding), nameof(InputKeybinding.IsActionKeyPressed))]
 internal static class KeyBindingCommandCapturePatch
 {
@@ -29,8 +41,8 @@ internal static class KeyBindingCommandCapturePatch
 
         __result = false;
         if (!InputGate.MaySubmit) return;
-        var units = GS_Battle.self.selected_units;
-        if (units.Count == 0) return;
+        var units = LocalCommandUnits.Filter(GS_Battle.self.selected_units, action == InputAction.SetUnitToStay);
+        if (units.Count == 0) { XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits(); return; }
         var ids = new long[units.Count];
         for (var i = 0; i < units.Count; i++) ids[i] = units[i].unit_id;
 

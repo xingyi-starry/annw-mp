@@ -12,7 +12,10 @@ internal static class EquipmentActionCapturePatch
     private static bool Prefix(GameTileData lt, List<UnitData> temp, ref IEnumerator __result)
     {
         if (InputGate.ShouldRunOriginal) return true;
-        XingyiStarryMpPlugin.Instance?.SubmitCommand(Command(temp, CommandKind.EquipmentAction, lt)); __result = Empty(); return false;
+        var units = LocalCommandUnits.Filter(temp);
+        if (units.Count == 0) XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits();
+        else XingyiStarryMpPlugin.Instance?.SubmitCommand(Command(units, CommandKind.EquipmentAction, lt));
+        __result = Empty(); return false;
     }
     internal static GameCommand Command(List<UnitData> units, CommandKind kind, GameTileData target)
     {
@@ -28,6 +31,8 @@ internal static class EquipmentMoveCapturePatch
     private static bool Prefix(GameTileData lt, UnitData unit, ref IEnumerator __result)
     {
         if (InputGate.ShouldRunOriginal) return true;
+        if (!LocalCommandUnits.Owned(unit) || unit.moved || unit.building || unit.actioned)
+        { XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits(); __result = EquipmentActionCapturePatch.Empty(); return false; }
         var command = EquipmentActionCapturePatch.Command(new List<UnitData> { unit }, CommandKind.EquipmentMoveAction, lt);
         var op = unit.eq.GetMoveOpAt(lt.pos);
         if (op?.move_pos is Inctor2 move)
@@ -48,6 +53,8 @@ internal static class BuildWithMoveCapturePatch
     private static bool Prefix(GameTileData lt, UnitData unit, OpData op, ref IEnumerator __result)
     {
         if (InputGate.ShouldRunOriginal) return true;
+        if (!LocalCommandUnits.CanMove(unit) || unit.actioned)
+        { XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits(); __result = EquipmentActionCapturePatch.Empty(); return false; }
         var command = EquipmentActionCapturePatch.Command(new List<UnitData> { unit }, CommandKind.BuildWithMove, lt);
         if (op.move_pos is Inctor2 move)
         {

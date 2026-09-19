@@ -11,9 +11,15 @@ internal static class UnitsDoActionCapturePatch
     private static bool Prefix(GameTileData lt, List<UnitData> temp, ref IEnumerator __result)
     {
         if (InputGate.ShouldRunOriginal) return true;
-        var data = GS_Battle.self; var ids = new long[temp.Count];
-        for (var i = 0; i < temp.Count; i++) ids[i] = temp[i].unit_id;
-        XingyiStarryMpPlugin.Instance?.SubmitCommand(new GameCommand { Kind = CommandKind.Action, UnitIds = ids, TargetX = lt.pos.x, TargetY = lt.pos.y, ActionCategory = (int)data.ux_action_cate, TemplateId = data.ux_unit_template?.sd_unit?.name ?? "", PassengerUnitId = data.ux_unload_unit?.unit_id ?? 0 });
+        var data = GS_Battle.self; var units = LocalCommandUnits.Filter(temp);
+        units.RemoveAll(unit => unit.GetAction(data.ux_action_cate) is not ActionData action || unit.actioned && !action.AlwaysCanDo);
+        if (units.Count == 0) XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits();
+        else
+        {
+            var ids = new long[units.Count];
+            for (var i = 0; i < units.Count; i++) ids[i] = units[i].unit_id;
+            XingyiStarryMpPlugin.Instance?.SubmitCommand(new GameCommand { Kind = CommandKind.Action, UnitIds = ids, TargetX = lt.pos.x, TargetY = lt.pos.y, ActionCategory = (int)data.ux_action_cate, TemplateId = data.ux_unit_template?.sd_unit?.name ?? "", PassengerUnitId = data.ux_unload_unit?.unit_id ?? 0 });
+        }
         __result = Empty(); return false;
     }
     private static IEnumerator Empty() { yield break; }
@@ -25,8 +31,13 @@ internal static class UnitsDoMoveCapturePatch
     private static bool Prefix(ref IEnumerator __result)
     {
         if (InputGate.ShouldRunOriginal) return true;
-        var units = UXM_MovePath.GetSortedMoveUnits();
-        if (units.Count == 0) units = GS_Battle.self.selected_units;
+        var ordered = UXM_MovePath.GetSortedMoveUnits();
+        var units = LocalCommandUnits.Filter(ordered.Count == 0 ? GS_Battle.self.selected_units : ordered, move: true);
+        if (units.Count == 0)
+        {
+            XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits();
+            __result = Empty(); return false;
+        }
         var ids = new long[units.Count]; var xs = new int[units.Count]; var ys = new int[units.Count];
         for (var i = 0; i < units.Count; i++)
         {

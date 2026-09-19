@@ -13,7 +13,7 @@ internal static class TrainCapturePatch
         if (!InputGate.MaySubmit || template is null || GS_Battle.self is null) return false;
         foreach (var unit in GS_Battle.self.sel_group_units)
         {
-            if (unit.actioned || unit.in_animation || unit.GetAction(ActionCate.TRAIN) is not Action_TrainUnit action) continue;
+            if (!LocalCommandUnits.Owned(unit) || unit.actioned || unit.in_animation || unit.GetAction(ActionCate.TRAIN) is not Action_TrainUnit action) continue;
             action.train_template = template;
             if (action.CanDoAction(null, null) != REASON_CANTDO.OK || !action.CanAfford(null)) continue;
             var target = action.AutoSetPos();

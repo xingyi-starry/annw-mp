@@ -30,11 +30,12 @@ internal sealed class ClientSession : IDisposable
     public bool IsCaughtUp { get; private set; }
     public bool SnapshotRequested => snapshotRequested;
     public bool ConnectionLost { get; private set; }
+    public bool TerminalSessionEnded { get; private set; }
     public string ConnectionError { get; private set; } = "";
     public Guid? MatchId => matchId;
     public bool JoinedMatch { get; private set; }
     public bool RequiresJoinSelection => welcomeMode == WelcomeMode.JoinSelection && !JoinedMatch;
-    public bool CanFastReconnect => ClientId.HasValue && matchId.HasValue && JoinedMatch;
+    public bool CanFastReconnect => !TerminalSessionEnded && ClientId.HasValue && matchId.HasValue && JoinedMatch;
     public int ReconnectAcceptedGeneration { get; private set; }
 
     public ClientSession() : this(new NetworkClient()) { }
@@ -47,11 +48,12 @@ internal sealed class ClientSession : IDisposable
         await network.SendAsync(MessageType.Hello, ProtocolCodec.EncodeHello(hello)).ConfigureAwait(false);
     }
 
-    public void Pump(Action<string> log, Action<AuthorityFrame> frameReceived, Action<SnapshotManifest, byte[]> snapshotReceived, Action<string> noticeReceived)
+    public void Pump(Action<SessionLogLevel, string> log, Action<CommandResponse, bool> commandResponse,
+        Action<AuthorityFrame> frameReceived, Action<SnapshotManifest, byte[]> snapshotReceived, Action<string> noticeReceived)
     {
         while (network.TryDequeueError(out var error))
         {
-            ConnectionLost = true; ConnectionError = error?.Message ?? "连接已关闭"; log("Network client: " + ConnectionError);
+            ConnectionLost = true; ConnectionError = error?.Message ?? "连接已关闭"; log(SessionLogLevel.Warning, "Network client: " + ConnectionError);
         }
         while (network.TryDequeue(out var envelope) && envelope is not null)
         {
@@ -92,11 +94,11 @@ internal sealed class ClientSession : IDisposable
                     case MessageType.HistoryComplete:
                         var latestFrameId = ProtocolCodec.DecodeInt64(envelope.Payload);
                         IsCaughtUp = VerifiedFrameId >= latestFrameId;
-                        log($"History complete latest={latestFrameId} verified={VerifiedFrameId} applied={AppliedFrameId} caughtUp={IsCaughtUp}.");
+                        log(SessionLogLevel.Info, $"History complete latest={latestFrameId} verified={VerifiedFrameId} applied={AppliedFrameId} caughtUp={IsCaughtUp}.");
                         break;
                     case MessageType.SnapshotManifest:
                         snapshotManifest = ProtocolCodec.DecodeSnapshotManifest(envelope.Payload); snapshotAssembler = new SnapshotAssembler(snapshotManifest);
-                        log($"Snapshot manifest id={snapshotManifest.SnapshotId:N} frame={snapshotManifest.FrameId} chunks={snapshotManifest.ChunkCount} compressed={snapshotManifest.CompressedLength}.");
+                        log(SessionLogLevel.Info, $"Snapshot manifest id={snapshotManifest.SnapshotId:N} frame={snapshotManifest.FrameId} chunks={snapshotManifest.ChunkCount} compressed={snapshotManifest.CompressedLength}.");
                         break;
                     case MessageType.SnapshotChunk:
                         if (snapshotAssembler is null) throw new InvalidDataException("Snapshot chunk arrived before its manifest.");
@@ -104,13 +106,15 @@ internal sealed class ClientSession : IDisposable
                     case MessageType.SnapshotComplete:
                         if (snapshotManifest is null || snapshotAssembler is null || ProtocolCodec.DecodeGuid(envelope.Payload) != snapshotManifest.SnapshotId) throw new InvalidDataException("Snapshot completion identity mismatch.");
                         var compressed = snapshotAssembler.Finish(); var snapshot = SnapshotCodec.Decompress(compressed, ProtocolConstants.MaxSnapshotBytes);
-                        log($"Snapshot transfer complete id={snapshotManifest.SnapshotId:N} frame={snapshotManifest.FrameId} bytes={snapshot.Length}.");
+                        log(SessionLogLevel.Info, $"Snapshot transfer complete id={snapshotManifest.SnapshotId:N} frame={snapshotManifest.FrameId} bytes={snapshot.Length}.");
                         snapshotReceived(snapshotManifest, snapshot); snapshotManifest = null; snapshotAssembler = null; break;
                     case MessageType.Reject: throw new InvalidDataException(ProtocolCodec.DecodeString(envelope.Payload));
                     case MessageType.CommandRejected:
-                        var rejection = ProtocolCodec.DecodeCommandResponse(envelope.Payload); log($"Command {rejection.RequestId} rejected: {rejection.Reason}"); break;
-                    case MessageType.CommandAccepted: break;
+                        commandResponse(ProtocolCodec.DecodeCommandResponse(envelope.Payload), false); break;
+                    case MessageType.CommandAccepted:
+                        commandResponse(ProtocolCodec.DecodeCommandResponse(envelope.Payload), true); break;
                     case MessageType.SessionEnded:
+                        TerminalSessionEnded = true;
                         ConnectionError = ProtocolCodec.DecodeString(envelope.Payload);
                         ConnectionLost = true;
                         break;
@@ -121,7 +125,7 @@ internal sealed class ClientSession : IDisposable
             }
             catch (Exception ex)
             {
-                log("Client synchronization paused: " + ex.Message);
+                log(SessionLogLevel.Warning, "Client synchronization paused: " + ex.Message);
                 if (envelope.Type == MessageType.AuthorityFrame) _ = RequestSnapshotAsync();
             }
         }
@@ -157,6 +161,8 @@ internal sealed class ClientSession : IDisposable
     }
 
     public Task LeaveAsync() => network.IsConnected ? network.SendAsync(MessageType.LeaveSession, Array.Empty<byte>()) : Task.CompletedTask;
+
+    public void MarkMatchEnded() => TerminalSessionEnded = true;
 
     public void AcceptSnapshotAnchor(SnapshotManifest manifest)
     {

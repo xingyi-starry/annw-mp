@@ -46,18 +46,18 @@ internal sealed class HostSession : IDisposable
 
     public void Start() => network.Start();
 
-    public void Pump(Action<string> log, Action<CommandRequest, IRemotePeer> commandReceived,
+    public void Pump(Action<SessionLogLevel, string> log, Action<CommandRequest, IRemotePeer> commandReceived,
         Action<RoomSnapshot, IRemotePeer> lobbyDraftReceived, Action<string> participantLeft)
     {
         while (network.TryDequeueError(out var error))
         {
-            log("Network host: " + error);
+            log(SessionLogLevel.Warning, "Network host: " + error);
             if (UsesRelay) { ConnectionLost = true; ConnectionError = error?.Message ?? "中继连接已关闭"; }
         }
         while (network.TryDequeue(out var inbound) && inbound is not null)
         {
             try { Handle(inbound, commandReceived, lobbyDraftReceived, participantLeft); }
-            catch (Exception ex) { log("Rejected packet: " + ex.Message); }
+            catch (Exception ex) { log(SessionLogLevel.Warning, "Rejected packet: " + ex.Message); }
         }
         var now = DateTime.UtcNow;
         foreach (var client in clientsByConnection.Values.Distinct().ToArray())
@@ -68,12 +68,12 @@ internal sealed class HostSession : IDisposable
                 if (client.JoinedMatch && MatchId.HasValue)
                 {
                     client.Reconnecting = true; client.ReconnectDeadlineUtc = now.AddSeconds(15);
-                    log((connectionClosed ? "Client reconnect grace started: " : "Client heartbeat grace started: ") + client.DisplayName);
+                    log(SessionLogLevel.Info, (connectionClosed ? "Client reconnect grace started: " : "Client heartbeat grace started: ") + client.DisplayName);
                 }
-                else FinalizeClient(client, "已退出联机。", participantLeft, log);
+                else FinalizeClient(client, "已退出联机。", participantLeft, message => log(SessionLogLevel.Info, message));
             }
             if (!client.Finalized && client.Reconnecting && now >= client.ReconnectDeadlineUtc)
-                FinalizeClient(client, "重连超时，席位已由 AI 接管。", participantLeft, log);
+                FinalizeClient(client, "重连超时，席位已由 AI 接管。", participantLeft, message => log(SessionLogLevel.Info, message));
         }
     }
 

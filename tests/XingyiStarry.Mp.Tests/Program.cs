@@ -25,10 +25,30 @@ internal static class Program
         Test("all protobuf messages", AllProtobufMessagesRoundTrip);
         Test("relay protobuf messages", RelayMessagesRoundTrip);
         Test("v14 session messages", SessionMessagesRoundTrip);
+        Test("mixed move target alignment", MixedMoveFilter);
+        Test("move ownership rejection", MoveOwnershipRejection);
         await TestAsync("packet framing", PacketRoundTrip);
         var relayEndpoint = Environment.GetEnvironmentVariable("XINGYI_RELAY_TEST_ENDPOINT");
         if (!string.IsNullOrWhiteSpace(relayEndpoint)) await TestAsync("C# to Go relay integration", () => RelayIntegration(relayEndpoint));
-        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 12 : 13)}"); return 0;
+        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 14 : 15)}"); return 0;
+    }
+
+    private static void MixedMoveFilter()
+    {
+        var command = new GameCommand { Kind = CommandKind.Move, UnitIds = new long[] { 1, 2, 3 },
+            UnitTargetXs = new[] { 11, 22, 33 }, UnitTargetYs = new[] { 44, 55, 66 } };
+        True(MoveCommandFilter.TryFilter(command, id => id == 2 ? MoveUnitDecision.Skip : MoveUnitDecision.Include));
+        Equal(2, command.UnitIds.Length); Equal(1L, command.UnitIds[0]); Equal(3L, command.UnitIds[1]);
+        Equal(11, command.UnitTargetXs[0]); Equal(33, command.UnitTargetXs[1]);
+        Equal(44, command.UnitTargetYs[0]); Equal(66, command.UnitTargetYs[1]);
+    }
+
+    private static void MoveOwnershipRejection()
+    {
+        var command = new GameCommand { Kind = CommandKind.Move, UnitIds = new long[] { 1, 2, 3 },
+            UnitTargetXs = new[] { 11, 22, 33 }, UnitTargetYs = new[] { 44, 55, 66 } };
+        True(!MoveCommandFilter.TryFilter(command, id => id == 2 ? MoveUnitDecision.Reject : MoveUnitDecision.Skip));
+        Equal(3, command.UnitIds.Length); Equal(22, command.UnitTargetXs[1]); Equal(55, command.UnitTargetYs[1]);
     }
 
     private static void CommandRoundTrip()
@@ -131,7 +151,7 @@ internal static class Program
     {
         var clientId = Guid.NewGuid(); var roomId = Guid.NewGuid(); var matchId = Guid.NewGuid();
         var hello = ProtocolCodec.DecodeHello(ProtocolCodec.EncodeHello(new HelloMessage
-            { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.6.3", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "玩家" }));
+            { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.7.0", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "玩家" }));
         Equal("玩家", hello.DisplayName); Equal(ProtocolConstants.Version, hello.ProtocolVersion);
 
         var welcome = ProtocolCodec.DecodeWelcome(ProtocolCodec.EncodeWelcome(new WelcomeMessage
@@ -232,7 +252,7 @@ internal static class Program
         var roomId = Guid.NewGuid();
         await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RelayRegisterRoom, Delivery = Delivery.RelayControl,
             Payload = ProtocolCodec.EncodeRelayRegisterRoom(new RelayRegisterRoomRequest { RequestId = 101, RoomId = roomId,
-                RoomName = "interop", HostName = "host", Password = "secret", PluginVersion = "0.6.3", GameFingerprint = "game", ContentFingerprint = "content" }) }, CancellationToken.None);
+                RoomName = "interop", HostName = "host", Password = "secret", PluginVersion = "0.7.0", GameFingerprint = "game", ContentFingerprint = "content" }) }, CancellationToken.None);
         var registered = ProtocolCodec.DecodeRelayControlResponse((await ReadType(host, MessageType.RelayControlResponse)).Payload);
         True(registered.Success); True(registered.ClientId.HasValue);
 
@@ -248,7 +268,7 @@ internal static class Program
         await ReadType(host, MessageType.RelayPeerJoined);
 
         await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Type = MessageType.Hello, Delivery = Delivery.ToHost,
-            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeHello(new HelloMessage { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.6.3",
+            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeHello(new HelloMessage { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.7.0",
                 GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "client" }) }, CancellationToken.None);
         var hello = await ReadType(host, MessageType.Hello); Equal(clientId, hello.ClientId); Equal(Delivery.ToHost, hello.Delivery);
 
