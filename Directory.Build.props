@@ -6,6 +6,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GameRoot>$(MSBuildThisFileDirectory)..\Tactical Annihilation</GameRoot>
     <ManagedDir>$(GameRoot)\AnnW_Data\Managed</ManagedDir>
-    <BepInExDir>$(MSBuildThisFileDirectory)..\AnnW.LanMp-0.18.0-with-BepInEx\BepInEx\core</BepInExDir>
+    <BepInExVersion>5.4.23.5</BepInExVersion>
+    <BepInExPackageRoot Condition="'$(BepInExPackageRoot)' == ''">$(MSBuildThisFileDirectory).deps\BepInEx_win_x64_$(BepInExVersion)</BepInExPackageRoot>
+    <BepInExDir Condition="'$(BepInExDir)' == ''">$(BepInExPackageRoot)\BepInEx\core</BepInExDir>
   </PropertyGroup>
 </Project>

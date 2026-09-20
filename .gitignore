@@ -3,6 +3,8 @@
 [Oo]bj/
 dist/
 .artifacts/
+.codex-build/
+.deps/
 
 # Visual Studio / VS Code / Rider
 .vs/

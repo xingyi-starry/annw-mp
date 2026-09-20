@@ -1,10 +1,11 @@
 param(
     [string]$GameRoot = 'D:\code\annw-lan\Tactical Annihilation',
-    [string]$BepInExSource = 'D:\code\annw-lan\AnnW.LanMp-0.18.0-with-BepInEx',
+    [string]$BepInExSource = (Join-Path $PSScriptRoot '.deps\BepInEx_win_x64_5.4.23.5'),
     [string]$ArtifactsPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
+& (Join-Path $PSScriptRoot 'tools\Ensure-BepInEx.ps1') -Destination $BepInExSource
 $required = @('AnnW.exe', 'AnnW_Data\Managed\Assembly-CSharp.dll')
 foreach ($relative in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $GameRoot $relative))) { throw "Invalid game directory: missing $relative" }

@@ -1,14 +1,17 @@
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
-    [string]$Dotnet = 'D:\Program Files\dotnet\dotnet.exe',
+    [string]$Dotnet = 'dotnet',
+    [string]$GameRoot = '',
     [string]$ArtifactsPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
+& (Join-Path $projectRoot 'tools\Ensure-BepInEx.ps1')
 $buildArguments = @('build', (Join-Path $projectRoot 'XingyiStarry.Mp.sln'), '-c', $Configuration, '-p:UseSharedCompilation=false', '-p:NuGetAudit=false', '-nodeReuse:false')
 if (-not [string]::IsNullOrWhiteSpace($ArtifactsPath)) { $buildArguments += "-p:ArtifactsPath=$ArtifactsPath" }
+if (-not [string]::IsNullOrWhiteSpace($GameRoot)) { $buildArguments += "-p:GameRoot=$GameRoot" }
 & $Dotnet @buildArguments
 if ($LASTEXITCODE -ne 0) { throw "dotnet build failed with exit code $LASTEXITCODE" }
 

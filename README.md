@@ -1,37 +1,77 @@
 # XingyiStarry MP
 
-Tactical Annihilation 的 BepInEx 公共中继与局域网遭遇战联机插件。
+《湮灭之战》（Tactical Annihilation）的多人联机插件，基于 BepInEx 5。
 
-当前处于开发阶段。协议采用主机权威指令流、严格帧序和 SHA-256 线性哈希链；客机不进行乐观执行。
+项目仍处于开发阶段。目前面向游戏 1.0.8，主机与客机必须使用相同的插件和游戏版本。
 
-当前开发版为 0.7.0，针对游戏 1.0.8 编译，协议仍为 v14。联机战斗禁用新版编辑器，键盘世界光标提交受操作权限限制；快照加载在新战斗实例恢复后才继续执行权威帧。本版尚待 1.0.8 双实例运行验收，不是正式发布包。
+## 主要功能
 
-## 构建
+- 公共中继联机与局域网直连。
+- 原版遭遇战式准备房间、选席和准备流程。
+- 对局中加入、意外断线快速重连、掉线席位 AI 接管。
+- 内置地图与用户地图联机；客机无需预装主机选择的用户地图。
+- 从遭遇战存档创建房间，并支持联机安全边界保存。
+- 主机权威的回合、单位操作、AI 行动和战局随机结果同步。
+
+带脚本地图可以创建联机房间，但脚本行为尚未完成系统性的多人确定性验证。
+
+## 安装
+
+Release 提供两个压缩包：
+
+- `XingyiStarry-MP-<version>.zip`：标准包，不含 BepInEx，适合已经安装兼容 BepInEx 5 的游戏。
+- `XingyiStarry-MP-<version>-with-BepInEx.zip`：整合包，包含官方 BepInEx 5.4.23.5 Windows x64 运行时。
+
+完全退出游戏，把所选压缩包内的全部文件解压到 `AnnW.exe` 所在目录并保留目录结构。启动游戏后，从“遭遇战”的联机入口创建或加入房间。
+
+需要卸载时，双击游戏根目录的 `Uninstall-XingyiStarry-MP.bat`。默认只删除本插件；也可以选择同时删除整个 BepInEx 框架。后一模式会一并删除其他 BepInEx 模组和配置，请谨慎选择。
+
+## 开发环境
+
+开发需要：
+
+- Windows PowerShell 5.1 或 PowerShell 7；
+- .NET SDK 8；
+- 合法安装的《湮灭之战》1.0.8；
+- 可访问 NuGet 和 GitHub Release 的网络。
+
+游戏程序集不属于本项目，也不会提交到仓库。默认假定游戏位于仓库相邻目录 `..\Tactical Annihilation`；其他位置可传入 `GameRoot`。
+
+BepInEx 编译引用由 `tools\Ensure-BepInEx.ps1` 从官方 Release 下载。版本与 SHA-256 固定，缓存位于 `.deps\`，不再依赖其他插件仓库或本机已有 BepInEx 安装。
+
+### 构建与测试
 
 ```powershell
-& 'D:\Program Files\dotnet\dotnet.exe' build .\XingyiStarry.Mp.sln -c Release
+.\build.ps1 -Configuration Release -GameRoot 'D:\Games\Tactical Annihilation'
+dotnet .\tests\XingyiStarry.Mp.Tests\bin\Release\net8.0\XingyiStarry.Mp.Tests.dll
 ```
 
-默认从相邻的 `Tactical Annihilation` 和参考包内读取游戏、BepInEx 编译引用。可通过 MSBuild 属性 `GameRoot` 与 `BepInExDir` 覆盖。
+`build.ps1` 会恢复固定的 BepInEx 依赖、构建解决方案，并把开发安装所需文件整理到 `dist\`。
 
-运行 `build.ps1` 会生成可复制到游戏目录的插件和默认中继配置。“联机遭遇战”先打开原版风格公共房间页，可以创建或加入中继房间，也可以进入地址和端口形式的局域网联机。席位行右侧直接提供选择按钮，底部可取消选择；普通新局只开放原先配置为真人的席位。从遭遇战存档创建的 LAN/公共房间开放全部未战败席位，未认领席位由 AI 控制，并继续使用原生遭遇战存档格式。
+### 打包
 
-协议现为 v14，房间消息包含主机提供的压缩地图预览，命令增加独立的自毁类型。`WireEnvelope` 只携带消息类型、payload 与路由身份，协议版本只存在于 `Hello.protocol_version`，由游戏主机校验。Relay 仅解析自身控制消息，其他 payload 透明转发，无需因游戏协议字段改变路由逻辑。v14 插件不能与旧协议插件混用。
+```powershell
+.\package.ps1 -Configuration Release `
+  -GameRoot 'D:\Games\Tactical Annihilation' `
+  -OutputDirectory .\releases
+```
 
-联机自毁复用原版确认弹窗；确认后只提交请求，不在本机提前杀死单位。主机复查原版自毁限制及单位归属，在权威操作中执行死亡并记录残骸随机结果，客机收到结算帧后回放。快捷键和快捷菜单走同一入口。
+一次打包同时生成标准包和 `with-BepInEx` 整合包，并输出各自 SHA-256。正式包不包含 DebugTools、EarlyPatcher、免 Steam 标记或其他联机插件。
 
-新建遭遇战时，主机从内置地图资源或原版 `UserMaps` 文件夹读取地图，提取地形、席位、单位预览和选项锁定元数据并随房间状态发送。客机直接使用主机数据渲染原版准备界面，无需在本机安装相同地图；战斗阶段继续加载主机完整快照。地图脚本不在建房阶段拦截，但其联机确定性尚未完成验证。压缩预览限制为 4 MiB，避免超过 Relay 默认发送队列容量。
+### 开发安装
 
-对局进行中仍有空闲席位的公共房间可以加入。加入者先在准备界面选席，再点击“加入游戏”；席位从下一次轮到时接管，不中断已经开始的 AI 回合。活动客机意外断线后保留身份与席位 15 秒，客户端在第 0、3、7 秒快速重连；失败后席位在安全边界切换为 AI。主动退出不进入宽限期。
+```powershell
+.\install.ps1 -GameRoot 'D:\Games\Tactical Annihilation'
+```
 
-可选的 `XingyiStarry.Mp.DebugTools` 是独立开发包，不进入正式发行包。安装后，只有已进入联机战斗的主机可用 F8 打开调试面板，为任意玩家增加金属/电力或充满主动技能；主插件会把这些操作作为仅主机可发起的权威调试指令同步给客机。
+开发安装包含 DebugTools 和按标记启用的 EarlyPatcher，用于本地双实例测试；这些内容不进入正式包。安装和更新前应完全退出所有游戏进程。
 
-`install.ps1` 是工作区开发安装器，会安装并更新本项目自己的 EarlyPatcher，同时创建显式标记，使工作副本不调用 Steam 初始化，便于双实例测试。正式发布包仍不包含 EarlyPatcher 或该标记。
+### 协议与 Relay
 
-初始快照只在首个 `StartPlayerTurn` 原版协程完整结束后建立。协议不生成或比较单位、资源等游戏状态摘要；非随机结果由各端执行原版逻辑得到。客机只在权威帧顺序/哈希错误、随机记录无法消费或原版命令回放异常时主动请求快照。权威帧可以先接收，但一项操作必须等客机原版协程执行完成后才推进“已执行帧”游标，后续操作会在本地排队。
+唯一 protobuf 定义位于 `src\XingyiStarry.Mp.Protocol\Protos\multiplayer.proto`。修改协议后还需要在相邻 Relay 仓库运行 `generate.ps1`，提交重新生成的 Go 代码，并完成 C#、Go 和跨语言测试。
 
-确定性移动在收到权威 `OperationBegin` 后立即回放；可能需要战局随机结果的动作仍等待 `Resolution`，后续将继续拆分安全结算边界。每个实例的操作权限和 FOW 绑定自己的房间席位，非本人回合保持自由镜头但不能操作。主机离开战斗会发送 `SessionEnded`，客机随即走原生退出流程并显示原生通知。
+## 许可证
 
-插件捕获原版训练与自主决策的真实上层入口：训练同步工厂、模板和生产格；自主决策同步单位列表并等待完整原版决策协程。非本人回合隐藏地图操作提示，并置灰自主决策、撤销和结束回合按钮。
+本项目推荐并采用 [MIT License](LICENSE)。它简短、宽松，允许社区修改和再分发，同时保留版权与免责声明，适合独立游戏插件。
 
-联机战斗允许在安全边界使用原生手动保存与快速保存；客机必须已经应用并验证到同一权威帧。联机“加载”仍作为完整重新同步入口，“重新开始”保持禁用。
+第三方组件及整合 BepInEx 包的分发声明见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 和 [licenses](licenses)。
