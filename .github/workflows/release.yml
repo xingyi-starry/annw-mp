@@ -68,7 +68,7 @@ jobs:
           $standardEntries = tar -tf $standard
           if ($standardEntries -match '(^|/)BepInEx/core/') { throw 'Standard archive contains BepInEx core.' }
           $bundledEntries = tar -tf $bundled
-          if ($bundledEntries -notmatch 'BepInEx/core/BepInEx.dll') { throw 'Bundled archive is missing BepInEx.' }
+          if (-not ($bundledEntries -match 'BepInEx/core/BepInEx.dll')) { throw 'Bundled archive is missing BepInEx.' }
           foreach ($required in @(
             'Uninstall-XingyiStarry-MP.bat',
             'Uninstall-XingyiStarry-MP.ps1',
