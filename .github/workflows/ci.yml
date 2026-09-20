@@ -65,4 +65,5 @@ jobs:
           name: annw-mp-${{ github.sha }}
           path: .release-output/*.zip
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
