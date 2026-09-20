@@ -33,9 +33,9 @@ Release 提供两个压缩包：
 - Windows PowerShell 5.1 或 PowerShell 7；
 - .NET SDK 8；
 - 合法安装的《湮灭之战》1.0.8；
-- 可访问 NuGet 和 GitHub Release 的网络。
+- 可访问 NuGet、GitHub Packages 和 GitHub Release 的网络。
 
-游戏程序集不属于本项目，也不会提交到仓库。默认假定游戏位于仓库相邻目录 `..\Tactical Annihilation`；其他位置可传入 `GameRoot`。
+游戏程序集不属于本项目，也不会提交到仓库。日常开发默认使用仓库相邻目录 `..\Tactical Annihilation` 中的合法游戏安装；其他位置可传入 `GameRoot`。
 
 BepInEx 编译引用由 `tools\Ensure-BepInEx.ps1` 从官方 Release 下载。版本与 SHA-256 固定，缓存位于 `.deps\`，不再依赖其他插件仓库或本机已有 BepInEx 安装。
 
@@ -52,11 +52,23 @@ dotnet .\tests\XingyiStarry.Mp.Tests\bin\Release\net8.0\XingyiStarry.Mp.Tests.dl
 
 ```powershell
 .\package.ps1 -Configuration Release `
-  -GameRoot 'D:\Games\Tactical Annihilation' `
+  -GameReferencesTag game-1.0.8 `
   -OutputDirectory .\releases
 ```
 
+指定 `GameReferencesTag` 时，脚本从私有 GitHub Packages 下载并逐文件校验固定的游戏编译引用；本地正式打包与自动化构建因此使用同一份输入。维护者需要先用带 `read:packages` 权限的 `gh` 登录，也可以通过 `GH_PACKAGES_TOKEN` 提供令牌。
+
 一次打包同时生成标准包和 `with-BepInEx` 整合包，并输出各自 SHA-256。正式包不包含 DebugTools、EarlyPatcher、免 Steam 标记或其他联机插件。
+
+游戏更新后，维护者先审阅并更新 `game-references.json`，再上传新的私有引用包：
+
+```powershell
+.\tools\Publish-GameReferences.ps1 `
+  -GameRoot 'D:\Games\Tactical Annihilation' `
+  -Tag game-1.0.9
+```
+
+上传要求 GitHub 令牌具有 `write:packages` 权限。引用包只用于编译，不会进入插件发布压缩包。
 
 ### 开发安装
 

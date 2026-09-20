@@ -1,0 +1,49 @@
+{
+  "packageId": "XingyiStarry.AnnW.GameReferences",
+  "owner": "xingyi-starry",
+  "source": "https://nuget.pkg.github.com/xingyi-starry/index.json",
+  "tag": "game-1.0.8",
+  "version": "1.0.8",
+  "files": [
+    {
+      "file": "Assembly-CSharp.dll",
+      "size": 1682944,
+      "sha256": "d573e96fe20e40782a01263cc440924a2b6774b82becbed68d3e9505a2511408"
+    },
+    {
+      "file": "UnityEngine.dll",
+      "size": 170352,
+      "sha256": "b1ecbe439b70a93fe419df1564aaa3c293a5aba15684784519db49519d3279d4"
+    },
+    {
+      "file": "UnityEngine.CoreModule.dll",
+      "size": 1795952,
+      "sha256": "9bc76a7e1560ecb1c07466b82bedc4e360d35dcd713a2e7fce63137fefcfc126"
+    },
+    {
+      "file": "UnityEngine.IMGUIModule.dll",
+      "size": 206704,
+      "sha256": "92d3762e559c26b498d2f31e9ca9442654d1fec1423c05699aba1c33e3b91ba0"
+    },
+    {
+      "file": "UnityEngine.InputLegacyModule.dll",
+      "size": 42352,
+      "sha256": "9c04244b8568391feaf31a6aa5cc67fc25bb0cdcf9f86501a4ed9e2bb612ecde"
+    },
+    {
+      "file": "UnityEngine.UI.dll",
+      "size": 265728,
+      "sha256": "f4d60a1bf2246717dd9fdddf794f9eb2bc811b1c3d3764d82131adf483ce555c"
+    },
+    {
+      "file": "UnityEngine.UIModule.dll",
+      "size": 45424,
+      "sha256": "87ee29869c6cfc6b2c2e6b7464100c0e28af672c4e2e0c7cc81e259e4bc83691"
+    },
+    {
+      "file": "Unity.TextMeshPro.dll",
+      "size": 446464,
+      "sha256": "119fde8745f3903d0b5f21d0c56aaaa8ff7a0d473424e8ebd363e9ccb1264854"
+    }
+  ]
+}

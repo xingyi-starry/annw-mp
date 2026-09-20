@@ -4,12 +4,25 @@ param(
     [string]$BepInExSource = (Join-Path $PSScriptRoot '.deps\BepInEx_win_x64_5.4.23.5'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'releases'),
     [string]$GameRoot = '',
+    [string]$GameReferencesTag = '',
+    [string]$GitHubToken = '',
     [string]$ArtifactsPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
 
 & (Join-Path $PSScriptRoot 'tools\Ensure-BepInEx.ps1') -Destination $BepInExSource
+if (-not [string]::IsNullOrWhiteSpace($GameReferencesTag)) {
+    if (-not [string]::IsNullOrWhiteSpace($GameRoot)) {
+        throw 'Specify either -GameRoot or -GameReferencesTag, not both.'
+    }
+    $safeTag = $GameReferencesTag -replace '[^0-9A-Za-z._-]', '_'
+    $GameRoot = Join-Path $PSScriptRoot ".deps\game-references\$safeTag"
+    & (Join-Path $PSScriptRoot 'tools\Ensure-GameReferences.ps1') `
+        -Tag $GameReferencesTag `
+        -Destination $GameRoot `
+        -Token $GitHubToken
+}
 & (Join-Path $PSScriptRoot 'build.ps1') -Configuration $Configuration -GameRoot $GameRoot -ArtifactsPath $ArtifactsPath
 
 $pluginSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'src\XingyiStarry.Mp\XingyiStarryMpPlugin.cs')

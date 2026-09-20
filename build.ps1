@@ -8,6 +8,13 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
+if (-not [string]::IsNullOrWhiteSpace($ArtifactsPath)) {
+    if ([IO.Path]::IsPathRooted($ArtifactsPath)) {
+        $ArtifactsPath = [IO.Path]::GetFullPath($ArtifactsPath)
+    } else {
+        $ArtifactsPath = [IO.Path]::GetFullPath((Join-Path $projectRoot $ArtifactsPath))
+    }
+}
 & (Join-Path $projectRoot 'tools\Ensure-BepInEx.ps1')
 $buildArguments = @('build', (Join-Path $projectRoot 'XingyiStarry.Mp.sln'), '-c', $Configuration, '-p:UseSharedCompilation=false', '-p:NuGetAudit=false', '-nodeReuse:false')
 if (-not [string]::IsNullOrWhiteSpace($ArtifactsPath)) { $buildArguments += "-p:ArtifactsPath=$ArtifactsPath" }

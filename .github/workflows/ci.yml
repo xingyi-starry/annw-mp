@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  protocol-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: ./global.json
+      - name: Build protocol tests
+        run: dotnet build ./tests/XingyiStarry.Mp.Tests/XingyiStarry.Mp.Tests.csproj -c Release -p:NuGetAudit=false
+      - name: Run protocol tests
+        run: dotnet ./tests/XingyiStarry.Mp.Tests/bin/Release/net8.0/XingyiStarry.Mp.Tests.dll
+
+  build-plugin:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      GAME_REFERENCES_TAG: game-1.0.8
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: ./global.json
+      - name: Build and package from pinned game references
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          .\package.ps1 -Configuration Release `
+            -GameReferencesTag $env:GAME_REFERENCES_TAG `
+            -GitHubToken $env:GITHUB_TOKEN `
+            -ArtifactsPath (Join-Path $PWD '.artifacts\ci') `
+            -OutputDirectory (Join-Path $PWD '.release-output')
+      - name: Run protocol tests
+        shell: pwsh
+        run: dotnet '.\.artifacts\ci\bin\XingyiStarry.Mp.Tests\release\XingyiStarry.Mp.Tests.dll'
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: annw-mp-${{ github.sha }}
+          path: .release-output/*.zip
+          if-no-files-found: error
+          retention-days: 14

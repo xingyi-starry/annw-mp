@@ -5,6 +5,7 @@ dist/
 .artifacts/
 .codex-build/
 .deps/
+.release-output/
 
 # Visual Studio / VS Code / Rider
 .vs/
