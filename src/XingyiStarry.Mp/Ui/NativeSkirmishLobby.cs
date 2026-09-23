@@ -287,6 +287,13 @@ internal static class NativeSkirmishLobby
     private static void ApplyPermissions(XingyiStarryMpPlugin plugin, RoomSnapshot? room, string mapId)
     {
         if (info == null || screen == null) return;
+        if (plugin.IsMatchStarting)
+        {
+            foreach (var selectable in info.GetComponentsInChildren<Selectable>(true)) Disable(selectable);
+            if (screen.pool_maps != null) foreach (var button in screen.pool_maps.GetComponentsInChildren<Button>(true)) Disable(button);
+            Store(screen.btn_confirm); screen.btn_confirm.interactable = false;
+            return;
+        }
         if (plugin.IsClient)
         {
             Disable(info.dd_fow); Disable(info.dd_condition); Disable(info.dd_quickStart);
@@ -337,7 +344,7 @@ internal static class NativeSkirmishLobby
             EnsureMounted(augmentation);
             var label = augmentation.Button.GetComponentInChildren<TextMeshProUGUI>(true);
             if (label != null) label.text = SeatLabel(seat!);
-            augmentation.Button.interactable = !seat!.Connected || seat.ClientId == plugin.LocalIdentityId;
+            augmentation.Button.interactable = plugin.CanClaimSeat && (!seat!.Connected || seat.ClientId == plugin.LocalIdentityId);
         }
     }
 
@@ -359,7 +366,7 @@ internal static class NativeSkirmishLobby
             GameUiKit.Text(labelHost, "Text", $"P{seat.PlayerIndex + 1} · 队伍 {seat.Team} · {seat.DisplayName}", 18f, TextAlignmentOptions.MidlineLeft);
             var slot = seat.LobbySlotIndex; var button = GameUiKit.Button(row, "Select", SeatLabel(seat), () => XingyiStarryMpPlugin.Instance?.ClaimSeat(slot));
             var element = button.gameObject.AddComponent<LayoutElement>(); element.preferredWidth = 132f; element.minWidth = 104f;
-            button.interactable = !seat.Connected || seat.ClientId == plugin.LocalIdentityId;
+            button.interactable = plugin.CanClaimSeat && (!seat.Connected || seat.ClientId == plugin.LocalIdentityId);
         }
         syntheticSeatRoot = root.gameObject;
     }

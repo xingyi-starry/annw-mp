@@ -5,5 +5,8 @@
     <AssemblyName>XingyiStarry.Mp.Tests</AssemblyName>
     <RootNamespace>XingyiStarry.Mp.Tests</RootNamespace>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="..\..\src\XingyiStarry.Mp.Protocol\XingyiStarry.Mp.Protocol.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XingyiStarry.Mp.Protocol\XingyiStarry.Mp.Protocol.csproj" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Session\RuntimePlayerIndexResolver.cs" Link="Session\RuntimePlayerIndexResolver.cs" />
+  </ItemGroup>
 </Project>

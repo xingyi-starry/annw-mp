@@ -25,7 +25,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.7.0";
+    public const string PluginVersion = "0.7.1";
 
     private Harmony? harmony;
     private HostSession? host;
@@ -81,9 +81,10 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 
     public static XingyiStarryMpPlugin? Instance { get; private set; }
     internal string Status { get; private set; } = "未连接";
-    internal bool CanClaimSeat => CurrentRoom?.Seats.Exists(s => !s.Defeated && (CurrentRoom.SavedGame || CurrentRoom.MatchStarted || s.OriginallyHuman) && (!s.Connected || s.ClientId == LocalIdentityId)) == true;
-    internal bool CanSetReady => CurrentRoom?.MatchStarted != true && LocalIdentityId is Guid id && CurrentRoom?.Seats.Find(s => s.ClientId == id) is not null;
-    internal bool CanReleaseSeat => LocalIdentityId is Guid id && CurrentRoom?.Seats.Find(s => s.ClientId == id) is not null && client?.JoinedMatch != true;
+    internal bool IsMatchStarting => hostStartAuthorized || client?.MatchStarting == true;
+    internal bool CanClaimSeat => !IsMatchStarting && CurrentRoom?.Seats.Exists(s => !s.Defeated && (CurrentRoom.SavedGame || CurrentRoom.MatchStarted || s.OriginallyHuman) && (!s.Connected || s.ClientId == LocalIdentityId)) == true;
+    internal bool CanSetReady => !IsMatchStarting && CurrentRoom?.MatchStarted != true && LocalIdentityId is Guid id && CurrentRoom?.Seats.Find(s => s.ClientId == id) is not null;
+    internal bool CanReleaseSeat => !IsMatchStarting && LocalIdentityId is Guid id && CurrentRoom?.Seats.Find(s => s.ClientId == id) is not null && client?.JoinedMatch != true;
     internal bool CanStartHostedRoom => host?.Room.CanStart == true;
     internal bool IsHost => host is not null;
     internal bool IsClient => client is not null;
@@ -144,8 +145,15 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     private void EnqueueHostDebug(GameCommand command)
     {
         if (host is null || GS_Battle.self is null) return;
-        operations.Enqueue(new CommandRequest { ClientId = host.LocalHostClientId, RequestId = ++nextRequestId,
-            SeatId = host.LocalHostSeatId, Round = GS_Battle.self.turns, AppliedFrameId = 0, Command = command });
+        operations.Enqueue(new CommandRequest
+        {
+            ClientId = host.LocalHostClientId,
+            RequestId = ++nextRequestId,
+            SeatId = host.LocalHostSeatId,
+            Round = GS_Battle.self.turns,
+            AppliedFrameId = 0,
+            Command = command
+        });
     }
 
     private void Awake()
@@ -363,7 +371,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 
     internal bool SyncLobbyDraft(UI_MENU_LevelSelect_InfoSkm info, string mapId)
     {
-        if ((host is null && client is null) || CurrentRoom?.SavedGame == true || host?.MatchId.HasValue == true || info?.group is null || string.IsNullOrEmpty(mapId)) return false;
+        if (IsMatchStarting || (host is null && client is null) || CurrentRoom?.SavedGame == true || host?.MatchId.HasValue == true || info?.group is null || string.IsNullOrEmpty(mapId)) return false;
         var players = info.group.GenerateData();
         var draft = CreateLobbyDraft(mapId, info, players);
         if (host is not null)
@@ -385,9 +393,18 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         {
             var player = players[index]; if (!player.exist) continue;
             var human = player.controller == PlayerControl.Human;
-            var seat = new SeatInfo { LobbySlotIndex = index, OriginallyHuman = human, Controller = (int)player.controller, Team = (int)player.team,
-                Color = (int)player.color, Position = player.pos_ind, PositionRandom = player.pos_random, ResourceMultiplier = player.res_percent,
-                AiIntelligence = player.ai_interlligence };
+            var seat = new SeatInfo
+            {
+                LobbySlotIndex = index,
+                OriginallyHuman = human,
+                Controller = (int)player.controller,
+                Team = (int)player.team,
+                Color = (int)player.color,
+                Position = player.pos_ind,
+                PositionRandom = player.pos_random,
+                ResourceMultiplier = player.res_percent,
+                AiIntelligence = player.ai_interlligence
+            };
             var items = AccessTools.Method(typeof(UI_SKM_PlayerSettingGroup), "GetItems")?.Invoke(info.group, Array.Empty<object>()) as List<UI_SKM_PlayerSetting>;
             var item = items is not null && index < items.Count ? items[index] : null;
             var selection = item is null ? 1 : (int)(AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co")?.GetValue(item) ?? 1);
@@ -470,7 +487,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         if (!SyncLobbyDraft(info, mapId) || host.Room.MapId != mapId || host.Room.MapPreview.Length == 0)
         { Status = "主机尚未同步当前地图预览"; return false; }
         if (!host.Room.CanStart) { Status = "尚有真人席位未认领或未准备"; return false; }
-        hostStartAuthorized = true;
+        host.BroadcastMatchStarting(); hostStartAuthorized = true;
         NativeSkirmishLobby.MarkStartingMatch();
         return true;
     }
@@ -478,7 +495,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     private void StartSavedGame()
     {
         if (host is null || string.IsNullOrWhiteSpace(savedGamePath)) { Status = "未找到待加载的联机存档"; return; }
-        hostStartAuthorized = true; nativeHostBattleStarted = true; NativeSkirmishLobby.MarkStartingMatch();
+        host.BroadcastMatchStarting(); hostStartAuthorized = true; nativeHostBattleStarted = true; NativeSkirmishLobby.MarkStartingMatch();
         Status = "正在加载联机存档";
         Singleton<BattleAndMapFileSystem>.self.DoLoadSkirmish(savedGamePath);
     }
@@ -600,10 +617,14 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             var name = NormalizeDisplayName(); var roomId = Guid.NewGuid();
             var registration = new RelayRegisterRoomRequest
             {
-                RequestId = ++nextRequestId, RoomId = roomId,
+                RequestId = ++nextRequestId,
+                RoomId = roomId,
                 RoomName = string.IsNullOrWhiteSpace(roomName) ? name + " 的房间" : roomName.Trim(),
-                HostName = name, Password = password ?? "", PluginVersion = PluginVersion,
-                GameFingerprint = gameFingerprint, ContentFingerprint = contentFingerprint
+                HostName = name,
+                Password = password ?? "",
+                PluginVersion = PluginVersion,
+                GameFingerprint = gameFingerprint,
+                ContentFingerprint = contentFingerprint
             };
             Status = "正在连接公共中继服务器";
             var transport = await RelayHostTransport.ConnectAsync(ConfiguredRelayEndpoint, registration);
@@ -629,9 +650,17 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             if (!save.HasKey("startGameSetting")) throw new InvalidDataException("该文件不是可联机的遭遇战存档。");
             var settings = StartGameSetting.LoadOb(save.GetKey_Obj("startGameSetting"));
             var name = NormalizeDisplayName(); var roomId = Guid.NewGuid();
-            var registration = new RelayRegisterRoomRequest { RequestId = ++nextRequestId, RoomId = roomId,
-                RoomName = string.IsNullOrWhiteSpace(roomName) ? name + " 的房间" : roomName.Trim(), HostName = name,
-                Password = password ?? "", PluginVersion = PluginVersion, GameFingerprint = gameFingerprint, ContentFingerprint = contentFingerprint };
+            var registration = new RelayRegisterRoomRequest
+            {
+                RequestId = ++nextRequestId,
+                RoomId = roomId,
+                RoomName = string.IsNullOrWhiteSpace(roomName) ? name + " 的房间" : roomName.Trim(),
+                HostName = name,
+                Password = password ?? "",
+                PluginVersion = PluginVersion,
+                GameFingerprint = gameFingerprint,
+                ContentFingerprint = contentFingerprint
+            };
             Status = "正在从存档创建公共房间";
             var transport = await RelayHostTransport.ConnectAsync(ConfiguredRelayEndpoint, registration);
             if (generation != connectionGeneration) { transport.Dispose(); return; }
@@ -686,7 +715,9 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 
     private HelloMessage CreateHello() => new HelloMessage
     {
-        PluginVersion = PluginVersion, GameFingerprint = gameFingerprint, ContentFingerprint = contentFingerprint,
+        PluginVersion = PluginVersion,
+        GameFingerprint = gameFingerprint,
+        ContentFingerprint = contentFingerprint,
         DisplayName = NormalizeDisplayName()
     };
 
@@ -708,6 +739,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 
     internal void ClaimSeat(int lobbySlotIndex)
     {
+        if (IsMatchStarting) return;
         if (host is not null)
         {
             if (!host.ClaimLocalSeat(lobbySlotIndex, NormalizeDisplayName(), out var reason)) Status = reason;
@@ -717,6 +749,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     }
     internal void ReleaseSeat()
     {
+        if (IsMatchStarting) return;
         if (host is not null) { if (host.Room.ReleaseSeat(host.LocalHostClientId)) host.BroadcastRoom(); return; }
         if (client is not null) _ = client.ReleaseSeatAsync();
     }
@@ -730,6 +763,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     }
     internal void ToggleReady()
     {
+        if (IsMatchStarting) return;
         if (LocalIdentityId is not Guid id) return;
         var seat = CurrentRoom?.Seats.Find(s => s.ClientId == id);
         if (seat is null) return;
@@ -789,8 +823,11 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             if (seat is null) { Status = "主机尚未拥有真人席位"; return; }
             operations.Enqueue(new CommandRequest
             {
-                ClientId = host.LocalHostClientId, RequestId = ++nextRequestId, SeatId = seat.SeatId,
-                Round = GS_Battle.self.turns, AppliedFrameId = 0,
+                ClientId = host.LocalHostClientId,
+                RequestId = ++nextRequestId,
+                SeatId = seat.SeatId,
+                Round = GS_Battle.self.turns,
+                AppliedFrameId = 0,
                 Command = new GameCommand { Kind = CommandKind.Surrender, TargetX = seat.PlayerIndex }
             });
             return;
@@ -800,8 +837,11 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         if (owned is null) { Status = "尚未拥有真人席位"; return; }
         _ = client.SendCommandAsync(new CommandRequest
         {
-            ClientId = clientId, RequestId = ++nextRequestId, SeatId = owned.SeatId,
-            Round = GS_Battle.self.turns, AppliedFrameId = client.AppliedFrameId,
+            ClientId = clientId,
+            RequestId = ++nextRequestId,
+            SeatId = owned.SeatId,
+            Round = GS_Battle.self.turns,
+            AppliedFrameId = client.AppliedFrameId,
             Command = new GameCommand { Kind = CommandKind.Surrender, TargetX = owned.PlayerIndex }
         });
     }
@@ -956,10 +996,18 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             Logger.LogDebug($"Client BuildWithMove execution started op={operationId:N} time={startedAt:F3}");
         replayRandomTape.BeginReplay(records); GameplayRandom.ActiveTape = replayRandomTape;
         executor.Start(replayBegin.Command, ExecutionOrigin.ClientReplay,
-            () => { try { replayRandomTape.EndReplay(); replayExecutionCompleted = true;
+            () =>
+            {
+                try
+                {
+                    replayRandomTape.EndReplay(); replayExecutionCompleted = true;
                     if (commandKind == CommandKind.BuildWithMove)
                         Logger.LogDebug($"Client BuildWithMove execution completed op={operationId:N} elapsed={Time.realtimeSinceStartup - startedAt:F3}s");
-                } catch (Exception ex) { AbortReplay("随机回放失败：" + ex.Message); } finally { GameplayRandom.ActiveTape = null; } TryCommitReplay(); },
+                }
+                catch (Exception ex) { AbortReplay("随机回放失败：" + ex.Message); }
+                finally { GameplayRandom.ActiveTape = null; }
+                TryCommitReplay();
+            },
             ex => { GameplayRandom.ActiveTape = null; AbortReplay("回放失败：" + ex.Message); });
     }
 
@@ -969,7 +1017,10 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         replayPreludeStarted = true;
         replayRandomTape.BeginReplay(Array.Empty<RandomRecord>()); GameplayRandom.ActiveTape = replayRandomTape;
         executor.StartEquipmentMovePrelude(replayBegin.Command, ExecutionOrigin.ClientReplay,
-            () => { try { replayRandomTape.EndReplay(); replayPreludeCompleted = true; } catch (Exception ex) { AbortReplay("移动前段回放失败：" + ex.Message); }
+            () =>
+            {
+                try { replayRandomTape.EndReplay(); replayPreludeCompleted = true; }
+                catch (Exception ex) { AbortReplay("移动前段回放失败：" + ex.Message); }
                 finally { GameplayRandom.ActiveTape = null; }
                 if (replayBegin is not null && IsKnownNonRandomEquipmentMoveAction(replayBegin.Command))
                     StartClientEquipmentMoveResolution(Array.Empty<RandomRecord>());
@@ -1014,7 +1065,8 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         if (requestPeers.TryGetValue(RequestKey(request), out var requestPeer)) { host.Accept(requestPeer, request.RequestId, beginFrame.FrameId); requestPeers.Remove(RequestKey(request)); }
         hostRandomTape.BeginRecording(); GameplayRandom.ActiveTape = hostRandomTape;
         executor.Start(request.Command, ExecutionOrigin.HostAuthority,
-            () => {
+            () =>
+            {
                 var records = hostRandomTape.EndRecording(); GameplayRandom.ActiveTape = null;
                 var resolution = new ResolutionPayload { OperationId = operationId, StageId = 0, SettlementOrdinal = 0 };
                 foreach (var record in records) resolution.RandomRecords.Add(record);
@@ -1028,7 +1080,8 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
                     request.Command.Kind == CommandKind.Surrender && request.Command.TargetX == GS_Battle.self.current_co_index)
                     GameController.self.StartCoroutine(RunHostTurnAdvance(), "XingyiStarryMpTurnAdvance");
             },
-            ex => {
+            ex =>
+            {
                 GameplayRandom.ActiveTape = null; Logger.LogError(ex);
                 if (GS_Battle.self is not null)
                 {
@@ -1066,8 +1119,11 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             var seat = host.Room.Seats.FirstOrDefault(value => value.PlayerIndex == GS_Battle.self.current_co_index);
             host.AppendAndBroadcast(AuthorityFrameType.OperationBegin, ProtocolCodec.EncodeOperationBegin(new OperationBeginPayload
             {
-                OperationId = operationId, SeatId = seat?.SeatId ?? Guid.Empty, RequestId = ++nextRequestId,
-                Round = GS_Battle.self.turns, Command = command
+                OperationId = operationId,
+                SeatId = seat?.SeatId ?? Guid.Empty,
+                RequestId = ++nextRequestId,
+                Round = GS_Battle.self.turns,
+                Command = command
             }));
             hostRandomTape.BeginRecording(); GameplayRandom.ActiveTape = hostRandomTape;
             var finished = false; Exception? failure = null;
@@ -1196,11 +1252,16 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         var action = (UT_UnitAction)utility;
         return new GameCommand
         {
-            Kind = CommandKind.AiUnitAction, UnitIds = new long[] { unitAi.owner.unit_id },
-            UnitTargetXs = new[] { action.move_pos.x }, UnitTargetYs = new[] { action.move_pos.y },
-            TargetX = action.action_pos.x, TargetY = action.action_pos.y, AiActionType = (int)action.type,
+            Kind = CommandKind.AiUnitAction,
+            UnitIds = new long[] { unitAi.owner.unit_id },
+            UnitTargetXs = new[] { action.move_pos.x },
+            UnitTargetYs = new[] { action.move_pos.y },
+            TargetX = action.action_pos.x,
+            TargetY = action.action_pos.y,
+            AiActionType = (int)action.type,
             ActionCategory = action.action is null ? (int)ActionCate.NONE : (int)action.action.sd_action.cate,
-            TemplateId = action.create_tp?.sd_unit?.name ?? "", PassengerUnitId = action.unload_unit?.unit_id ?? 0,
+            TemplateId = action.create_tp?.sd_unit?.name ?? "",
+            PassengerUnitId = action.unload_unit?.unit_id ?? 0,
             DesiredToggleState = skipping
         };
     }

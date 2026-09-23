@@ -63,12 +63,12 @@ internal sealed class HostSession : IDisposable
         foreach (var client in clientsByConnection.Values.Distinct().ToArray())
         {
             var connectionClosed = client.Peer == null || !client.Peer.IsConnected;
-            if (!client.Finalized && !client.Reconnecting && (connectionClosed || now - client.LastSeenUtc > TimeSpan.FromSeconds(10)))
+            if (!client.Finalized && !client.Reconnecting && connectionClosed)
             {
                 if (client.JoinedMatch && MatchId.HasValue)
                 {
                     client.Reconnecting = true; client.ReconnectDeadlineUtc = now.AddSeconds(15);
-                    log(SessionLogLevel.Info, (connectionClosed ? "Client reconnect grace started: " : "Client heartbeat grace started: ") + client.DisplayName);
+                    log(SessionLogLevel.Info, "Client reconnect grace started: " + client.DisplayName);
                 }
                 else FinalizeClient(client, "已退出联机。", participantLeft, message => log(SessionLogLevel.Info, message));
             }
@@ -90,7 +90,6 @@ internal sealed class HostSession : IDisposable
         }
         if (!clientsByConnection.TryGetValue(inbound.Peer.ConnectionId, out var client)) throw new InvalidDataException("Handshake required.");
         if (client.Finalized || client.Reconnecting) throw new InvalidDataException("Session must be resumed before sending game messages.");
-        client.LastSeenUtc = DateTime.UtcNow;
         switch (inbound.Envelope.Type)
         {
             case MessageType.Heartbeat: _ = network.SendAsync(inbound.Peer, MessageType.Heartbeat, ProtocolCodec.EncodeInt64(DateTime.UtcNow.Ticks)); break;
@@ -145,7 +144,7 @@ internal sealed class HostSession : IDisposable
         var cleanName = (hello.DisplayName ?? "").Trim();
         if (cleanName.Length == 0 || cleanName.Length > 32) { _ = RejectHandshakeAsync(peer, "用户名长度必须为 1–32 个字符。"); return; }
         var clientId = UsesRelay ? peer.ConnectionId : Guid.NewGuid();
-        var record = new ClientRecord { ClientId = clientId, DisplayName = cleanName, LastSeenUtc = DateTime.UtcNow, Peer = peer };
+        var record = new ClientRecord { ClientId = clientId, DisplayName = cleanName, Peer = peer };
         clientsByConnection[peer.ConnectionId] = record;
         clientsById[record.ClientId] = record;
         var mode = MatchId.HasValue ? WelcomeMode.JoinSelection : WelcomeMode.Lobby;
@@ -166,7 +165,7 @@ internal sealed class HostSession : IDisposable
             _ = network.SendAsync(peer, MessageType.ResumeSessionRejected, ProtocolCodec.EncodeString("快速重连身份不存在或已经过期。")); return;
         }
         if (record.Peer is not null) clientsByConnection.Remove(record.Peer.ConnectionId);
-        record.Peer = peer; record.LastSeenUtc = DateTime.UtcNow; record.Reconnecting = false;
+        record.Peer = peer; record.Reconnecting = false;
         clientsByConnection[peer.ConnectionId] = record;
         _ = network.SendAsync(peer, MessageType.ResumeSessionAccepted, ProtocolCodec.EncodeResumeSessionAccepted(new ResumeSessionAccepted
             { RoomId = Room.RoomId, MatchId = MatchId.Value, ClientId = record.ClientId, LatestFrameId = journal?.Frames.Count ?? 0 }));
@@ -337,6 +336,8 @@ internal sealed class HostSession : IDisposable
                 AvailableSeats = Room.AvailableSeatCount, MatchId = MatchId });
         }
     }
+    public void BroadcastMatchStarting() =>
+        _ = network.BroadcastAsync(MessageType.MatchStarting, Array.Empty<byte>());
     public bool UsesRelay => network is RelayHostTransport;
     public Task CloseRelayJoiningAsync(ulong requestId) => network is RelayHostTransport relay ? relay.CloseJoiningAsync(requestId) : Task.CompletedTask;
     public Task BroadcastSessionEndedAsync(string reason) =>
@@ -404,7 +405,6 @@ internal sealed class HostSession : IDisposable
     {
         public Guid ClientId { get; set; }
         public string DisplayName { get; set; } = "";
-        public DateTime LastSeenUtc { get; set; }
         public bool Reconnecting { get; set; }
         public DateTime ReconnectDeadlineUtc { get; set; }
         public bool Finalized { get; set; }

@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using XingyiStarry.Mp.Protocol;
+using XingyiStarry.Mp.Session;
 using Wire = XingyiStarry.Mp.Protocol.Wire;
 
 namespace XingyiStarry.Mp.Tests;
@@ -24,13 +25,30 @@ internal static class Program
         Test("protobuf wire format", ProtobufWireFormat);
         Test("all protobuf messages", AllProtobufMessagesRoundTrip);
         Test("relay protobuf messages", RelayMessagesRoundTrip);
-        Test("v14 session messages", SessionMessagesRoundTrip);
+        Test("v15 session messages", SessionMessagesRoundTrip);
         Test("mixed move target alignment", MixedMoveFilter);
         Test("move ownership rejection", MoveOwnershipRejection);
+        Test("runtime player indices ignore spawn positions", RuntimePlayerIndicesIgnoreSpawnPositions);
+        Test("runtime player indices compact disabled slots", RuntimePlayerIndicesCompactDisabledSlots);
         await TestAsync("packet framing", PacketRoundTrip);
         var relayEndpoint = Environment.GetEnvironmentVariable("XINGYI_RELAY_TEST_ENDPOINT");
         if (!string.IsNullOrWhiteSpace(relayEndpoint)) await TestAsync("C# to Go relay integration", () => RelayIntegration(relayEndpoint));
-        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 14 : 15)}"); return 0;
+        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 16 : 17)}"); return 0;
+    }
+
+    private static void RuntimePlayerIndicesIgnoreSpawnPositions()
+    {
+        var spawnPositions = new[] { 2, 0, 1 };
+        var runtimeIndices = RuntimePlayerIndexResolver.Build(new[] { true, true, true });
+        Equal(0, runtimeIndices[0]); Equal(1, runtimeIndices[1]); Equal(2, runtimeIndices[2]);
+        True(runtimeIndices[0] != spawnPositions[0]); True(runtimeIndices[1] != spawnPositions[1]);
+    }
+
+    private static void RuntimePlayerIndicesCompactDisabledSlots()
+    {
+        var runtimeIndices = RuntimePlayerIndexResolver.Build(new[] { true, false, true, false, true });
+        Equal(0, runtimeIndices[0]); Equal(-1, runtimeIndices[1]); Equal(1, runtimeIndices[2]);
+        Equal(-1, runtimeIndices[3]); Equal(2, runtimeIndices[4]);
     }
 
     private static void MixedMoveFilter()
@@ -231,6 +249,7 @@ internal static class Program
     private static void SessionMessagesRoundTrip()
     {
         Equal((ushort)34, (ushort)MessageType.ReleaseSeat); Equal((ushort)41, (ushort)MessageType.RelayResumeRoom);
+        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)15, ProtocolConstants.Version);
         var room = Guid.NewGuid(); var match = Guid.NewGuid(); var client = Guid.NewGuid(); var seat = Guid.NewGuid();
         Equal(seat, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest { SeatId = seat })).SeatId);
         var request = ProtocolCodec.DecodeResumeSession(ProtocolCodec.EncodeResumeSession(new ResumeSessionRequest

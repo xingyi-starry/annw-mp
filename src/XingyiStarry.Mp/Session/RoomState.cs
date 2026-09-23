@@ -109,11 +109,15 @@ internal sealed class RoomState
             if (seats.Any(value => value.PlayerIndex < 0)) throw new InvalidOperationException("Saved-game seats are missing runtime indices.");
             return;
         }
+        // SetupForSkirmish compacts enabled settings in lobby-row order; pos_ind only selects the map spawn.
+        var runtimeIndices = RuntimePlayerIndexResolver.Build(players.Select(value => value.exist).ToArray());
+        if (runtimeIndices.Count(value => value >= 0) != seats.Count)
+            throw new InvalidOperationException("Lobby seats do not match the active start settings.");
         foreach (var seat in seats)
         {
             if (seat.LobbySlotIndex < 0 || seat.LobbySlotIndex >= players.Count) throw new InvalidOperationException("Lobby slot is outside the start settings.");
-            seat.PlayerIndex = players[seat.LobbySlotIndex].pos_ind;
-            if (seat.PlayerIndex < 0) throw new InvalidOperationException("The game has not resolved random spawn positions yet.");
+            seat.PlayerIndex = runtimeIndices[seat.LobbySlotIndex];
+            if (seat.PlayerIndex < 0) throw new InvalidOperationException("Lobby seat refers to a disabled start setting.");
         }
         if (seats.Select(value => value.PlayerIndex).Distinct().Count() != seats.Count) throw new InvalidOperationException("Resolved player indices are not unique.");
     }

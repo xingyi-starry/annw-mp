@@ -34,6 +34,7 @@ internal sealed class ClientSession : IDisposable
     public string ConnectionError { get; private set; } = "";
     public Guid? MatchId => matchId;
     public bool JoinedMatch { get; private set; }
+    public bool MatchStarting { get; private set; }
     public bool RequiresJoinSelection => welcomeMode == WelcomeMode.JoinSelection && !JoinedMatch;
     public bool CanFastReconnect => !TerminalSessionEnded && ClientId.HasValue && matchId.HasValue && JoinedMatch;
     public int ReconnectAcceptedGeneration { get; private set; }
@@ -90,6 +91,9 @@ internal sealed class ClientSession : IDisposable
                         { matchId = room.MatchId; JoinedMatch = true; snapshotRequested = true; _ = RequestSnapshotAsync(); }
                         else if (newlyStarted && !ownsSeat)
                         { matchId = room.MatchId; welcomeMode = WelcomeMode.JoinSelection; JoinedMatch = false; }
+                        break;
+                    case MessageType.MatchStarting:
+                        MatchStarting = true;
                         break;
                     case MessageType.HistoryComplete:
                         var latestFrameId = ProtocolCodec.DecodeInt64(envelope.Payload);
