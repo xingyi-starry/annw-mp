@@ -131,6 +131,7 @@ internal static class NativeSkirmishLobby
         if (selected.HasKey("lock_fow_setting")) preview.SetKey("lock_fow_setting", selected.GetKey_Enum("lock_fow_setting", FOW_Type.None));
         if (selected.HasKey("lock_win_condition")) preview.SetKey("lock_win_condition", selected.GetKey_Enum("lock_win_condition", SkirmishWinCondition.None));
         if (selected.HasKey("lock_quick_start")) preview.SetKey("lock_quick_start", selected.GetKey_Enum("lock_quick_start", QuickStartSetting.None));
+        if (selected.HasKey("expose_diff_flags")) preview.SetKey("expose_diff_flags", selected.GetKey_Int("expose_diff_flags"));
         var plain = Encoding.UTF8.GetBytes(preview.ToString());
         if (plain.Length > ProtocolConstants.MaxExpandedMapPreviewBytes) throw new InvalidDataException("地图预览数据过大。");
         var compressed = SnapshotCodec.Compress(plain);
@@ -211,6 +212,7 @@ internal static class NativeSkirmishLobby
         AccessTools.Method(typeof(UI_MENU_LevelSelect_InfoSkm), "ReadLocks")?.Invoke(info, new object[] { preview });
         AccessTools.Method(typeof(UI_MENU_LevelSelect_InfoSkm), "SetUpOptions")?.Invoke(info, Array.Empty<object>());
         info.dd_fow.SetValueWithoutNotify(room.FowType); info.dd_condition.SetValueWithoutNotify(room.WinCondition); info.dd_quickStart.SetValueWithoutNotify(room.QuickStart);
+        ApplyDifficulty(info, room.Difficulty);
         ApplySeatSettings(room);
         previewError = "";
         lastAppliedRevision = room.DraftRevision;
@@ -297,6 +299,8 @@ internal static class NativeSkirmishLobby
         if (plugin.IsClient)
         {
             Disable(info.dd_fow); Disable(info.dd_condition); Disable(info.dd_quickStart);
+            if (info.btn_diffSel != null)
+                foreach (var selectable in info.btn_diffSel.GetComponentsInChildren<Selectable>(true)) Disable(selectable);
             if (screen.pool_maps != null) foreach (var button in screen.pool_maps.GetComponentsInChildren<Button>(true)) Disable(button);
         }
         Store(screen.btn_confirm);
@@ -464,7 +468,7 @@ internal static class NativeSkirmishLobby
     {
         unchecked
         {
-            var value = mapId.GetHashCode(); value = value * 31 + target.dd_fow.value; value = value * 31 + target.dd_condition.value; value = value * 31 + target.dd_quickStart.value;
+            var value = mapId.GetHashCode(); value = value * 31 + target.dd_fow.value; value = value * 31 + target.dd_condition.value; value = value * 31 + target.dd_quickStart.value; value = value * 31 + GetSelectedDifficulty(target);
             foreach (var item in Items())
             {
                 value = value * 31 + (item.is_open ? 1 : 0);
@@ -476,6 +480,15 @@ internal static class NativeSkirmishLobby
             }
             return value;
         }
+    }
+
+    internal static int GetSelectedDifficulty(UI_MENU_LevelSelect_InfoSkm target) =>
+        (int)(AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "cur_selected_diff")?.GetValue(target) ?? 30);
+
+    private static void ApplyDifficulty(UI_MENU_LevelSelect_InfoSkm target, int difficulty)
+    {
+        AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "cur_selected_diff")?.SetValue(target, difficulty);
+        AccessTools.Method(typeof(UI_MENU_LevelSelect_InfoSkm), "RefreshDiffSelBtn")?.Invoke(target, Array.Empty<object>());
     }
 
     private static void Disable(Selectable selectable) { Store(selectable); selectable.interactable = false; }

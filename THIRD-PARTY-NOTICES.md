@@ -10,7 +10,8 @@ archives:
   Contributors. Source: <https://github.com/dotnet/runtime>
 
 The applicable license texts are stored in `licenses/` in the source repository
-and `XingyiStarry.Mp-Licenses/` in release archives.
+and in the `licenses/` directory of the outer release archives. The nested
+installer archives contain runtime files only.
 
 ## BepInEx convenience bundle
 
@@ -31,6 +32,6 @@ The upstream package includes these components:
 | MonoMod | 22.01.29.01 | MIT | <https://github.com/MonoMod/MonoMod/tree/v22.01.29.01> |
 | Mono.Cecil | 0.10.4 | MIT | <https://github.com/jbevain/cecil/tree/0.10.4> |
 
-The `with-BepInEx` archive contains the corresponding license texts in its
-`XingyiStarry.Mp-Licenses/` directory. The BepInEx and Unity Doorstop binaries are unmodified;
+The outer `with-BepInEx` release archive contains the corresponding license texts
+in its `licenses/` directory. The BepInEx and Unity Doorstop binaries are unmodified;
 the source links above provide the corresponding source code.

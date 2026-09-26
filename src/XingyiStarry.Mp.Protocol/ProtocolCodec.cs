@@ -76,7 +76,7 @@ public static class ProtocolCodec
         if (value.MapPreview.Length > ProtocolConstants.MaxMapPreviewBytes) throw new InvalidDataException("Map preview is too large.");
         var wire = new Wire.Room { RoomId = GuidBytes(value.RoomId), MatchStarted = value.MatchStarted,
             DraftRevision = value.DraftRevision, MapId = value.MapId, MapTitle = value.MapTitle,
-            FowType = value.FowType, WinCondition = value.WinCondition, QuickStart = value.QuickStart, SavedGame = value.SavedGame,
+            FowType = value.FowType, WinCondition = value.WinCondition, QuickStart = value.QuickStart, Difficulty = value.Difficulty, SavedGame = value.SavedGame,
             UserMap = value.UserMap, MapPreview = ByteString.CopyFrom(value.MapPreview) };
         if (value.MatchId.HasValue) wire.MatchId = GuidBytes(value.MatchId.Value);
         foreach (var seat in value.Seats)
@@ -104,7 +104,7 @@ public static class ProtocolCodec
         if (wire.MapPreview.Length > ProtocolConstants.MaxMapPreviewBytes) throw new InvalidDataException("Map preview is too large.");
         var value = new RoomSnapshot { RoomId = ReadGuid(wire.RoomId), MatchId = wire.HasMatchId ? ReadGuid(wire.MatchId) : null,
             MatchStarted = wire.MatchStarted, DraftRevision = wire.DraftRevision, MapId = wire.MapId,
-            MapTitle = wire.MapTitle, FowType = wire.FowType, WinCondition = wire.WinCondition, QuickStart = wire.QuickStart,
+            MapTitle = wire.MapTitle, FowType = wire.FowType, WinCondition = wire.WinCondition, QuickStart = wire.QuickStart, Difficulty = wire.Difficulty,
             SavedGame = wire.SavedGame, UserMap = wire.UserMap, MapPreview = wire.MapPreview.ToByteArray() };
         foreach (var seat in wire.Seats)
         {

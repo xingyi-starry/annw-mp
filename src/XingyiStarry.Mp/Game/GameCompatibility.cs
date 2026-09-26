@@ -34,6 +34,11 @@ internal static class GameCompatibility
             missing.Add("FUI_WorldCursor keyboard input");
         if (typeof(UI_POP_PauseMenu).GetMethod("OnBtn_EnableEditor") is null || typeof(SUI_DBG_BATTLE).GetMethod("Show") is null)
             missing.Add("battle editor entry points");
+        if (typeof(StartGameSetting).GetField("diff") is null ||
+            typeof(UI_MENU_LevelSelect_InfoSkm).GetField("btn_diffSel") is null ||
+            typeof(UI_MENU_LevelSelect_InfoSkm).GetField("cur_selected_diff", BindingFlags.Instance | BindingFlags.NonPublic) is null ||
+            typeof(UI_MENU_LevelSelect_InfoSkm).GetMethod("RefreshDiffSelBtn", BindingFlags.Instance | BindingFlags.NonPublic) is null)
+            missing.Add("v1.0.9 skirmish difficulty selection");
         return missing;
     }
 

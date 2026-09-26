@@ -222,7 +222,7 @@ internal sealed class HostSession : IDisposable
             var human = player.controller == PlayerControl.Human;
             values.Add(CreateSeat(player, slotIndex, human, draft.Seats.Find(value => value.LobbySlotIndex == slotIndex)));
         }
-        var fingerprint = new StringBuilder().Append(draft.MapId).Append('|').Append(draft.FowType).Append('|').Append(draft.WinCondition).Append('|').Append(draft.QuickStart);
+        var fingerprint = new StringBuilder().Append(draft.MapId).Append('|').Append(draft.FowType).Append('|').Append(draft.WinCondition).Append('|').Append(draft.QuickStart).Append('|').Append(draft.Difficulty);
         for (var index = 0; index < players.Count; index++)
         {
             var player = players[index]; var intent = draft.Seats.Find(value => value.LobbySlotIndex == index);
@@ -232,7 +232,7 @@ internal sealed class HostSession : IDisposable
                 .Append(',').Append(intent?.CommanderId ?? "").Append(',').Append(intent?.SkillId ?? "");
             if (intent is not null) foreach (var passive in intent.PassiveIds) fingerprint.Append(',').Append(passive);
         }
-        if (Room.SyncDraft(draft.MapId, draft.MapTitle, draft.FowType, draft.WinCondition, draft.QuickStart,
+        if (Room.SyncDraft(draft.MapId, draft.MapTitle, draft.FowType, draft.WinCondition, draft.QuickStart, draft.Difficulty,
             draft.UserMap, draft.MapPreview, fingerprint.ToString(), values)) BroadcastRoom();
     }
 
@@ -264,7 +264,7 @@ internal sealed class HostSession : IDisposable
             seats.Add(seat);
         }
         var map = save.GetKey_String("map_name"); if (string.IsNullOrWhiteSpace(map)) map = settings.filename ?? "已保存的遭遇战";
-        Room.ConfigureSavedGame(map, map, (int)settings.fow_type, (int)settings.win_condition, (int)settings.quick_start, seats);
+        Room.ConfigureSavedGame(map, map, (int)settings.fow_type, (int)settings.win_condition, (int)settings.quick_start, settings.diff, seats);
         BroadcastRoom();
     }
 

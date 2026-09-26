@@ -45,16 +45,8 @@ function Add-PluginFiles([string]$StagingRoot) {
     New-Item -ItemType Directory -Force -Path $pluginTarget, $configTarget | Out-Null
     Copy-Item -Path (Join-Path $PSScriptRoot 'dist\BepInEx\plugins\XingyiStarry.Mp\*') -Destination $pluginTarget -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'config\relay-default.cfg') -Destination (Join-Path $configTarget 'xingyistarry.mp.cfg')
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'PACKAGE-README.txt') -Destination (Join-Path $StagingRoot 'XingyiStarry.Mp-README.txt')
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'LICENSE') -Destination (Join-Path $StagingRoot 'XingyiStarry.Mp-LICENSE.txt')
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'THIRD-PARTY-NOTICES.md') -Destination (Join-Path $StagingRoot 'XingyiStarry.Mp-THIRD-PARTY-NOTICES.md')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Uninstall-XingyiStarry-MP.bat') -Destination $StagingRoot
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Uninstall-XingyiStarry-MP.ps1') -Destination $StagingRoot
-    $licenseTarget = Join-Path $StagingRoot 'XingyiStarry.Mp-Licenses'
-    New-Item -ItemType Directory -Force -Path $licenseTarget | Out-Null
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'licenses\Google.Protobuf-3.25.3-BSD-3-Clause.txt') -Destination $licenseTarget
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'licenses\DotNet-Runtime-MIT.txt') -Destination $licenseTarget
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'licenses\README.md') -Destination $licenseTarget
 }
 
 function New-Package([string]$Suffix, [bool]$IncludeBepInEx) {
@@ -64,12 +56,13 @@ function New-Package([string]$Suffix, [bool]$IncludeBepInEx) {
     New-Item -ItemType Directory -Force -Path $staging | Out-Null
 
     if ($IncludeBepInEx) {
-        Get-ChildItem -Force -LiteralPath $BepInExSource | Where-Object { $_.Name -ne '.package-sha256' } | ForEach-Object {
-            Copy-Item -LiteralPath $_.FullName -Destination $staging -Recurse -Force
+        $coreTarget = Join-Path $staging 'BepInEx\core'
+        New-Item -ItemType Directory -Force -Path $coreTarget | Out-Null
+        Get-ChildItem -File -LiteralPath (Join-Path $BepInExSource 'BepInEx\core') -Filter '*.dll' | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination $coreTarget -Force
         }
-        $licenseTarget = Join-Path $staging 'XingyiStarry.Mp-Licenses'
-        New-Item -ItemType Directory -Force -Path $licenseTarget | Out-Null
-        Copy-Item -Path (Join-Path $PSScriptRoot 'licenses\*') -Destination $licenseTarget -Force
+        Copy-Item -LiteralPath (Join-Path $BepInExSource 'doorstop_config.ini') -Destination $staging
+        Copy-Item -LiteralPath (Join-Path $BepInExSource 'winhttp.dll') -Destination $staging
     }
     Add-PluginFiles $staging
 

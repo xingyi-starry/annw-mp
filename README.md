@@ -2,7 +2,7 @@
 
 《湮灭之战》（Tactical Annihilation）的多人联机插件，基于 BepInEx 5。
 
-项目仍处于开发阶段。目前面向游戏 1.0.8，主机与客机必须使用相同的插件和游戏版本。
+项目仍处于开发阶段。目前面向游戏 1.0.9，主机与客机必须使用相同的插件和游戏版本。
 
 ## 主要功能
 
@@ -17,12 +17,12 @@
 
 ## 安装
 
-Release 提供两个压缩包：
+Release 提供两个版本：
 
 - `XingyiStarry-MP-<version>.zip`：标准包，不含 BepInEx，适合已经安装兼容 BepInEx 5 的游戏。
 - `XingyiStarry-MP-<version>-with-BepInEx.zip`：整合包，包含官方 BepInEx 5.4.23.5 Windows x64 运行时。
 
-完全退出游戏，把所选压缩包内的全部文件解压到 `AnnW.exe` 所在目录并保留目录结构。启动游戏后，从“遭遇战”的联机入口创建或加入房间。
+完全退出游戏，将下载内容中的安装文件解压到 `AnnW.exe` 所在目录并保留目录结构。启动游戏后，从“遭遇战”的联机入口创建或加入房间。
 
 需要卸载时，双击游戏根目录的 `Uninstall-XingyiStarry-MP.bat`。默认只删除本插件；也可以选择同时删除整个 BepInEx 框架。后一模式会一并删除其他 BepInEx 模组和配置，请谨慎选择。
 
@@ -32,7 +32,7 @@ Release 提供两个压缩包：
 
 - Windows PowerShell 5.1 或 PowerShell 7；
 - .NET SDK 8；
-- 合法安装的《湮灭之战》1.0.8；
+- 合法安装的《湮灭之战》1.0.9；
 - 可访问 NuGet、GitHub Packages 和 GitHub Release 的网络。
 
 游戏程序集不属于本项目，也不会提交到仓库。日常开发默认使用仓库相邻目录 `..\Tactical Annihilation` 中的合法游戏安装；其他位置可传入 `GameRoot`。
@@ -52,13 +52,13 @@ dotnet .\tests\XingyiStarry.Mp.Tests\bin\Release\net8.0\XingyiStarry.Mp.Tests.dl
 
 ```powershell
 .\package.ps1 -Configuration Release `
-  -GameReferencesTag game-1.0.8 `
+  -GameReferencesTag game-1.0.9 `
   -OutputDirectory .\releases
 ```
 
-指定 `GameReferencesTag` 时，脚本从私有 GitHub Packages 下载并逐文件校验固定的游戏编译引用；本地正式打包与自动化构建因此使用同一份输入。维护者需要先用带 `read:packages` 权限的 `gh` 登录，也可以通过 `GH_PACKAGES_TOKEN` 提供令牌。
+指定 `GameReferencesTag` 时，脚本从私有 GitHub Packages 下载并逐文件校验固定的游戏编译引用，以确保正式构建使用已审阅的程序集版本。维护者需要先用带 `read:packages` 权限的 `gh` 登录，也可以通过 `GH_PACKAGES_TOKEN` 提供令牌。
 
-一次打包同时生成标准包和 `with-BepInEx` 整合包，并输出各自 SHA-256。正式包不包含 DebugTools、EarlyPatcher、免 Steam 标记或其他联机插件。
+一次打包同时生成标准包和 `with-BepInEx` 整合包，并输出各自 SHA-256。打包前应确认版本号、游戏引用和测试结果均已更新。
 
 游戏更新后，维护者先审阅并更新 `game-references.json`，再上传新的私有引用包：
 

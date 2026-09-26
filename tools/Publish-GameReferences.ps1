@@ -18,7 +18,7 @@ if ($Tag -ne $manifest.tag) {
     throw "Tag '$Tag' does not match the pinned tag '$($manifest.tag)' in game-references.json. Update and review the manifest first."
 }
 if ($Tag -notmatch '^game-(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
-    throw "Invalid game reference tag '$Tag'. Expected a value such as game-1.0.8."
+    throw "Invalid game reference tag '$Tag'. Expected a value such as game-1.0.9."
 }
 if ($Matches.version -ne $manifest.version) {
     throw "Tag version '$($Matches.version)' does not match manifest version '$($manifest.version)'."

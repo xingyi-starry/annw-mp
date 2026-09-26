@@ -25,7 +25,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.7.1";
+    public const string PluginVersion = "0.8.0";
 
     private Harmony? harmony;
     private HostSession? host;
@@ -388,7 +388,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 
     private static RoomSnapshot CreateLobbyDraft(string mapId, UI_MENU_LevelSelect_InfoSkm info, IReadOnlyList<SGS_Player> players)
     {
-        var draft = new RoomSnapshot { MapId = mapId, MapTitle = info.txt_info_title?.text ?? mapId, FowType = info.dd_fow.value, WinCondition = info.dd_condition.value, QuickStart = info.dd_quickStart.value };
+        var draft = new RoomSnapshot { MapId = mapId, MapTitle = info.txt_info_title?.text ?? mapId, FowType = info.dd_fow.value, WinCondition = info.dd_condition.value, QuickStart = info.dd_quickStart.value, Difficulty = NativeSkirmishLobby.GetSelectedDifficulty(info) };
         for (var index = 0; index < players.Count; index++)
         {
             var player = players[index]; if (!player.exist) continue;

@@ -16,7 +16,7 @@ jobs:
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
-      GAME_REFERENCES_TAG: game-1.0.8
+      GAME_REFERENCES_TAG: game-1.0.9
 
     steps:
       - name: Check out source
@@ -49,7 +49,49 @@ jobs:
             -GameReferencesTag $env:GAME_REFERENCES_TAG `
             -GitHubToken $env:GITHUB_TOKEN `
             -ArtifactsPath (Join-Path $PWD '.artifacts\release') `
-            -OutputDirectory (Join-Path $PWD '.release-output')
+            -OutputDirectory (Join-Path $PWD '.release-installers')
+
+      - name: Wrap installers with licenses
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $inputRoot = Join-Path $PWD '.release-installers'
+          $outputRoot = Join-Path $PWD '.release-output'
+          New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
+
+          function New-ReleaseWrapper([string]$suffix, [bool]$includeBepInExLicenses) {
+            $name = "XingyiStarry-MP-$version$suffix.zip"
+            $installer = Join-Path $inputRoot $name
+            if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+              throw "Missing installer archive: $installer"
+            }
+            $staging = Join-Path $outputRoot ("wrapper-" + [Guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Force -Path $staging | Out-Null
+            try {
+              Copy-Item -LiteralPath $installer -Destination $staging
+              Copy-Item -LiteralPath '.\PACKAGE-README.txt' -Destination (Join-Path $staging 'README.txt')
+              Copy-Item -LiteralPath '.\LICENSE' -Destination (Join-Path $staging 'LICENSE.txt')
+              Copy-Item -LiteralPath '.\THIRD-PARTY-NOTICES.md' -Destination $staging
+              $licenseTarget = Join-Path $staging 'licenses'
+              New-Item -ItemType Directory -Force -Path $licenseTarget | Out-Null
+              foreach ($license in @('Google.Protobuf-3.25.3-BSD-3-Clause.txt', 'DotNet-Runtime-MIT.txt', 'README.md')) {
+                Copy-Item -LiteralPath (Join-Path '.\licenses' $license) -Destination $licenseTarget
+              }
+              if ($includeBepInExLicenses) {
+                foreach ($license in @('BepInEx-5.4.23.5-MIT.txt', 'HarmonyX-2.9.0-MIT.txt', 'Mono.Cecil-0.10.4-MIT.txt', 'MonoMod-22.01.29.01-MIT.txt', 'UnityDoorstop-4.5.0-LGPL-2.1.txt')) {
+                  Copy-Item -LiteralPath (Join-Path '.\licenses' $license) -Destination $licenseTarget
+                }
+              }
+              $archive = Join-Path $outputRoot $name
+              if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
+              Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $archive -CompressionLevel Optimal
+            } finally {
+              if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+            }
+          }
+
+          New-ReleaseWrapper -suffix '' -includeBepInExLicenses $false
+          New-ReleaseWrapper -suffix '-with-BepInEx' -includeBepInExLicenses $true
 
       - name: Run protocol tests
         shell: pwsh
@@ -62,24 +104,44 @@ jobs:
           $version = '${{ steps.version.outputs.version }}'
           $standard = ".\.release-output\XingyiStarry-MP-$version.zip"
           $bundled = ".\.release-output\XingyiStarry-MP-$version-with-BepInEx.zip"
+          $standardInstaller = ".\.release-installers\XingyiStarry-MP-$version.zip"
+          $bundledInstaller = ".\.release-installers\XingyiStarry-MP-$version-with-BepInEx.zip"
           foreach ($archive in @($standard, $bundled)) {
             if (-not (Test-Path -LiteralPath $archive)) { throw "Missing archive: $archive" }
           }
+          $standardInstallerEntries = tar -tf $standardInstaller
+          $bundledInstallerEntries = tar -tf $bundledInstaller
+          if ($standardInstallerEntries -match '(^|/)BepInEx/core/') { throw 'Standard installer contains BepInEx core.' }
+          if (-not ($bundledInstallerEntries -match 'BepInEx/core/BepInEx.dll')) { throw 'Bundled installer is missing BepInEx.' }
+          foreach ($required in @('Uninstall-XingyiStarry-MP.bat', 'Uninstall-XingyiStarry-MP.ps1')) {
+            if ($required -notin $standardInstallerEntries -or $required -notin $bundledInstallerEntries) {
+              throw "An installer is missing $required."
+            }
+          }
+          $licensePattern = 'LICENSE|THIRD-PARTY|(^|/)licenses/'
+          if (($standardInstallerEntries + $bundledInstallerEntries) -match $licensePattern) {
+            throw 'A lean installer contains release documentation or licenses.'
+          }
           $standardEntries = tar -tf $standard
-          if ($standardEntries -match '(^|/)BepInEx/core/') { throw 'Standard archive contains BepInEx core.' }
           $bundledEntries = tar -tf $bundled
-          if (-not ($bundledEntries -match 'BepInEx/core/BepInEx.dll')) { throw 'Bundled archive is missing BepInEx.' }
           foreach ($required in @(
-            'Uninstall-XingyiStarry-MP.bat',
-            'Uninstall-XingyiStarry-MP.ps1',
-            'XingyiStarry.Mp-LICENSE.txt',
-            'XingyiStarry.Mp-THIRD-PARTY-NOTICES.md',
-            'XingyiStarry.Mp-Licenses/Google.Protobuf-3.25.3-BSD-3-Clause.txt'
+            "XingyiStarry-MP-$version.zip",
+            'README.txt',
+            'LICENSE.txt',
+            'THIRD-PARTY-NOTICES.md',
+            'licenses/Google.Protobuf-3.25.3-BSD-3-Clause.txt'
           )) {
-            if ($required -notin $standardEntries) { throw "Standard archive is missing $required." }
+            if ($required -notin $standardEntries) { throw "Standard release wrapper is missing $required." }
+          }
+          foreach ($required in @(
+            "XingyiStarry-MP-$version-with-BepInEx.zip",
+            'licenses/BepInEx-5.4.23.5-MIT.txt',
+            'licenses/UnityDoorstop-4.5.0-LGPL-2.1.txt'
+          )) {
+            if ($required -notin $bundledEntries) { throw "Bundled release wrapper is missing $required." }
           }
           $forbidden = 'EarlyPatcher|DebugTools|NoSteam|AnnW\.LanMp'
-          if (($standardEntries + $bundledEntries) -match $forbidden) { throw 'A release archive contains development-only files.' }
+          if (($standardInstallerEntries + $bundledInstallerEntries + $standardEntries + $bundledEntries) -match $forbidden) { throw 'A release archive contains development-only files.' }
           Get-FileHash -Algorithm SHA256 -LiteralPath $standard, $bundled |
             ForEach-Object { "$($_.Hash.ToLowerInvariant())  $(Split-Path -Leaf $_.Path)" } |
             Set-Content -LiteralPath '.\.release-output\SHA256SUMS.txt' -Encoding ASCII

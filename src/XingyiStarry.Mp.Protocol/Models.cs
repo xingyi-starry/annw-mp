@@ -179,6 +179,7 @@ public sealed class RoomSnapshot
     public int FowType { get; set; }
     public int WinCondition { get; set; }
     public int QuickStart { get; set; }
+    public int Difficulty { get; set; } = 30;
     public List<SeatInfo> Seats { get; } = new List<SeatInfo>();
     public bool SavedGame { get; set; }
     public bool UserMap { get; set; }
