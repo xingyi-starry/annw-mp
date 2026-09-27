@@ -304,11 +304,13 @@ internal static class NativeSkirmishLobby
             if (screen.pool_maps != null) foreach (var button in screen.pool_maps.GetComponentsInChildren<Button>(true)) Disable(button);
         }
         Store(screen.btn_confirm);
-        var canJoinRunning = plugin.IsClient && room?.MatchStarted == true && plugin.LocalIdentityId is Guid localId &&
-            room.Seats.Any(value => value.ClientId == localId && value.PendingActivation);
-        var canStart = plugin.IsHost && (room?.SavedGame == true ? plugin.CanStartHostedRoom : !string.IsNullOrEmpty(mapId) && room != null && room.Seats.Any(value => value.OriginallyHuman) && room.Seats.Where(value => value.OriginallyHuman).All(value => value.Connected && value.Ready));
+        var localParticipant = plugin.LocalIdentityId is Guid participantId ? room?.Participants.Find(value => value.ClientId == participantId) : null;
+        var canJoinRunning = plugin.IsClient && room?.MatchStarted == true && localParticipant?.Admission == ParticipantAdmission.JoinSelection;
+        var selectedRunningSeat = canJoinRunning && plugin.LocalIdentityId is Guid localId &&
+            room!.Seats.Any(value => value.ClientId == localId && value.PendingActivation);
+        var canStart = plugin.IsHost && plugin.CanStartHostedRoom;
         screen.btn_confirm.interactable = canStart || canJoinRunning;
-        SetConfirmLabel(canJoinRunning ? "加入游戏" : plugin.IsClient ? "等待主机开始" : "开始联机对局");
+        SetConfirmLabel(canJoinRunning ? (selectedRunningSeat ? "接管并加入" : "直接加入观战") : plugin.IsClient ? "等待主机开始" : "开始联机对局");
     }
 
     private static void RebuildSeats(XingyiStarryMpPlugin plugin, RoomSnapshot? room)
@@ -316,13 +318,13 @@ internal static class NativeSkirmishLobby
         if (actionsRow == null) return;
         for (var index = actionsRow.childCount - 1; index >= 0; index--) UnityEngine.Object.Destroy(actionsRow.GetChild(index).gameObject);
         RebuildRowActions(plugin, room);
-        var local = plugin.LocalIdentityId is Guid id ? room?.Seats.Find(value => value.ClientId == id) : null;
+        var localParticipant = plugin.LocalIdentityId is Guid id ? room?.Participants.Find(value => value.ClientId == id) : null;
         var cancel = GameUiKit.Button(actionsRow, "CancelSeat", "取消选择", () => XingyiStarryMpPlugin.Instance?.ReleaseSeat());
         cancel.interactable = plugin.CanReleaseSeat;
         if (room?.MatchStarted != true)
         {
-            var ready = GameUiKit.Button(actionsRow, "Ready", local?.Ready == true ? "取消准备" : "准备", () => XingyiStarryMpPlugin.Instance?.ToggleReady());
-            ready.interactable = local != null;
+            var ready = GameUiKit.Button(actionsRow, "Ready", localParticipant?.Ready == true ? "取消准备" : "准备", () => XingyiStarryMpPlugin.Instance?.ToggleReady());
+            ready.interactable = plugin.CanSetReady;
         }
     }
 
@@ -347,7 +349,7 @@ internal static class NativeSkirmishLobby
             if (!rowAugmentations.TryGetValue(item, out var augmentation)) augmentation = MountInNativeSlot(item);
             EnsureMounted(augmentation);
             var label = augmentation.Button.GetComponentInChildren<TextMeshProUGUI>(true);
-            if (label != null) label.text = SeatLabel(seat!);
+            if (label != null) label.text = SeatLabel(seat!, room);
             augmentation.Button.interactable = plugin.CanClaimSeat && (!seat!.Connected || seat.ClientId == plugin.LocalIdentityId);
         }
     }
@@ -368,7 +370,7 @@ internal static class NativeSkirmishLobby
             var horizontal = row.gameObject.AddComponent<HorizontalLayoutGroup>(); horizontal.spacing = 8f; horizontal.childControlWidth = true; horizontal.childControlHeight = true; horizontal.childForceExpandWidth = false; horizontal.childForceExpandHeight = true;
             var labelHost = GameUiKit.Rect("Label", row); labelHost.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
             GameUiKit.Text(labelHost, "Text", $"P{seat.PlayerIndex + 1} · 队伍 {seat.Team} · {seat.DisplayName}", 18f, TextAlignmentOptions.MidlineLeft);
-            var slot = seat.LobbySlotIndex; var button = GameUiKit.Button(row, "Select", SeatLabel(seat), () => XingyiStarryMpPlugin.Instance?.ClaimSeat(slot));
+            var slot = seat.LobbySlotIndex; var button = GameUiKit.Button(row, "Select", SeatLabel(seat, plugin.CurrentRoom), () => XingyiStarryMpPlugin.Instance?.ClaimSeat(slot));
             var element = button.gameObject.AddComponent<LayoutElement>(); element.preferredWidth = 132f; element.minWidth = 104f;
             button.interactable = plugin.CanClaimSeat && (!seat.Connected || seat.ClientId == plugin.LocalIdentityId);
         }
@@ -436,11 +438,13 @@ internal static class NativeSkirmishLobby
     {
         if (statusText == null) return;
         if (previewError.Length != 0) { statusText.text = previewError; return; }
-        var local = plugin.LocalIdentityId is Guid id ? room?.Seats.Find(value => value.ClientId == id) : null;
+        var localId = plugin.LocalIdentityId;
+        var local = localId is Guid seatOwner ? room?.Seats.Find(value => value.ClientId == seatOwner) : null;
+        var participant = localId is Guid participantId ? room?.Participants.Find(value => value.ClientId == participantId) : null;
         if (room == null || string.IsNullOrEmpty(room.MapId)) statusText.text = plugin.IsHost ? "请选择地图并设置 Human / AI" : "等待主机选择地图";
-        else if (local == null) statusText.text = room.MatchStarted ? "选择右侧可接管席位，然后点击加入游戏" : "选择席位行右侧按钮；已占用席位会置灰";
+        else if (local == null) statusText.text = room.MatchStarted ? "可选择右侧席位接管，或不选席直接加入观战" : $"未选席（开局后观战） · {(participant?.Ready == true ? "已准备" : "未准备")}";
         else if (room.MatchStarted) statusText.text = $"已选择 {local.DisplayName} · P{local.LobbySlotIndex + 1}，点击加入游戏后开始同步";
-        else statusText.text = $"{local.DisplayName} · P{local.LobbySlotIndex + 1} · {(local.Ready ? "已准备" : "未准备")}";
+        else statusText.text = $"{local.DisplayName} · P{local.LobbySlotIndex + 1} · {(participant?.Ready == true ? "已准备" : "未准备")}";
     }
 
     private static int SeatSignature(RoomSnapshot? room, Guid? localId)
@@ -453,6 +457,11 @@ internal static class NativeSkirmishLobby
                 value = value * 31 + seat.LobbySlotIndex; value = value * 31 + (seat.OriginallyHuman ? 1 : 0); value = value * 31 + (seat.Connected ? 1 : 0);
                 value = value * 31 + (seat.Ready ? 1 : 0); value = value * 31 + (seat.ClientId?.GetHashCode() ?? 0); value = value * 31 + seat.DisplayName.GetHashCode();
                 value = value * 31 + (seat.Defeated ? 1 : 0); value = value * 31 + (seat.PendingActivation ? 1 : 0);
+            }
+            if (room != null) foreach (var participant in room.Participants)
+            {
+                value = value * 31 + participant.ClientId.GetHashCode(); value = value * 31 + (participant.Ready ? 1 : 0);
+                value = value * 31 + (int)participant.Admission; value = value * 31 + (participant.SeatId?.GetHashCode() ?? 0);
             }
             return value;
         }
@@ -512,7 +521,8 @@ internal static class NativeSkirmishLobby
         cachedMapPreview = null; previewError = "";
     }
 
-    private static string SeatLabel(SeatInfo seat) => seat.Defeated ? "已战败" : !seat.Connected ? "选择" : $"{seat.DisplayName}{(seat.Ready ? " ✓" : "")}";
+    private static string SeatLabel(SeatInfo seat, RoomSnapshot? room) => seat.Defeated ? "已战败" : !seat.Connected ? "选择" :
+        $"{seat.DisplayName}{(room?.Participants.Find(value => value.ClientId == seat.ClientId)?.Ready == true ? " ✓" : "")}";
 
     private sealed class SeatSlotAugmentation
     {

@@ -14,6 +14,7 @@ internal static class NativeLobbyPanel
     private static TMP_InputField? nameInput;
     private static TMP_InputField? hostInput;
     private static TMP_InputField? portInput;
+    private static TMP_InputField? maxParticipantsInput;
     private static TextMeshProUGUI? status;
     private static bool waitingForHandshake;
     private static bool returnToPublic;
@@ -40,7 +41,7 @@ internal static class NativeLobbyPanel
         var full = GameUiKit.Rect(RootName, UI_Floater.self.transform); GameUiKit.Stretch(full);
         root = full.gameObject;
         var dim = GameUiKit.Rect("Dim", full); GameUiKit.Stretch(dim); var dimImage = dim.gameObject.AddComponent<Image>(); dimImage.color = new Color(0f, 0f, 0f, 0.68f);
-        var panel = GameUiKit.Rect("Panel", full); panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f); panel.pivot = new Vector2(0.5f, 0.5f); panel.sizeDelta = new Vector2(700f, 470f);
+        var panel = GameUiKit.Rect("Panel", full); panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f); panel.pivot = new Vector2(0.5f, 0.5f); panel.sizeDelta = new Vector2(700f, 550f);
         GameUiKit.Panel(panel);
         var body = GameUiKit.Rect("Body", panel); GameUiKit.Stretch(body); body.offsetMin = new Vector2(36, 28); body.offsetMax = new Vector2(-36, -28);
         var vertical = body.gameObject.AddComponent<VerticalLayoutGroup>(); vertical.spacing = 10f; vertical.childControlWidth = true; vertical.childControlHeight = true; vertical.childForceExpandWidth = true; vertical.childForceExpandHeight = false;
@@ -49,6 +50,7 @@ internal static class NativeLobbyPanel
         nameInput = AddInputRow(body, "用户名", XingyiStarryMpPlugin.Instance?.ConfiguredDisplayName ?? Environment.UserName);
         hostInput = AddInputRow(body, "主机地址", XingyiStarryMpPlugin.Instance?.ConfiguredAddress ?? "127.0.0.1");
         portInput = AddInputRow(body, "端口", (XingyiStarryMpPlugin.Instance?.ConfiguredPort ?? Protocol.ProtocolConstants.DefaultPort).ToString());
+        maxParticipantsInput = AddInputRow(body, "总人数", "4");
         var row = GameUiKit.Rect("Actions", body); row.gameObject.AddComponent<LayoutElement>().preferredHeight = 48f;
         var horizontal = row.gameObject.AddComponent<HorizontalLayoutGroup>(); horizontal.spacing = 12f; horizontal.childControlHeight = true; horizontal.childControlWidth = true; horizontal.childForceExpandWidth = true;
         GameUiKit.Button(row, "Host", "创建房间", OnHost);
@@ -77,7 +79,8 @@ internal static class NativeLobbyPanel
     private static void OnHost()
     {
         var plugin = ApplyInputs(); if (plugin == null) return;
-        plugin.Host(plugin.ConfiguredPort);
+        if (!TryReadMaxParticipants(out var maxParticipants)) return;
+        plugin.Host(plugin.ConfiguredPort, maxParticipants);
         if (plugin.IsHost) EnterConfiguration();
     }
 
@@ -94,10 +97,18 @@ internal static class NativeLobbyPanel
         root.SetActive(false);
         SavedRoomFlow.Open(menu, path =>
         {
-            plugin.HostFromSave(plugin.ConfiguredPort, path);
+            if (!TryReadMaxParticipants(out var maxParticipants)) { if (root != null) root.SetActive(true); return; }
+            plugin.HostFromSave(plugin.ConfiguredPort, path, maxParticipants);
             if (plugin.IsHost) EnterConfiguration();
             else if (root != null) root.SetActive(true);
         }, () => { if (root != null) { root.SetActive(true); root.transform.SetAsLastSibling(); } });
+    }
+
+    private static bool TryReadMaxParticipants(out int value)
+    {
+        if (!int.TryParse(maxParticipantsInput?.text, out value) || value < 1 || value > 8)
+        { if (status != null) status.text = "总人数必须是 1–8"; return false; }
+        return true;
     }
 
     private static XingyiStarryMpPlugin? ApplyInputs()
@@ -141,6 +152,7 @@ internal static class NativeLobbyPanel
         nameInput = null;
         hostInput = null;
         portInput = null;
+        maxParticipantsInput = null;
         status = null;
     }
 }

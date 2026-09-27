@@ -55,6 +55,24 @@ enum WelcomeMode {
   WELCOME_ACTIVE_MATCH = 2;
 }
 
+enum ParticipantAdmission {
+  PARTICIPANT_LOBBY          = 0;
+  PARTICIPANT_JOIN_SELECTION = 1;
+  PARTICIPANT_PLAYER         = 2;
+  PARTICIPANT_SPECTATOR      = 3;
+}
+
+message Participant {
+  bytes client_id = 1;
+  string display_name = 2;
+  bool ready = 3;
+  bool connected = 4;
+  bool reconnecting = 5;
+  bool is_host = 6;
+  ParticipantAdmission admission = 7;
+  optional bytes seat_id = 8;
+}
+
 message Seat {
   bytes  seat_id          = 1;
   int32  lobby_slot_index = 2;
@@ -101,6 +119,9 @@ message Room {
   bool user_map = 12;
   bytes map_preview = 13;
   int32 difficulty = 14;
+  int32 max_participants = 15;
+  repeated Participant participants = 16;
+  uint32 participant_revision = 17;
 }
 
 message GameCommandMessage {
@@ -154,6 +175,7 @@ message RelayRoomInfo {
   string game_fingerprint = 10;
   string content_fingerprint = 11;
   int32 available_seats = 12;
+  int32 max_participants = 13;
 }
 
 message RelayRegisterRoomRequest {
@@ -165,6 +187,7 @@ message RelayRegisterRoomRequest {
   string plugin_version = 6;
   string game_fingerprint = 7;
   string content_fingerprint = 8;
+  int32 max_participants = 9;
 }
 
 message RelayUpdateRoomRequest {
@@ -176,6 +199,7 @@ message RelayUpdateRoomRequest {
   RelayRoomStatus status = 6;
   int32 available_seats = 7;
   optional bytes match_id = 8;
+  int32 max_participants = 9;
 }
 
 message RelayListRoomsRequest {
@@ -218,7 +242,89 @@ message RelayPeerNotice {
 }
 
 message JoinMatchRequest {
-  bytes seat_id = 1;
+  optional bytes seat_id = 1;
+}
+
+message JoinMatchAcceptedMessage {
+  optional bytes seat_id = 1;
+  bool spectator = 2;
+}
+
+enum ChatChannel {
+  CHAT_PUBLIC = 0;
+  CHAT_TEAM = 1;
+}
+
+enum ChatKind {
+  CHAT_PLAYER = 0;
+  CHAT_SYSTEM = 1;
+}
+
+enum SystemEventKind {
+  SYSTEM_NONE = 0;
+  SYSTEM_JOINED = 1;
+  SYSTEM_LEFT = 2;
+  SYSTEM_DISCONNECTED = 3;
+  SYSTEM_RECONNECTED = 4;
+  SYSTEM_AI_TAKEOVER = 5;
+  SYSTEM_ENTERED_PLAYER = 6;
+  SYSTEM_ENTERED_SPECTATOR = 7;
+}
+
+message ChatSendMessage {
+  ChatChannel channel = 1;
+  string text = 2;
+}
+
+message ChatEventMessage {
+  uint64 social_seq = 1;
+  int64 server_ticks = 2;
+  ChatChannel channel = 3;
+  ChatKind kind = 4;
+  SystemEventKind system_kind = 5;
+  optional bytes sender_client_id = 6;
+  string sender_name = 7;
+  int32 sender_team = 8;
+  int32 sender_color = 9;
+  bool sender_is_spectator = 10;
+  string text = 11;
+}
+
+message PingSendMessage {
+  sint32 tile_x = 1;
+  sint32 tile_y = 2;
+}
+
+message PingEventMessage {
+  bytes sender_client_id = 1;
+  string sender_name = 2;
+  int32 sender_team = 3;
+  int32 sender_color = 4;
+  sint32 tile_x = 5;
+  sint32 tile_y = 6;
+  int32 remaining_ttl_millis = 7;
+}
+
+message SocialSyncRequestMessage {
+  uint64 request_id = 1;
+}
+
+message SocialSyncBeginMessage {
+  uint64 request_id = 1;
+  uint64 watermark = 2;
+  uint32 chunk_count = 3;
+  repeated Participant participants = 4;
+}
+
+message SocialSyncChunkMessage {
+  uint64 request_id = 1;
+  uint32 chunk_index = 2;
+  repeated ChatEventMessage messages = 3;
+}
+
+message SocialSyncCompleteMessage {
+  uint64 request_id = 1;
+  uint64 watermark = 2;
 }
 
 message ResumeSessionRequest {

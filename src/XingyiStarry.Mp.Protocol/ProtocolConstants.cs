@@ -2,7 +2,7 @@ namespace XingyiStarry.Mp.Protocol;
 
 public static class ProtocolConstants
 {
-    public const ushort Version = 16;
+    public const ushort Version = 17;
     // Keep a room update well below the relay's default 8 MiB per-peer write queue.
     public const int MaxMapPreviewBytes = 4 * 1024 * 1024;
     public const int MaxExpandedMapPreviewBytes = 32 * 1024 * 1024;
@@ -56,7 +56,31 @@ public enum MessageType : ushort
     ResumeSessionRejected = 39,
     LeaveSession = 40,
     RelayResumeRoom = 41,
-    MatchStarting = 42
+    MatchStarting = 42,
+    ChatSend = 43,
+    ChatEvent = 44,
+    PingSend = 45,
+    PingEvent = 46,
+    SocialSyncRequest = 47,
+    SocialSyncBegin = 48,
+    SocialSyncChunk = 49,
+    SocialSyncComplete = 50
+}
+
+public enum ParticipantAdmission : byte
+{
+    Lobby = 0,
+    JoinSelection = 1,
+    Player = 2,
+    Spectator = 3
+}
+
+public enum ChatChannel : byte { Public = 0, Team = 1 }
+public enum ChatKind : byte { Player = 0, System = 1 }
+public enum SystemEventKind : byte
+{
+    None = 0, Joined = 1, Left = 2, Disconnected = 3, Reconnected = 4,
+    AiTakeover = 5, EnteredPlayer = 6, EnteredSpectator = 7
 }
 
 public enum WelcomeMode : byte

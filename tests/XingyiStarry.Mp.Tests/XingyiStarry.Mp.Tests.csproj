@@ -7,6 +7,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\XingyiStarry.Mp.Protocol\XingyiStarry.Mp.Protocol.csproj" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Session\RoomState.cs" Link="Session\RoomState.cs" />
     <Compile Include="..\..\src\XingyiStarry.Mp\Session\RuntimePlayerIndexResolver.cs" Link="Session\RuntimePlayerIndexResolver.cs" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Session\SocialState.cs" Link="Session\SocialState.cs" />
   </ItemGroup>
 </Project>

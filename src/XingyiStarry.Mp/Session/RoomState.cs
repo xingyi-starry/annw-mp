@@ -8,8 +8,12 @@ namespace XingyiStarry.Mp.Session;
 internal sealed class RoomState
 {
     private readonly List<SeatInfo> seats = new List<SeatInfo>();
+    private readonly List<ParticipantInfo> participants = new List<ParticipantInfo>();
     public Guid RoomId { get; }
     public IReadOnlyList<SeatInfo> Seats => seats;
+    public IReadOnlyList<ParticipantInfo> Participants => participants;
+    public int MaxParticipants { get; }
+    public uint ParticipantRevision { get; private set; }
     public bool MatchStarted { get; private set; }
     public int DraftRevision { get; private set; }
     public string MapId { get; private set; } = "";
@@ -23,19 +27,54 @@ internal sealed class RoomState
     public byte[] MapPreview { get; private set; } = Array.Empty<byte>();
     private string draftFingerprint = "";
 
-    public RoomState(Guid? roomId = null) => RoomId = roomId ?? Guid.NewGuid();
+    public RoomState(Guid? roomId = null, int maxParticipants = 4)
+    {
+        if (maxParticipants < 1 || maxParticipants > 8) throw new ArgumentOutOfRangeException(nameof(maxParticipants));
+        RoomId = roomId ?? Guid.NewGuid(); MaxParticipants = maxParticipants;
+    }
+
+    public void AddHost(Guid clientId, string displayName)
+    {
+        if (participants.Count != 0) throw new InvalidOperationException("Host must be the first participant.");
+        participants.Add(new ParticipantInfo { ClientId = clientId, DisplayName = displayName, Connected = true,
+            IsHost = true, Admission = ParticipantAdmission.Lobby });
+        ParticipantRevision++;
+    }
+
+    public bool TryAddParticipant(Guid clientId, string displayName, out string reason)
+    {
+        if (participants.Count >= MaxParticipants) { reason = "房间人数已满。"; return false; }
+        if (participants.Any(value => value.ClientId == clientId)) { reason = "参与者身份重复。"; return false; }
+        participants.Add(new ParticipantInfo { ClientId = clientId, DisplayName = displayName, Connected = true,
+            Admission = MatchStarted ? ParticipantAdmission.JoinSelection : ParticipantAdmission.Lobby });
+        ParticipantRevision++; reason = ""; return true;
+    }
+
+    public ParticipantInfo? FindParticipant(Guid clientId) => participants.FirstOrDefault(value => value.ClientId == clientId);
+
+    public void MarkReconnecting(Guid clientId, bool reconnecting)
+    {
+        var participant = FindParticipant(clientId); if (participant is null) return;
+        participant.Reconnecting = reconnecting; participant.Connected = !reconnecting; ParticipantRevision++;
+    }
+
+    public void RemoveParticipant(Guid clientId)
+    {
+        var participant = FindParticipant(clientId); if (participant is null || participant.IsHost) return;
+        participants.Remove(participant); ParticipantRevision++;
+    }
 
     public void ReplaceSeats(IEnumerable<SeatInfo> values)
     {
         if (MatchStarted) throw new InvalidOperationException("Cannot replace seats after match start.");
-        seats.Clear(); seats.AddRange(values); ClearReady();
+        seats.Clear(); seats.AddRange(values); ClearReady(); RefreshParticipantSeats();
     }
 
     public void ConfigureSavedGame(string mapId, string mapTitle, int fowType, int winCondition, int quickStart, int difficulty, IEnumerable<SeatInfo> values)
     {
         if (MatchStarted) throw new InvalidOperationException("Cannot configure a saved game after match start.");
         SavedGame = true; UserMap = false; MapPreview = Array.Empty<byte>(); MapId = mapId; MapTitle = mapTitle; FowType = fowType; WinCondition = winCondition; QuickStart = quickStart; Difficulty = difficulty;
-        seats.Clear(); seats.AddRange(values); ClearReady(); DraftRevision++;
+        seats.Clear(); seats.AddRange(values); ClearReady(); RefreshParticipantSeats(); DraftRevision++;
     }
 
     public bool SyncDraft(string mapId, string mapTitle, int fowType, int winCondition, int quickStart, int difficulty, bool userMap, byte[] mapPreview, string fingerprint, IEnumerable<SeatInfo> values)
@@ -61,12 +100,16 @@ internal sealed class RoomState
         }
         MapId = mapId; MapTitle = mapTitle; FowType = fowType; WinCondition = winCondition; QuickStart = quickStart; Difficulty = difficulty;
         UserMap = userMap; MapPreview = (byte[])mapPreview.Clone(); draftFingerprint = fingerprint;
-        DraftRevision++;
+        RefreshParticipantSeats(); ClearReady(); DraftRevision++;
         return true;
     }
 
     public bool TryClaimSeat(Guid clientId, string displayName, int lobbySlotIndex, out SeatInfo? claimed, out string reason)
     {
+        var participant = FindParticipant(clientId);
+        if (participant is null) { claimed = null; reason = "参与者不存在。"; return false; }
+        if (participant.Admission == ParticipantAdmission.Spectator || participant.Admission == ParticipantAdmission.Player)
+        { claimed = null; reason = "进入战局后不能更换席位。"; return false; }
         claimed = seats.FirstOrDefault(s => s.LobbySlotIndex == lobbySlotIndex && (SavedGame || MatchStarted || s.OriginallyHuman));
         if (claimed is null) { reason = "目标不是可选择的席位。"; return false; }
         if (claimed.Defeated) { reason = "战败席位不能接管。"; return false; }
@@ -77,9 +120,10 @@ internal sealed class RoomState
             Release(previous);
         }
         claimed.ClientId = clientId; claimed.DisplayName = displayName; claimed.Connected = true;
-        if (previous != claimed) claimed.Ready = false;
+        if (previous != claimed) { claimed.Ready = false; participant.Ready = false; }
         claimed.PendingActivation = MatchStarted;
         claimed.AiControlled = MatchStarted;
+        participant.SeatId = claimed.SeatId; ParticipantRevision++;
         reason = ""; return true;
     }
 
@@ -87,20 +131,60 @@ internal sealed class RoomState
     {
         var seat = seats.FirstOrDefault(s => s.ClientId == clientId && s.Connected);
         if (seat is null) return false;
-        Release(seat); return true;
+        Release(seat);
+        var participant = FindParticipant(clientId);
+        if (participant is not null) { participant.SeatId = null; participant.Ready = false; ParticipantRevision++; }
+        return true;
     }
 
     public void SetReady(Guid clientId, bool ready)
     {
-        var seat = seats.Single(s => s.ClientId == clientId && s.Connected);
-        seat.Ready = ready;
+        if (MatchStarted) throw new InvalidOperationException("Cannot ready after match start.");
+        var participant = participants.Single(value => value.ClientId == clientId && value.Connected);
+        participant.Ready = ready;
+        var seat = seats.FirstOrDefault(value => value.ClientId == clientId && value.Connected);
+        if (seat is not null) seat.Ready = ready;
+        ParticipantRevision++;
     }
 
-    public bool CanStart => SavedGame
-        ? !string.IsNullOrEmpty(MapId) && seats.Any(s => s.Connected && !s.Defeated) && seats.Where(s => s.Connected).All(s => s.Ready)
-        : !string.IsNullOrEmpty(MapId) && seats.Any(s => s.OriginallyHuman) && seats.Where(s => s.OriginallyHuman).All(s => s.Connected && s.Ready);
-    public void Start() { if (!CanStart) throw new InvalidOperationException("Not all connected human seats are ready."); MatchStarted = true; }
-    public void ClearReady() { foreach (var seat in seats) seat.Ready = false; }
+    public bool CanStart => participants.Count != 0 && participants.Where(value => value.Connected).All(value => value.Ready) && (SavedGame
+        ? !string.IsNullOrEmpty(MapId) && seats.Any(s => s.Connected && !s.Defeated)
+        : !string.IsNullOrEmpty(MapId) && seats.Any(s => s.OriginallyHuman) && seats.Where(s => s.OriginallyHuman).All(s => s.Connected));
+    public void Start()
+    {
+        if (!CanStart) throw new InvalidOperationException("Not all participants and human seats are ready.");
+        MatchStarted = true;
+        foreach (var participant in participants)
+            participant.Admission = participant.SeatId.HasValue ? ParticipantAdmission.Player : ParticipantAdmission.Spectator;
+        ParticipantRevision++;
+    }
+    public void ClearReady()
+    {
+        foreach (var participant in participants) participant.Ready = false;
+        foreach (var seat in seats) seat.Ready = false;
+        ParticipantRevision++;
+    }
+
+    public bool AdmitToMatch(Guid clientId, Guid? seatId, out bool spectator, out string reason)
+    {
+        spectator = false;
+        if (!MatchStarted) { reason = "战局尚未开始。"; return false; }
+        var participant = FindParticipant(clientId);
+        if (participant is null || participant.Admission != ParticipantAdmission.JoinSelection)
+        { reason = "当前连接不在中途加入选择阶段。"; return false; }
+        if (seatId.HasValue)
+        {
+            var seat = seats.FirstOrDefault(value => value.SeatId == seatId.Value && value.ClientId == clientId && value.Connected && value.PendingActivation);
+            if (seat is null) { reason = "请先选择可接管席位。"; return false; }
+            participant.SeatId = seat.SeatId; participant.Admission = ParticipantAdmission.Player;
+        }
+        else
+        {
+            if (participant.SeatId.HasValue) ReleaseSeat(clientId);
+            participant.Admission = ParticipantAdmission.Spectator; spectator = true;
+        }
+        ParticipantRevision++; reason = ""; return true;
+    }
 
     public void BindRuntimePlayerIndices(IReadOnlyList<SGS_Player> players)
     {
@@ -125,7 +209,7 @@ internal sealed class RoomState
 
     public RoomSnapshot Snapshot()
     {
-        var snapshot = new RoomSnapshot { RoomId = RoomId, MatchStarted = MatchStarted, DraftRevision = DraftRevision, MapId = MapId, MapTitle = MapTitle, FowType = FowType, WinCondition = WinCondition, QuickStart = QuickStart, Difficulty = Difficulty, SavedGame = SavedGame, UserMap = UserMap, MapPreview = (byte[])MapPreview.Clone() };
+        var snapshot = new RoomSnapshot { RoomId = RoomId, MatchStarted = MatchStarted, DraftRevision = DraftRevision, MapId = MapId, MapTitle = MapTitle, FowType = FowType, WinCondition = WinCondition, QuickStart = QuickStart, Difficulty = Difficulty, SavedGame = SavedGame, UserMap = UserMap, MapPreview = (byte[])MapPreview.Clone(), MaxParticipants = MaxParticipants, ParticipantRevision = ParticipantRevision };
         foreach (var seat in seats) snapshot.Seats.Add(new SeatInfo
         {
             SeatId = seat.SeatId, LobbySlotIndex = seat.LobbySlotIndex, PlayerIndex = seat.PlayerIndex, DisplayName = seat.DisplayName,
@@ -137,6 +221,12 @@ internal sealed class RoomState
         });
         for (var index = 0; index < seats.Count; index++)
             foreach (var passive in seats[index].PassiveIds) snapshot.Seats[index].PassiveIds.Add(passive);
+        foreach (var participant in participants) snapshot.Participants.Add(new ParticipantInfo
+        {
+            ClientId = participant.ClientId, DisplayName = participant.DisplayName, Ready = participant.Ready,
+            Connected = participant.Connected, Reconnecting = participant.Reconnecting, IsHost = participant.IsHost,
+            Admission = participant.Admission, SeatId = participant.SeatId
+        });
         return snapshot;
     }
 
@@ -144,7 +234,10 @@ internal sealed class RoomState
     {
         var seat = seats.FirstOrDefault(s => s.ClientId == clientId && s.Connected);
         if (seat is null) return false;
-        Release(seat); return true;
+        Release(seat);
+        var participant = FindParticipant(clientId);
+        if (participant is not null) { participant.SeatId = null; participant.Ready = false; ParticipantRevision++; }
+        return true;
     }
 
     public bool ActivatePendingClaim(int playerIndex)
@@ -166,5 +259,15 @@ internal sealed class RoomState
     {
         seat.ClientId = null; seat.DisplayName = seat.OriginallyHuman ? "空闲真人席位" : "原版 AI";
         seat.Connected = false; seat.Ready = false; seat.AiControlled = true; seat.PendingActivation = false;
+    }
+
+    private void RefreshParticipantSeats()
+    {
+        foreach (var participant in participants)
+        {
+            var seat = seats.FirstOrDefault(value => value.ClientId == participant.ClientId && value.Connected);
+            participant.SeatId = seat?.SeatId;
+            if (seat is null) participant.Ready = false;
+        }
     }
 }

@@ -19,6 +19,7 @@ internal static class PublicLobbyPanel
     private static TMP_InputField? nameInput;
     private static TMP_InputField? roomNameInput;
     private static TMP_InputField? createPasswordInput;
+    private static TMP_InputField? maxParticipantsInput;
     private static TMP_InputField? joinPasswordInput;
     private static TextMeshProUGUI? selectedRoomText;
     private static TextMeshProUGUI? status;
@@ -206,6 +207,7 @@ internal static class PublicLobbyPanel
         roomNameInput = AddInputRow(body, "房间名", (XingyiStarryMpPlugin.Instance?.ConfiguredDisplayName ?? Environment.UserName) + " 的房间", "输入房间名");
         createPasswordInput = AddInputRow(body, "密码", "", "可选");
         createPasswordInput.contentType = TMP_InputField.ContentType.Password;
+        maxParticipantsInput = AddInputRow(body, "总人数", "4", "1–8，包含房主和观战");
         NativeButton(body, "Create", "创建房间", CreateRoom);
         NativeButton(body, "CreateFromSave", "从存档创建房间", CreateRoomFromSave);
         AddSeparator(body);
@@ -360,8 +362,9 @@ internal static class PublicLobbyPanel
             if (status != null) status.text = "房间密码不能超过 64 个字符";
             return;
         }
+        if (!TryReadMaxParticipants(out var maxParticipants)) return;
         enteringRoom = true;
-        XingyiStarryMpPlugin.Instance?.HostPublic(name, password);
+        XingyiStarryMpPlugin.Instance?.HostPublic(name, password, maxParticipants);
     }
 
     private static void CreateRoomFromSave()
@@ -371,12 +374,20 @@ internal static class PublicLobbyPanel
         var name = roomNameInput?.text.Trim() ?? ""; var password = createPasswordInput?.text ?? "";
         if (name.Length == 0 || name.Length > 48) { if (status != null) status.text = "房间名长度必须为 1–48 个字符"; return; }
         if (password.Length > 64) { if (status != null) status.text = "房间密码不能超过 64 个字符"; return; }
+        if (!TryReadMaxParticipants(out var maxParticipants)) return;
         root.SetActive(false);
         SavedRoomFlow.Open(menu, path =>
         {
             enteringRoom = true; if (root != null) { root.SetActive(true); root.transform.SetAsLastSibling(); }
-            XingyiStarryMpPlugin.Instance?.HostPublicFromSave(name, password, path);
+            XingyiStarryMpPlugin.Instance?.HostPublicFromSave(name, password, path, maxParticipants);
         }, () => { if (root != null) { root.SetActive(true); root.transform.SetAsLastSibling(); } });
+    }
+
+    private static bool TryReadMaxParticipants(out int value)
+    {
+        if (!int.TryParse(maxParticipantsInput?.text, out value) || value < 1 || value > 8)
+        { if (status != null) status.text = "总人数必须是 1–8"; return false; }
+        return true;
     }
 
     private static async void RefreshRooms()
@@ -430,10 +441,11 @@ internal static class PublicLobbyPanel
             var state = room.Status == RelayRoomStatus.Waiting ? "等待中" : room.Status == RelayRoomStatus.Playing ? "游戏中" : "已关闭";
             var selected = selectedRoom?.RoomId == room.RoomId ? "▶  " : "";
             var label = plugin.IsPublicRoomCompatible(room)
-                ? $"{selected}{room.RoomName}{lockText}    {map}    {room.ConnectedPlayers}/{room.HumanSeats}    可选 {room.AvailableSeats}    {room.HostName}    {state}"
+                ? $"{selected}{room.RoomName}{lockText}    {map}    {room.ConnectedPlayers}/{(room.MaxParticipants > 0 ? room.MaxParticipants : room.HumanSeats)}    可选席位 {room.AvailableSeats}    {room.HostName}    {state}"
                 : $"{room.RoomName}    版本不兼容";
             var button = NativeButton(roomContent, "Room_" + room.RoomId.ToString("N"), label, () => SelectRoom(captured), 0f, 46f);
-            button.interactable = (room.Status == RelayRoomStatus.Waiting || room.Status == RelayRoomStatus.Playing && room.AvailableSeats > 0) && plugin.IsPublicRoomCompatible(room);
+            button.interactable = (room.Status == RelayRoomStatus.Waiting || room.Status == RelayRoomStatus.Playing) &&
+                (room.MaxParticipants <= 0 || room.ConnectedPlayers < room.MaxParticipants) && plugin.IsPublicRoomCompatible(room);
         }
     }
 
@@ -461,7 +473,8 @@ internal static class PublicLobbyPanel
         selectedRoomText.text = $"{room.RoomName}\n主机：{room.HostName}    地图：{map}";
         joinPasswordInput.interactable = room.HasPassword;
         if (!room.HasPassword) joinPasswordInput.text = "";
-        joinButton.interactable = (room.Status == RelayRoomStatus.Waiting || room.Status == RelayRoomStatus.Playing && room.AvailableSeats > 0) && plugin.IsPublicRoomCompatible(room);
+        joinButton.interactable = (room.Status == RelayRoomStatus.Waiting || room.Status == RelayRoomStatus.Playing) &&
+            (room.MaxParticipants <= 0 || room.ConnectedPlayers < room.MaxParticipants) && plugin.IsPublicRoomCompatible(room);
     }
 
     private static void JoinSelected()
@@ -540,6 +553,7 @@ internal static class PublicLobbyPanel
         nameInput = null;
         roomNameInput = null;
         createPasswordInput = null;
+        maxParticipantsInput = null;
         joinPasswordInput = null;
         selectedRoomText = null;
         status = null;

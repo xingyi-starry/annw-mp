@@ -46,7 +46,6 @@ function Add-PluginFiles([string]$StagingRoot) {
     Copy-Item -Path (Join-Path $PSScriptRoot 'dist\BepInEx\plugins\XingyiStarry.Mp\*') -Destination $pluginTarget -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'config\relay-default.cfg') -Destination (Join-Path $configTarget 'xingyistarry.mp.cfg')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Uninstall-XingyiStarry-MP.bat') -Destination $StagingRoot
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Uninstall-XingyiStarry-MP.ps1') -Destination $StagingRoot
 }
 
 function New-Package([string]$Suffix, [bool]$IncludeBepInEx) {

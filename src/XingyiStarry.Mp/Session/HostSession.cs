@@ -16,6 +16,9 @@ internal sealed class HostSession : IDisposable
     private readonly Dictionary<Guid, ClientRecord> clientsByConnection = new Dictionary<Guid, ClientRecord>();
     private readonly Dictionary<Guid, ClientRecord> clientsById = new Dictionary<Guid, ClientRecord>();
     private readonly Queue<SeatControlChanged> pendingSeatChanges = new Queue<SeatControlChanged>();
+    private readonly Queue<ChatEvent> localChats = new Queue<ChatEvent>();
+    private readonly Queue<PingEvent> localPings = new Queue<PingEvent>();
+    private readonly HostSocialState social = new HostSocialState();
     private readonly string pluginVersion;
     private readonly string gameFingerprint;
     private readonly string contentFingerprint;
@@ -28,20 +31,22 @@ internal sealed class HostSession : IDisposable
     public Guid LocalHostClientId { get; }
     public bool ConnectionLost { get; private set; }
     public string ConnectionError { get; private set; } = "";
+    public IReadOnlyList<ChatEvent> ChatHistory => social.ChatsFor(LocalHostClientId);
 
-    public HostSession(int port, string pluginVersion, string gameFingerprint, string contentFingerprint, string hostName)
-        : this(new NetworkHost(port), pluginVersion, gameFingerprint, contentFingerprint, hostName, null, null)
+    public HostSession(int port, string pluginVersion, string gameFingerprint, string contentFingerprint, string hostName, int maxParticipants = 4)
+        : this(new NetworkHost(port), pluginVersion, gameFingerprint, contentFingerprint, hostName, null, null, maxParticipants)
     {
     }
 
     public HostSession(IHostTransport network, string pluginVersion, string gameFingerprint, string contentFingerprint, string hostName,
-        Guid? localHostClientId = null, Guid? roomId = null)
+        Guid? localHostClientId = null, Guid? roomId = null, int maxParticipants = 4)
     {
         this.pluginVersion = pluginVersion; this.gameFingerprint = gameFingerprint; this.contentFingerprint = contentFingerprint;
         LocalHostClientId = localHostClientId ?? Guid.NewGuid();
         this.network = network;
-        Room = new RoomState(roomId);
+        Room = new RoomState(roomId, maxParticipants);
         Room.ReplaceSeats(Array.Empty<SeatInfo>());
+        Room.AddHost(LocalHostClientId, hostName);
     }
 
     public void Start() => network.Start();
@@ -68,9 +73,11 @@ internal sealed class HostSession : IDisposable
                 if (client.JoinedMatch && MatchId.HasValue)
                 {
                     client.Reconnecting = true; client.ReconnectDeadlineUtc = now.AddSeconds(15);
+                    Room.MarkReconnecting(client.ClientId, true); BroadcastRoom();
+                    PublishSystem(SystemEventKind.Disconnected, client.DisplayName + " 连接中断，正在等待重连。");
                     log(SessionLogLevel.Info, "Client reconnect grace started: " + client.DisplayName);
                 }
-                else FinalizeClient(client, "已退出联机。", participantLeft, message => log(SessionLogLevel.Info, message));
+                else FinalizeClient(client, "退出了房间。", participantLeft, message => log(SessionLogLevel.Info, message));
             }
             if (!client.Finalized && client.Reconnecting && now >= client.ReconnectDeadlineUtc)
                 FinalizeClient(client, "重连超时，席位已由 AI 接管。", participantLeft, message => log(SessionLogLevel.Info, message));
@@ -106,14 +113,19 @@ internal sealed class HostSession : IDisposable
             case MessageType.JoinMatchRequest:
                 if (!Room.MatchStarted || !MatchId.HasValue) throw new InvalidDataException("Match has not started.");
                 var join = ProtocolCodec.DecodeJoinMatchRequest(inbound.Envelope.Payload);
-                var joinedSeat = Room.Seats.FirstOrDefault(value => value.SeatId == join.SeatId && value.ClientId == client.ClientId && value.Connected && value.PendingActivation);
-                if (joinedSeat is null) { _ = network.SendAsync(inbound.Peer, MessageType.Reject, ProtocolCodec.EncodeString("请先选择可接管席位。")); return; }
+                if (!Room.AdmitToMatch(client.ClientId, join.SeatId, out var spectator, out var joinReason))
+                { _ = network.SendAsync(inbound.Peer, MessageType.Reject, ProtocolCodec.EncodeString(joinReason)); return; }
                 client.JoinedMatch = true;
-                _ = network.SendAsync(inbound.Peer, MessageType.JoinMatchAccepted, ProtocolCodec.EncodeGuid(joinedSeat.SeatId));
+                _ = network.SendAsync(inbound.Peer, MessageType.JoinMatchAccepted,
+                    ProtocolCodec.EncodeJoinMatchAccepted(new JoinMatchAccepted { SeatId = join.SeatId, Spectator = spectator }));
+                var admittedSeat = join.SeatId.HasValue ? Room.Seats.FirstOrDefault(value => value.SeatId == join.SeatId.Value) : null;
+                PublishSystem(spectator ? SystemEventKind.EnteredSpectator : SystemEventKind.EnteredPlayer,
+                    client.DisplayName + "加入了房间，" + (spectator ? "观战者。" : $"位置{(admittedSeat?.LobbySlotIndex ?? -1) + 1}。"));
+                BroadcastRoom();
                 _ = SendSnapshotAsync(inbound.Peer);
                 break;
             case MessageType.LeaveSession:
-                FinalizeClient(client, "已主动退出联机。", participantLeft, _ => { });
+                FinalizeClient(client, "退出了房间。", participantLeft, _ => { });
                 inbound.Peer.Close();
                 break;
             case MessageType.SetReady: Room.SetReady(client.ClientId, ProtocolCodec.DecodeInt64(inbound.Envelope.Payload) != 0); BroadcastRoom(); break;
@@ -131,6 +143,14 @@ internal sealed class HostSession : IDisposable
             case MessageType.SnapshotRequest:
                 if (!client.JoinedMatch) throw new InvalidDataException("Client has not joined the active match.");
                 _ = SendSnapshotAsync(inbound.Peer); break;
+            case MessageType.ChatSend:
+                PublishChat(client.ClientId, ProtocolCodec.DecodeChatSend(inbound.Envelope.Payload)); break;
+            case MessageType.PingSend:
+                var ping = ProtocolCodec.DecodePingSend(inbound.Envelope.Payload);
+                if (!GameTileData.IsValid(new Inctor2(ping.TileX, ping.TileY))) throw new InvalidDataException("标点不在有效地图格上。");
+                PublishPing(client.ClientId, ping); break;
+            case MessageType.SocialSyncRequest:
+                _ = SendSocialSyncAsync(client, ProtocolCodec.DecodeSocialSyncRequest(inbound.Envelope.Payload)); break;
             default: throw new InvalidDataException("Message is not valid in this host state.");
         }
     }
@@ -144,6 +164,8 @@ internal sealed class HostSession : IDisposable
         var cleanName = (hello.DisplayName ?? "").Trim();
         if (cleanName.Length == 0 || cleanName.Length > 32) { _ = RejectHandshakeAsync(peer, "用户名长度必须为 1–32 个字符。"); return; }
         var clientId = UsesRelay ? peer.ConnectionId : Guid.NewGuid();
+        if (!Room.TryAddParticipant(clientId, cleanName, out var participantReason))
+        { _ = RejectHandshakeAsync(peer, participantReason); return; }
         var record = new ClientRecord { ClientId = clientId, DisplayName = cleanName, Peer = peer };
         clientsByConnection[peer.ConnectionId] = record;
         clientsById[record.ClientId] = record;
@@ -151,9 +173,10 @@ internal sealed class HostSession : IDisposable
         _ = network.SendAsync(peer, MessageType.Welcome, ProtocolCodec.EncodeWelcome(new WelcomeMessage { ClientId = record.ClientId, RoomId = Room.RoomId, MatchId = MatchId, LatestFrameId = journal?.Frames.Count ?? 0, Mode = mode }));
         var room = Room.Snapshot(); room.MatchId = MatchId;
         _ = network.SendAsync(peer, MessageType.RoomState, ProtocolCodec.EncodeRoom(room));
-        var notice = cleanName + " 加入了联机。";
-        _ = network.BroadcastAsync(MessageType.ParticipantNotice, ProtocolCodec.EncodeString(notice));
+        var notice = cleanName + "加入了房间。";
+        PublishSystem(SystemEventKind.Joined, notice);
         participantNotice(notice);
+        BroadcastRoom();
     }
 
     private void HandleResume(IRemotePeer peer, ResumeSessionRequest request)
@@ -166,12 +189,15 @@ internal sealed class HostSession : IDisposable
         }
         if (record.Peer is not null) clientsByConnection.Remove(record.Peer.ConnectionId);
         record.Peer = peer; record.Reconnecting = false;
+        Room.MarkReconnecting(record.ClientId, false);
         clientsByConnection[peer.ConnectionId] = record;
         _ = network.SendAsync(peer, MessageType.ResumeSessionAccepted, ProtocolCodec.EncodeResumeSessionAccepted(new ResumeSessionAccepted
             { RoomId = Room.RoomId, MatchId = MatchId.Value, ClientId = record.ClientId, LatestFrameId = journal?.Frames.Count ?? 0 }));
         var room = Room.Snapshot(); room.MatchId = MatchId;
         _ = network.SendAsync(peer, MessageType.RoomState, ProtocolCodec.EncodeRoom(room));
         _ = SendSnapshotAsync(peer);
+        PublishSystem(SystemEventKind.Reconnected, record.DisplayName + " 已重新连接。");
+        BroadcastRoom();
     }
 
     private void FinalizeClient(ClientRecord client, string suffix, Action<string> participantLeft, Action<string> log)
@@ -184,10 +210,11 @@ internal sealed class HostSession : IDisposable
             pendingSeatChanges.Enqueue(new SeatControlChanged { SeatId = seat.SeatId, PlayerIndex = seat.PlayerIndex, AiControlled = true, Reason = suffix });
             Room.FinalizeDisconnected(client.ClientId);
         }
+        Room.RemoveParticipant(client.ClientId);
         clientsById.Remove(client.ClientId);
         foreach (var key in clientsByConnection.Where(value => ReferenceEquals(value.Value, client)).Select(value => value.Key).ToArray()) clientsByConnection.Remove(key);
-        var notice = client.DisplayName + " " + suffix;
-        _ = network.BroadcastAsync(MessageType.ParticipantNotice, ProtocolCodec.EncodeString(notice));
+        var notice = client.DisplayName + suffix;
+        PublishSystem(seat is null ? SystemEventKind.Left : SystemEventKind.AiTakeover, notice);
         participantLeft(notice); log(notice);
     }
 
@@ -195,6 +222,32 @@ internal sealed class HostSession : IDisposable
     {
         if (pendingSeatChanges.Count != 0) { change = pendingSeatChanges.Dequeue(); return true; }
         change = null; return false;
+    }
+
+    public bool TryDequeueChat(out ChatEvent? message)
+    {
+        if (localChats.Count != 0) { message = localChats.Dequeue(); return true; }
+        message = null; return false;
+    }
+    public bool TryDequeuePing(out PingEvent? message)
+    {
+        if (localPings.Count != 0) { message = localPings.Dequeue(); return true; }
+        message = null; return false;
+    }
+
+    public bool SendLocalChat(ChatChannel channel, string text, out string reason)
+    {
+        try { PublishChat(LocalHostClientId, new ChatSend { Channel = channel, Text = text }); reason = ""; return true; }
+        catch (Exception ex) { reason = ex.Message; return false; }
+    }
+    public bool SendLocalPing(int tileX, int tileY, out string reason)
+    {
+        try
+        {
+            if (!GameTileData.IsValid(new Inctor2(tileX, tileY))) throw new InvalidDataException("标点不在有效地图格上。");
+            PublishPing(LocalHostClientId, new PingSend { TileX = tileX, TileY = tileY }); reason = ""; return true;
+        }
+        catch (Exception ex) { reason = ex.Message; return false; }
     }
 
     private async Task RejectHandshakeAsync(IRemotePeer peer, string reason)
@@ -207,10 +260,13 @@ internal sealed class HostSession : IDisposable
     {
         Room.Start(); MatchId = Guid.NewGuid(); journal = new AuthorityJournal(MatchId.Value, journalPath);
         foreach (var client in clientsById.Values)
-            client.JoinedMatch = Room.Seats.Any(value => value.ClientId == client.ClientId && value.Connected);
+        {
+            var participant = Room.FindParticipant(client.ClientId);
+            client.JoinedMatch = participant?.Admission == ParticipantAdmission.Player || participant?.Admission == ParticipantAdmission.Spectator;
+        }
     }
 
-    public Guid LocalHostSeatId => Room.Seats.Single(value => value.ClientId == LocalHostClientId).SeatId;
+    public Guid? LocalHostSeatId => Room.Seats.FirstOrDefault(value => value.ClientId == LocalHostClientId)?.SeatId;
 
     public void UpdateLobbyDraft(RoomSnapshot draft, IReadOnlyList<SGS_Player> players)
     {
@@ -330,11 +386,62 @@ internal sealed class HostSession : IDisposable
         if (network is RelayHostTransport relay)
         {
             _ = relay.UpdateRoomAsync(new RelayUpdateRoomRequest { RequestId = 0, RoomId = Room.RoomId,
-                MapTitle = snapshot.MapTitle, ConnectedPlayers = snapshot.Seats.Count(value => value.Connected),
+                MapTitle = snapshot.MapTitle, ConnectedPlayers = snapshot.Participants.Count(value => value.Connected),
                 HumanSeats = snapshot.Seats.Count(value => value.OriginallyHuman),
                 Status = snapshot.MatchStarted ? RelayRoomStatus.Playing : RelayRoomStatus.Waiting,
-                AvailableSeats = Room.AvailableSeatCount, MatchId = MatchId });
+                AvailableSeats = Room.AvailableSeatCount, MatchId = MatchId, MaxParticipants = Room.MaxParticipants });
         }
+    }
+
+    private void PublishChat(Guid clientId, ChatSend request)
+    {
+        var message = social.CreatePlayerChat(Room, clientId, request, out var audience);
+        SendChatToAudience(message, audience);
+    }
+
+    private void PublishPing(Guid clientId, PingSend request)
+    {
+        var message = social.CreatePing(Room, clientId, request, out var audience);
+        SendPingToAudience(message, audience);
+    }
+
+    private void PublishSystem(SystemEventKind kind, string text)
+    {
+        var message = social.CreateSystem(Room, kind, text, out var audience);
+        SendChatToAudience(message, audience);
+    }
+
+    private void SendChatToAudience(ChatEvent message, IReadOnlyCollection<Guid> audience)
+    {
+        if (audience.Contains(LocalHostClientId)) localChats.Enqueue(message);
+        var payload = ProtocolCodec.EncodeChatEvent(message);
+        foreach (var target in clientsById.Values.Where(value => audience.Contains(value.ClientId) && !value.Finalized && value.Peer?.IsConnected == true))
+            _ = network.SendAsync(target.Peer!, MessageType.ChatEvent, payload);
+    }
+
+    private void SendPingToAudience(PingEvent message, IReadOnlyCollection<Guid> audience)
+    {
+        if (audience.Contains(LocalHostClientId)) localPings.Enqueue(message);
+        var payload = ProtocolCodec.EncodePingEvent(message);
+        foreach (var target in clientsById.Values.Where(value => audience.Contains(value.ClientId) && !value.Finalized && value.Peer?.IsConnected == true))
+            _ = network.SendAsync(target.Peer!, MessageType.PingEvent, payload);
+    }
+
+    private async Task SendSocialSyncAsync(ClientRecord client, ulong requestId)
+    {
+        var peer = client.Peer; if (peer is null) return;
+        var messages = social.ChatsFor(client.ClientId); var chunkCount = (uint)((messages.Count + 63) / 64);
+        var begin = new SocialSyncBegin { RequestId = requestId, Watermark = social.Watermark, ChunkCount = chunkCount };
+        foreach (var participant in Room.Snapshot().Participants) begin.Participants.Add(participant);
+        await network.SendAsync(peer, MessageType.SocialSyncBegin, ProtocolCodec.EncodeSocialSyncBegin(begin)).ConfigureAwait(false);
+        for (var index = 0; index < chunkCount; index++)
+        {
+            var chunk = new SocialSyncChunk { RequestId = requestId, ChunkIndex = (uint)index };
+            foreach (var message in messages.Skip(index * 64).Take(64)) chunk.Messages.Add(message);
+            await network.SendAsync(peer, MessageType.SocialSyncChunk, ProtocolCodec.EncodeSocialSyncChunk(chunk)).ConfigureAwait(false);
+        }
+        await network.SendAsync(peer, MessageType.SocialSyncComplete,
+            ProtocolCodec.EncodeSocialSyncComplete(new SocialSyncComplete { RequestId = requestId, Watermark = begin.Watermark })).ConfigureAwait(false);
     }
     public void BroadcastMatchStarting() =>
         _ = network.BroadcastAsync(MessageType.MatchStarting, Array.Empty<byte>());

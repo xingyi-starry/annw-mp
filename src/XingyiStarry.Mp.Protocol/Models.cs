@@ -27,6 +27,7 @@ public sealed class RelayRoomInfo
     public string GameFingerprint { get; set; } = "";
     public string ContentFingerprint { get; set; } = "";
     public int AvailableSeats { get; set; }
+    public int MaxParticipants { get; set; }
 }
 
 public sealed class RelayRegisterRoomRequest
@@ -39,6 +40,7 @@ public sealed class RelayRegisterRoomRequest
     public string PluginVersion { get; set; } = "";
     public string GameFingerprint { get; set; } = "";
     public string ContentFingerprint { get; set; } = "";
+    public int MaxParticipants { get; set; }
 }
 
 public sealed class RelayUpdateRoomRequest
@@ -51,6 +53,7 @@ public sealed class RelayUpdateRoomRequest
     public RelayRoomStatus Status { get; set; }
     public int AvailableSeats { get; set; }
     public Guid? MatchId { get; set; }
+    public int MaxParticipants { get; set; }
 }
 
 public sealed class RelayListRoomsResponse
@@ -140,7 +143,25 @@ public sealed class SeatInfo
 
 public sealed class JoinMatchRequest
 {
-    public Guid SeatId { get; set; }
+    public Guid? SeatId { get; set; }
+}
+
+public sealed class JoinMatchAccepted
+{
+    public Guid? SeatId { get; set; }
+    public bool Spectator { get; set; }
+}
+
+public sealed class ParticipantInfo
+{
+    public Guid ClientId { get; set; }
+    public string DisplayName { get; set; } = "";
+    public bool Ready { get; set; }
+    public bool Connected { get; set; }
+    public bool Reconnecting { get; set; }
+    public bool IsHost { get; set; }
+    public ParticipantAdmission Admission { get; set; }
+    public Guid? SeatId { get; set; }
 }
 
 public sealed class ResumeSessionRequest
@@ -180,11 +201,64 @@ public sealed class RoomSnapshot
     public int WinCondition { get; set; }
     public int QuickStart { get; set; }
     public int Difficulty { get; set; } = 30;
+    public int MaxParticipants { get; set; } = 4;
+    public uint ParticipantRevision { get; set; }
     public List<SeatInfo> Seats { get; } = new List<SeatInfo>();
+    public List<ParticipantInfo> Participants { get; } = new List<ParticipantInfo>();
     public bool SavedGame { get; set; }
     public bool UserMap { get; set; }
     public byte[] MapPreview { get; set; } = Array.Empty<byte>();
 }
+
+public sealed class ChatSend
+{
+    public ChatChannel Channel { get; set; }
+    public string Text { get; set; } = "";
+}
+
+public sealed class ChatEvent
+{
+    public ulong SocialSeq { get; set; }
+    public long ServerTicks { get; set; }
+    public ChatChannel Channel { get; set; }
+    public ChatKind Kind { get; set; }
+    public SystemEventKind SystemKind { get; set; }
+    public Guid? SenderClientId { get; set; }
+    public string SenderName { get; set; } = "";
+    public int SenderTeam { get; set; } = -1;
+    public int SenderColor { get; set; } = -1;
+    public bool SenderIsSpectator { get; set; }
+    public string Text { get; set; } = "";
+}
+
+public sealed class PingSend { public int TileX { get; set; } public int TileY { get; set; } }
+public sealed class PingEvent
+{
+    public Guid SenderClientId { get; set; }
+    public string SenderName { get; set; } = "";
+    public int SenderTeam { get; set; }
+    public int SenderColor { get; set; }
+    public int TileX { get; set; }
+    public int TileY { get; set; }
+    public int RemainingTtlMillis { get; set; }
+}
+
+public sealed class SocialSyncBegin
+{
+    public ulong RequestId { get; set; }
+    public ulong Watermark { get; set; }
+    public uint ChunkCount { get; set; }
+    public List<ParticipantInfo> Participants { get; } = new List<ParticipantInfo>();
+}
+
+public sealed class SocialSyncChunk
+{
+    public ulong RequestId { get; set; }
+    public uint ChunkIndex { get; set; }
+    public List<ChatEvent> Messages { get; } = new List<ChatEvent>();
+}
+
+public sealed class SocialSyncComplete { public ulong RequestId { get; set; } public ulong Watermark { get; set; } }
 
 public sealed class CommandRequest
 {

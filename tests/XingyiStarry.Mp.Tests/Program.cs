@@ -25,7 +25,11 @@ internal static class Program
         Test("protobuf wire format", ProtobufWireFormat);
         Test("all protobuf messages", AllProtobufMessagesRoundTrip);
         Test("relay protobuf messages", RelayMessagesRoundTrip);
-        Test("v16 session messages", SessionMessagesRoundTrip);
+        Test("v17 session messages", SessionMessagesRoundTrip);
+        Test("v17 social messages", SocialMessagesRoundTrip);
+        Test("seatless ready becomes spectator", SeatlessReadyBecomesSpectator);
+        Test("mid-match player or spectator admission", MidMatchAdmission);
+        Test("spectator social permissions", SpectatorSocialPermissions);
         Test("mixed move target alignment", MixedMoveFilter);
         Test("move ownership rejection", MoveOwnershipRejection);
         Test("runtime player indices ignore spawn positions", RuntimePlayerIndicesIgnoreSpawnPositions);
@@ -33,7 +37,7 @@ internal static class Program
         await TestAsync("packet framing", PacketRoundTrip);
         var relayEndpoint = Environment.GetEnvironmentVariable("XINGYI_RELAY_TEST_ENDPOINT");
         if (!string.IsNullOrWhiteSpace(relayEndpoint)) await TestAsync("C# to Go relay integration", () => RelayIntegration(relayEndpoint));
-        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 16 : 17)}"); return 0;
+        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 20 : 21)}"); return 0;
     }
 
     private static void RuntimePlayerIndicesIgnoreSpawnPositions()
@@ -115,11 +119,12 @@ internal static class Program
 
     private static void RoomRoundTrip()
     {
-        var room = new RoomSnapshot { RoomId = Guid.NewGuid(), MatchId = Guid.NewGuid(), MatchStarted = true, DraftRevision = 7, MapId = "my-map", MapTitle = "用户地图", FowType = 1, WinCondition = 2, QuickStart = 2, Difficulty = 20, UserMap = true, MapPreview = SnapshotCodec.Compress(new byte[] { 1, 2, 3 }) };
+        var room = new RoomSnapshot { RoomId = Guid.NewGuid(), MatchId = Guid.NewGuid(), MatchStarted = true, DraftRevision = 7, MapId = "my-map", MapTitle = "用户地图", FowType = 1, WinCondition = 2, QuickStart = 2, Difficulty = 20, MaxParticipants = 6, ParticipantRevision = 9, UserMap = true, MapPreview = SnapshotCodec.Compress(new byte[] { 1, 2, 3 }) };
         var seat = new SeatInfo { SeatId = Guid.NewGuid(), LobbySlotIndex = 3, PlayerIndex = 2, DisplayName = "玩家一", OriginallyHuman = true, Connected = true, Ready = true, ClientId = Guid.NewGuid(), Controller = 0, Team = 2, Color = 4, Position = 1, PositionRandom = true, ResourceMultiplier = 1.25f, AiIntelligence = 0.7f, CommanderId = "CO_Zero", CommanderMode = 2, SkillId = "skill.zero", Defeated = true, PendingActivation = true };
         seat.PassiveIds.Add("ps.one"); seat.PassiveIds.Add("ps.two"); room.Seats.Add(seat);
+        room.Participants.Add(new ParticipantInfo { ClientId = seat.ClientId!.Value, DisplayName = "玩家一", Ready = true, Connected = true, IsHost = true, Admission = ParticipantAdmission.Player, SeatId = seat.SeatId });
         var restored = ProtocolCodec.DecodeRoom(ProtocolCodec.EncodeRoom(room));
-        Equal(room.RoomId, restored.RoomId); Equal(room.MatchId, restored.MatchId); Equal("my-map", restored.MapId); Equal(7, restored.DraftRevision); Equal(20, restored.Difficulty); Equal("玩家一", restored.Seats[0].DisplayName); Equal(3, restored.Seats[0].LobbySlotIndex); Equal(2, restored.Seats[0].PlayerIndex); Equal(true, restored.Seats[0].Ready); Equal(2, restored.Seats[0].Team); Equal(4, restored.Seats[0].Color); Equal(1.25f, restored.Seats[0].ResourceMultiplier); Equal("CO_Zero", restored.Seats[0].CommanderId); Equal(2, restored.Seats[0].CommanderMode); Equal("skill.zero", restored.Seats[0].SkillId); Equal("ps.two", restored.Seats[0].PassiveIds[1]); Equal(false, restored.SavedGame); Equal(true, restored.UserMap); True(AuthorityHashChain.FixedEquals(room.MapPreview, restored.MapPreview)); Equal(true, restored.Seats[0].Defeated); Equal(true, restored.Seats[0].PendingActivation);
+        Equal(room.RoomId, restored.RoomId); Equal(room.MatchId, restored.MatchId); Equal("my-map", restored.MapId); Equal(7, restored.DraftRevision); Equal(20, restored.Difficulty); Equal(6, restored.MaxParticipants); Equal((uint)9, restored.ParticipantRevision); Equal("玩家一", restored.Seats[0].DisplayName); Equal(3, restored.Seats[0].LobbySlotIndex); Equal(2, restored.Seats[0].PlayerIndex); Equal(true, restored.Seats[0].Ready); Equal(2, restored.Seats[0].Team); Equal(4, restored.Seats[0].Color); Equal(1.25f, restored.Seats[0].ResourceMultiplier); Equal("CO_Zero", restored.Seats[0].CommanderId); Equal(2, restored.Seats[0].CommanderMode); Equal("skill.zero", restored.Seats[0].SkillId); Equal("ps.two", restored.Seats[0].PassiveIds[1]); Equal(false, restored.SavedGame); Equal(true, restored.UserMap); True(AuthorityHashChain.FixedEquals(room.MapPreview, restored.MapPreview)); Equal(true, restored.Seats[0].Defeated); Equal(true, restored.Seats[0].PendingActivation); Equal(ParticipantAdmission.Player, restored.Participants[0].Admission); Equal(seat.SeatId, restored.Participants[0].SeatId);
         Throws<InvalidDataException>(() => ProtocolCodec.EncodeRoom(new RoomSnapshot { RoomId = Guid.NewGuid(), MapPreview = new byte[ProtocolConstants.MaxMapPreviewBytes + 1] }));
     }
 
@@ -169,7 +174,7 @@ internal static class Program
     {
         var clientId = Guid.NewGuid(); var roomId = Guid.NewGuid(); var matchId = Guid.NewGuid();
         var hello = ProtocolCodec.DecodeHello(ProtocolCodec.EncodeHello(new HelloMessage
-            { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.8.0", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "玩家" }));
+            { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.9.0", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "玩家" }));
         Equal("玩家", hello.DisplayName); Equal(ProtocolConstants.Version, hello.ProtocolVersion);
 
         var welcome = ProtocolCodec.DecodeWelcome(ProtocolCodec.EncodeWelcome(new WelcomeMessage
@@ -216,20 +221,20 @@ internal static class Program
         var roomId = Guid.NewGuid(); var clientId = Guid.NewGuid();
         var register = ProtocolCodec.DecodeRelayRegisterRoom(ProtocolCodec.EncodeRelayRegisterRoom(new RelayRegisterRoomRequest
             { RequestId = 1, RoomId = roomId, RoomName = "公共房间", HostName = "主机", Password = "secret",
-              PluginVersion = "plugin", GameFingerprint = "game", ContentFingerprint = "content" }));
-        Equal(roomId, register.RoomId); Equal("secret", register.Password); Equal("主机", register.HostName);
+              PluginVersion = "plugin", GameFingerprint = "game", ContentFingerprint = "content", MaxParticipants = 6 }));
+        Equal(roomId, register.RoomId); Equal("secret", register.Password); Equal("主机", register.HostName); Equal(6, register.MaxParticipants);
 
         var update = ProtocolCodec.DecodeRelayUpdateRoom(ProtocolCodec.EncodeRelayUpdateRoom(new RelayUpdateRoomRequest
-            { RequestId = 2, RoomId = roomId, MapTitle = "小型密林", ConnectedPlayers = 2, HumanSeats = 3, Status = RelayRoomStatus.Playing, AvailableSeats = 1, MatchId = Guid.NewGuid() }));
-        Equal(2, update.ConnectedPlayers); Equal(RelayRoomStatus.Playing, update.Status); Equal(1, update.AvailableSeats); True(update.MatchId.HasValue);
+            { RequestId = 2, RoomId = roomId, MapTitle = "小型密林", ConnectedPlayers = 2, HumanSeats = 3, Status = RelayRoomStatus.Playing, AvailableSeats = 1, MatchId = Guid.NewGuid(), MaxParticipants = 6 }));
+        Equal(2, update.ConnectedPlayers); Equal(RelayRoomStatus.Playing, update.Status); Equal(1, update.AvailableSeats); Equal(6, update.MaxParticipants); True(update.MatchId.HasValue);
 
         Equal(3UL, ProtocolCodec.DecodeRelayListRoomsRequest(ProtocolCodec.EncodeRelayListRoomsRequest(3)));
         var list = new RelayListRoomsResponse { RequestId = 3 };
         list.Rooms.Add(new RelayRoomInfo { RoomId = roomId, RoomName = "公共房间", HostName = "主机", MapTitle = "小型密林",
             ConnectedPlayers = 2, HumanSeats = 3, HasPassword = true, Status = RelayRoomStatus.Waiting,
-            PluginVersion = "plugin", GameFingerprint = "game", ContentFingerprint = "content", AvailableSeats = 2 });
+            PluginVersion = "plugin", GameFingerprint = "game", ContentFingerprint = "content", AvailableSeats = 2, MaxParticipants = 6 });
         var restoredList = ProtocolCodec.DecodeRelayRoomList(ProtocolCodec.EncodeRelayRoomList(list));
-        Equal(1, restoredList.Rooms.Count); Equal(true, restoredList.Rooms[0].HasPassword); Equal("content", restoredList.Rooms[0].ContentFingerprint);
+        Equal(1, restoredList.Rooms.Count); Equal(true, restoredList.Rooms[0].HasPassword); Equal("content", restoredList.Rooms[0].ContentFingerprint); Equal(6, restoredList.Rooms[0].MaxParticipants);
 
         var join = ProtocolCodec.DecodeRelayJoinRoom(ProtocolCodec.EncodeRelayJoinRoom(new RelayJoinRoomRequest
             { RequestId = 4, RoomId = roomId, Password = "secret" }));
@@ -249,9 +254,12 @@ internal static class Program
     private static void SessionMessagesRoundTrip()
     {
         Equal((ushort)34, (ushort)MessageType.ReleaseSeat); Equal((ushort)41, (ushort)MessageType.RelayResumeRoom);
-        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)16, ProtocolConstants.Version);
+        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)50, (ushort)MessageType.SocialSyncComplete); Equal((ushort)17, ProtocolConstants.Version);
         var room = Guid.NewGuid(); var match = Guid.NewGuid(); var client = Guid.NewGuid(); var seat = Guid.NewGuid();
         Equal(seat, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest { SeatId = seat })).SeatId);
+        Equal(null, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest())).SeatId);
+        var joinAccepted = ProtocolCodec.DecodeJoinMatchAccepted(ProtocolCodec.EncodeJoinMatchAccepted(new JoinMatchAccepted { Spectator = true }));
+        Equal(true, joinAccepted.Spectator); Equal(null, joinAccepted.SeatId);
         var request = ProtocolCodec.DecodeResumeSession(ProtocolCodec.EncodeResumeSession(new ResumeSessionRequest
             { RoomId = room, MatchId = match, ClientId = client, AppliedFrameId = 9, VerifiedFrameId = 11 }));
         Equal(room, request.RoomId); Equal(9L, request.AppliedFrameId); Equal(11L, request.VerifiedFrameId);
@@ -263,6 +271,85 @@ internal static class Program
         Equal(2, changed.PlayerIndex); Equal(true, changed.AiControlled); Equal("timeout", changed.Reason);
     }
 
+    private static void SocialMessagesRoundTrip()
+    {
+        var client = Guid.NewGuid();
+        var chatSend = ProtocolCodec.DecodeChatSend(ProtocolCodec.EncodeChatSend(new ChatSend { Channel = ChatChannel.Team, Text = "推进" }));
+        Equal(ChatChannel.Team, chatSend.Channel); Equal("推进", chatSend.Text);
+        var chat = ProtocolCodec.DecodeChatEvent(ProtocolCodec.EncodeChatEvent(new ChatEvent { SocialSeq = 7, ServerTicks = 19,
+            Channel = ChatChannel.Public, Kind = ChatKind.System, SystemKind = SystemEventKind.Joined,
+            SenderClientId = client, SenderName = "玩家", SenderTeam = 2, SenderColor = 3, Text = "已加入。" }));
+        Equal(7UL, chat.SocialSeq); Equal(ChatKind.System, chat.Kind); Equal(SystemEventKind.Joined, chat.SystemKind); Equal(client, chat.SenderClientId);
+        var ping = ProtocolCodec.DecodePingEvent(ProtocolCodec.EncodePingEvent(new PingEvent { SenderClientId = client,
+            SenderName = "玩家", SenderTeam = 2, SenderColor = 3, TileX = 12, TileY = 14, RemainingTtlMillis = 2500 }));
+        Equal(12, ping.TileX); Equal(2500, ping.RemainingTtlMillis);
+        Equal(91UL, ProtocolCodec.DecodeSocialSyncRequest(ProtocolCodec.EncodeSocialSyncRequest(91)));
+        var beginSource = new SocialSyncBegin { RequestId = 91, Watermark = 8, ChunkCount = 1 };
+        beginSource.Participants.Add(new ParticipantInfo { ClientId = client, DisplayName = "玩家", Connected = true, Ready = true, Admission = ParticipantAdmission.Spectator });
+        var begin = ProtocolCodec.DecodeSocialSyncBegin(ProtocolCodec.EncodeSocialSyncBegin(beginSource));
+        Equal(ParticipantAdmission.Spectator, begin.Participants[0].Admission);
+        var chunkSource = new SocialSyncChunk { RequestId = 91, ChunkIndex = 0 }; chunkSource.Messages.Add(chat);
+        var chunk = ProtocolCodec.DecodeSocialSyncChunk(ProtocolCodec.EncodeSocialSyncChunk(chunkSource));
+        Equal("已加入。", chunk.Messages[0].Text);
+        var complete = ProtocolCodec.DecodeSocialSyncComplete(ProtocolCodec.EncodeSocialSyncComplete(new SocialSyncComplete { RequestId = 91, Watermark = 8 }));
+        Equal(8UL, complete.Watermark);
+    }
+
+    private static void SeatlessReadyBecomesSpectator()
+    {
+        var host = Guid.NewGuid(); var guest = Guid.NewGuid();
+        var room = new RoomState(maxParticipants: 2); room.AddHost(host, "主机");
+        ConfigureRoom(room, NewSeat(true, 0));
+        True(room.TryAddParticipant(guest, "观战者", out _));
+        room.SetReady(host, true); room.SetReady(guest, true);
+        True(room.TryClaimSeat(host, "主机", 0, out _, out _));
+        Equal(false, room.FindParticipant(host)!.Ready);
+        room.SetReady(host, true); True(room.CanStart); room.Start();
+        Equal(ParticipantAdmission.Player, room.FindParticipant(host)!.Admission);
+        Equal(ParticipantAdmission.Spectator, room.FindParticipant(guest)!.Admission);
+        True(!room.TryClaimSeat(guest, "观战者", 0, out _, out _));
+    }
+
+    private static void MidMatchAdmission()
+    {
+        var host = Guid.NewGuid(); var player = Guid.NewGuid(); var spectator = Guid.NewGuid(); var overflow = Guid.NewGuid();
+        var room = new RoomState(maxParticipants: 3); room.AddHost(host, "主机");
+        ConfigureRoom(room, NewSeat(true, 0), NewSeat(false, 1));
+        True(room.TryClaimSeat(host, "主机", 0, out _, out _)); room.SetReady(host, true); room.Start();
+        True(room.TryAddParticipant(player, "接管者", out _));
+        True(room.TryClaimSeat(player, "接管者", 1, out var claimed, out _)); True(claimed!.PendingActivation);
+        True(room.AdmitToMatch(player, claimed.SeatId, out var isSpectator, out _)); Equal(false, isSpectator);
+        True(room.TryAddParticipant(spectator, "中途观战", out _));
+        True(room.AdmitToMatch(spectator, null, out isSpectator, out _)); Equal(true, isSpectator);
+        True(!room.TryAddParticipant(overflow, "超员", out _));
+    }
+
+    private static void SpectatorSocialPermissions()
+    {
+        var host = Guid.NewGuid(); var spectator = Guid.NewGuid();
+        var room = new RoomState(maxParticipants: 2); room.AddHost(host, "主机"); ConfigureRoom(room, NewSeat(true, 0));
+        True(room.TryClaimSeat(host, "主机", 0, out _, out _)); True(room.TryAddParticipant(spectator, "观战者", out _));
+        room.SetReady(host, true); room.SetReady(spectator, true); room.Start();
+        var social = new HostSocialState();
+        var publicMessage = social.CreatePlayerChat(room, spectator, new ChatSend { Channel = ChatChannel.Public, Text = "  加油  " }, out var audience);
+        Equal("加油", publicMessage.Text); Equal(true, publicMessage.SenderIsSpectator); Equal(2, audience.Count);
+        Throws<InvalidOperationException>(() => social.CreatePlayerChat(room, spectator, new ChatSend { Channel = ChatChannel.Team, Text = "队内" }, out _));
+        Throws<InvalidOperationException>(() => social.CreatePing(room, spectator, new PingSend { TileX = 0, TileY = 0 }, out _));
+        var ping = social.CreatePing(room, host, new PingSend { TileX = 1, TileY = 2 }, out _);
+        Equal(3000, ping.RemainingTtlMillis);
+        for (var index = 0; index < 10; index++)
+            social.CreatePing(room, host, new PingSend { TileX = index, TileY = index }, out _);
+    }
+
+    private static SeatInfo NewSeat(bool human, int slot) => new SeatInfo
+    {
+        SeatId = Guid.NewGuid(), LobbySlotIndex = slot, PlayerIndex = slot, OriginallyHuman = human,
+        DisplayName = human ? "空闲真人席位" : "原版 AI", Connected = false, AiControlled = !human, Team = slot
+    };
+
+    private static void ConfigureRoom(RoomState room, params SeatInfo[] seats) =>
+        room.SyncDraft("map", "测试地图", 0, 0, 0, 30, false, Array.Empty<byte>(), Guid.NewGuid().ToString("N"), seats);
+
     private static async Task RelayIntegration(string endpoint)
     {
         var split = endpoint.LastIndexOf(':'); var hostName = endpoint.Substring(0, split); var port = int.Parse(endpoint.Substring(split + 1));
@@ -271,7 +358,7 @@ internal static class Program
         var roomId = Guid.NewGuid();
         await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RelayRegisterRoom, Delivery = Delivery.RelayControl,
             Payload = ProtocolCodec.EncodeRelayRegisterRoom(new RelayRegisterRoomRequest { RequestId = 101, RoomId = roomId,
-                RoomName = "interop", HostName = "host", Password = "secret", PluginVersion = "0.8.0", GameFingerprint = "game", ContentFingerprint = "content" }) }, CancellationToken.None);
+                RoomName = "interop", HostName = "host", Password = "secret", PluginVersion = "0.9.0", GameFingerprint = "game", ContentFingerprint = "content" }) }, CancellationToken.None);
         var registered = ProtocolCodec.DecodeRelayControlResponse((await ReadType(host, MessageType.RelayControlResponse)).Payload);
         True(registered.Success); True(registered.ClientId.HasValue);
 
@@ -287,7 +374,7 @@ internal static class Program
         await ReadType(host, MessageType.RelayPeerJoined);
 
         await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Type = MessageType.Hello, Delivery = Delivery.ToHost,
-            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeHello(new HelloMessage { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.8.0",
+            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeHello(new HelloMessage { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.9.0",
                 GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "client" }) }, CancellationToken.None);
         var hello = await ReadType(host, MessageType.Hello); Equal(clientId, hello.ClientId); Equal(Delivery.ToHost, hello.Delivery);
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using XingyiStarry.Mp.Infrastructure;
 using XingyiStarry.Mp.Protocol;
@@ -12,6 +13,13 @@ internal sealed class ClientSession : IDisposable
     private readonly IClientTransport network;
     private readonly SortedDictionary<long, AuthorityFrame> received = new SortedDictionary<long, AuthorityFrame>();
     private readonly SortedDictionary<long, AuthorityFrame> pendingVerification = new SortedDictionary<long, AuthorityFrame>();
+    private readonly SortedDictionary<ulong, ChatEvent> chatHistory = new SortedDictionary<ulong, ChatEvent>();
+    private readonly Queue<ChatEvent> pendingChats = new Queue<ChatEvent>();
+    private readonly Queue<PingEvent> pendingPings = new Queue<PingEvent>();
+    private readonly List<ChatEvent> syncingChats = new List<ChatEvent>();
+    private ulong socialRequestId;
+    private ulong socialWatermark;
+    private ulong activeSocialRequest;
     private Guid? matchId;
     private byte[] verifiedHash = new byte[AuthorityHashChain.HashLength];
     private DateTime lastHeartbeatUtc = DateTime.MinValue;
@@ -34,10 +42,12 @@ internal sealed class ClientSession : IDisposable
     public string ConnectionError { get; private set; } = "";
     public Guid? MatchId => matchId;
     public bool JoinedMatch { get; private set; }
+    public bool IsSpectator { get; private set; }
     public bool MatchStarting { get; private set; }
     public bool RequiresJoinSelection => welcomeMode == WelcomeMode.JoinSelection && !JoinedMatch;
     public bool CanFastReconnect => !TerminalSessionEnded && ClientId.HasValue && matchId.HasValue && JoinedMatch;
     public int ReconnectAcceptedGeneration { get; private set; }
+    public IReadOnlyCollection<ChatEvent> ChatHistory => chatHistory.Values;
 
     public ClientSession() : this(new NetworkClient()) { }
     public ClientSession(IClientTransport network) => this.network = network;
@@ -66,14 +76,18 @@ internal sealed class ClientSession : IDisposable
                         var welcome = ProtocolCodec.DecodeWelcome(envelope.Payload); ClientId = welcome.ClientId; sessionRoomId = welcome.RoomId; matchId = welcome.MatchId; welcomeMode = welcome.Mode;
                         JoinedMatch = welcome.Mode == WelcomeMode.ActiveMatch;
                         if (JoinedMatch && matchId.HasValue) _ = RequestSnapshotAsync();
+                        _ = RequestSocialSyncAsync();
                         break;
                     case MessageType.JoinMatchAccepted:
-                        JoinedMatch = true; welcomeMode = WelcomeMode.ActiveMatch; IsCaughtUp = false;
+                        var admission = ProtocolCodec.DecodeJoinMatchAccepted(envelope.Payload);
+                        JoinedMatch = true; IsSpectator = admission.Spectator; welcomeMode = WelcomeMode.ActiveMatch; IsCaughtUp = false;
+                        _ = RequestSocialSyncAsync();
                         break;
                     case MessageType.ResumeSessionAccepted:
                         var resumed = ProtocolCodec.DecodeResumeSessionAccepted(envelope.Payload);
                         if (ClientId != resumed.ClientId || matchId != resumed.MatchId) throw new InvalidDataException("快速重连身份响应不匹配。");
                         ConnectionLost = false; ConnectionError = ""; ReconnectAcceptedGeneration++; IsCaughtUp = false;
+                        _ = RequestSocialSyncAsync();
                         break;
                     case MessageType.ResumeSessionRejected:
                         ConnectionError = ProtocolCodec.DecodeString(envelope.Payload);
@@ -87,8 +101,10 @@ internal sealed class ClientSession : IDisposable
                         var newlyStarted = room.MatchStarted && room.MatchId.HasValue && !hasSnapshotAnchor && !snapshotRequested;
                         Room = room;
                         var ownsSeat = ClientId.HasValue && room.Seats.Exists(value => value.Connected && value.ClientId == ClientId.Value);
-                        if (newlyStarted && welcomeMode != WelcomeMode.JoinSelection && ownsSeat)
-                        { matchId = room.MatchId; JoinedMatch = true; snapshotRequested = true; _ = RequestSnapshotAsync(); }
+                        if (newlyStarted && welcomeMode == WelcomeMode.Lobby)
+                        { matchId = room.MatchId; JoinedMatch = true; IsSpectator = !ownsSeat; snapshotRequested = true; _ = RequestSnapshotAsync(); }
+                        else if (newlyStarted && welcomeMode != WelcomeMode.JoinSelection && ownsSeat)
+                        { matchId = room.MatchId; JoinedMatch = true; IsSpectator = false; snapshotRequested = true; _ = RequestSnapshotAsync(); }
                         else if (newlyStarted && !ownsSeat)
                         { matchId = room.MatchId; welcomeMode = WelcomeMode.JoinSelection; JoinedMatch = false; }
                         break;
@@ -112,7 +128,11 @@ internal sealed class ClientSession : IDisposable
                         var compressed = snapshotAssembler.Finish(); var snapshot = SnapshotCodec.Decompress(compressed, ProtocolConstants.MaxSnapshotBytes);
                         log(SessionLogLevel.Info, $"Snapshot transfer complete id={snapshotManifest.SnapshotId:N} frame={snapshotManifest.FrameId} bytes={snapshot.Length}.");
                         snapshotReceived(snapshotManifest, snapshot); snapshotManifest = null; snapshotAssembler = null; break;
-                    case MessageType.Reject: throw new InvalidDataException(ProtocolCodec.DecodeString(envelope.Payload));
+                    case MessageType.Reject:
+                        var rejection = ProtocolCodec.DecodeString(envelope.Payload);
+                        if (!ClientId.HasValue) { ConnectionError = rejection; ConnectionLost = true; TerminalSessionEnded = true; }
+                        else log(SessionLogLevel.Warning, rejection);
+                        break;
                     case MessageType.CommandRejected:
                         commandResponse(ProtocolCodec.DecodeCommandResponse(envelope.Payload), false); break;
                     case MessageType.CommandAccepted:
@@ -124,6 +144,31 @@ internal sealed class ClientSession : IDisposable
                         break;
                     case MessageType.ParticipantNotice:
                         noticeReceived(ProtocolCodec.DecodeString(envelope.Payload));
+                        break;
+                    case MessageType.ChatEvent:
+                        AcceptChat(ProtocolCodec.DecodeChatEvent(envelope.Payload));
+                        break;
+                    case MessageType.PingEvent:
+                        pendingPings.Enqueue(ProtocolCodec.DecodePingEvent(envelope.Payload));
+                        break;
+                    case MessageType.SocialSyncBegin:
+                        var begin = ProtocolCodec.DecodeSocialSyncBegin(envelope.Payload);
+                        activeSocialRequest = begin.RequestId; syncingChats.Clear();
+                        socialWatermark = Math.Max(socialWatermark, begin.Watermark);
+                        if (Room is not null) { Room.Participants.Clear(); Room.Participants.AddRange(begin.Participants); }
+                        break;
+                    case MessageType.SocialSyncChunk:
+                        var chunk = ProtocolCodec.DecodeSocialSyncChunk(envelope.Payload);
+                        if (chunk.RequestId == activeSocialRequest) syncingChats.AddRange(chunk.Messages);
+                        break;
+                    case MessageType.SocialSyncComplete:
+                        var complete = ProtocolCodec.DecodeSocialSyncComplete(envelope.Payload);
+                        if (complete.RequestId != activeSocialRequest) break;
+                        var newer = chatHistory.Values.Where(value => value.SocialSeq > complete.Watermark).ToArray();
+                        chatHistory.Clear();
+                        foreach (var item in syncingChats.OrderBy(value => value.SocialSeq)) chatHistory[item.SocialSeq] = item;
+                        foreach (var item in newer) chatHistory[item.SocialSeq] = item;
+                        socialWatermark = Math.Max(socialWatermark, complete.Watermark); activeSocialRequest = 0; syncingChats.Clear();
                         break;
                 }
             }
@@ -145,7 +190,7 @@ internal sealed class ClientSession : IDisposable
 
     public Task ClaimSeatAsync(int lobbySlotIndex) => network.SendAsync(MessageType.ClaimSeat, ProtocolCodec.EncodeInt64(lobbySlotIndex));
     public Task ReleaseSeatAsync() => network.SendAsync(MessageType.ReleaseSeat, Array.Empty<byte>());
-    public Task JoinMatchAsync(Guid seatId) => network.SendAsync(MessageType.JoinMatchRequest, ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest { SeatId = seatId }));
+    public Task JoinMatchAsync(Guid? seatId) => network.SendAsync(MessageType.JoinMatchRequest, ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest { SeatId = seatId }));
     public Task SetReadyAsync(bool ready) => network.SendAsync(MessageType.SetReady, ProtocolCodec.EncodeInt64(ready ? 1 : 0));
     public Task SendLobbyDraftAsync(RoomSnapshot draft) => network.SendAsync(MessageType.LobbyDraftChange, ProtocolCodec.EncodeRoom(draft));
     public Task RequestSnapshotAsync()
@@ -154,6 +199,26 @@ internal sealed class ClientSession : IDisposable
         return network.SendAsync(MessageType.SnapshotRequest, ProtocolCodec.EncodeInt64(AppliedFrameId));
     }
     public Task RequestHistoryAsync() => network.SendAsync(MessageType.HistoryRequest, ProtocolCodec.EncodeInt64(VerifiedFrameId));
+    public Task SendChatAsync(ChatChannel channel, string text) => network.SendAsync(MessageType.ChatSend,
+        ProtocolCodec.EncodeChatSend(new ChatSend { Channel = channel, Text = text }));
+    public Task SendPingAsync(int tileX, int tileY) => network.SendAsync(MessageType.PingSend,
+        ProtocolCodec.EncodePingSend(new PingSend { TileX = tileX, TileY = tileY }));
+    public Task RequestSocialSyncAsync()
+    {
+        var requestId = ++socialRequestId;
+        return network.SendAsync(MessageType.SocialSyncRequest, ProtocolCodec.EncodeSocialSyncRequest(requestId));
+    }
+
+    public bool TryDequeueChat(out ChatEvent? message)
+    {
+        if (pendingChats.Count != 0) { message = pendingChats.Dequeue(); return true; }
+        message = null; return false;
+    }
+    public bool TryDequeuePing(out PingEvent? message)
+    {
+        if (pendingPings.Count != 0) { message = pendingPings.Dequeue(); return true; }
+        message = null; return false;
+    }
 
     public async Task ReconnectAttemptAsync(ulong requestId)
     {
@@ -195,6 +260,12 @@ internal sealed class ClientSession : IDisposable
             received.Add(next.FrameId, next); VerifiedFrameId = next.FrameId; verifiedHash = (byte[])next.Hash.Clone();
             frameReceived(next);
         }
+    }
+
+    private void AcceptChat(ChatEvent message)
+    {
+        if (message.SocialSeq <= socialWatermark || chatHistory.ContainsKey(message.SocialSeq)) return;
+        chatHistory.Add(message.SocialSeq, message); socialWatermark = Math.Max(socialWatermark, message.SocialSeq); pendingChats.Enqueue(message);
     }
 
     public void MarkApplied(long frameId)

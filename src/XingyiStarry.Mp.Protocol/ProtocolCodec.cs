@@ -66,18 +66,24 @@ public static class ProtocolCodec
     public static WelcomeMessage DecodeWelcome(byte[] bytes)
     {
         var wire = Parse(Wire.Welcome.Parser, bytes);
+        var mode = (WelcomeMode)wire.Mode;
+        if (!Enum.IsDefined(typeof(WelcomeMode), mode)) throw new InvalidDataException("Unknown welcome mode.");
         return new WelcomeMessage { ClientId = ReadGuid(wire.ClientId), RoomId = ReadGuid(wire.RoomId),
-            MatchId = wire.HasMatchId ? ReadGuid(wire.MatchId) : null, LatestFrameId = wire.LatestFrameId, Mode = (WelcomeMode)wire.Mode };
+            MatchId = wire.HasMatchId ? ReadGuid(wire.MatchId) : null, LatestFrameId = wire.LatestFrameId, Mode = mode };
     }
 
     public static byte[] EncodeRoom(RoomSnapshot value)
     {
         if (value.Seats.Count > MaxSeats) throw new InvalidDataException("Invalid seat count.");
         if (value.MapPreview.Length > ProtocolConstants.MaxMapPreviewBytes) throw new InvalidDataException("Map preview is too large.");
+        if (value.Participants.Count > 8) throw new InvalidDataException("Invalid participant count.");
+        if (value.MaxParticipants < 1 || value.MaxParticipants > 8 || value.Participants.Count > value.MaxParticipants)
+            throw new InvalidDataException("Invalid participant limit.");
         var wire = new Wire.Room { RoomId = GuidBytes(value.RoomId), MatchStarted = value.MatchStarted,
             DraftRevision = value.DraftRevision, MapId = value.MapId, MapTitle = value.MapTitle,
             FowType = value.FowType, WinCondition = value.WinCondition, QuickStart = value.QuickStart, Difficulty = value.Difficulty, SavedGame = value.SavedGame,
-            UserMap = value.UserMap, MapPreview = ByteString.CopyFrom(value.MapPreview) };
+            UserMap = value.UserMap, MapPreview = ByteString.CopyFrom(value.MapPreview), MaxParticipants = value.MaxParticipants,
+            ParticipantRevision = value.ParticipantRevision };
         if (value.MatchId.HasValue) wire.MatchId = GuidBytes(value.MatchId.Value);
         foreach (var seat in value.Seats)
         {
@@ -94,6 +100,7 @@ public static class ProtocolCodec
             item.PassiveIds.Add(seat.PassiveIds);
             wire.Seats.Add(item);
         }
+        wire.Participants.Add(value.Participants.Select(ToWire));
         return Serialize(wire);
     }
 
@@ -101,11 +108,15 @@ public static class ProtocolCodec
     {
         var wire = Parse(Wire.Room.Parser, bytes);
         if (wire.Seats.Count > MaxSeats) throw new InvalidDataException("Invalid seat count.");
+        if (wire.Participants.Count > 8) throw new InvalidDataException("Invalid participant count.");
         if (wire.MapPreview.Length > ProtocolConstants.MaxMapPreviewBytes) throw new InvalidDataException("Map preview is too large.");
+        if (wire.MaxParticipants < 1 || wire.MaxParticipants > 8 || wire.Participants.Count > wire.MaxParticipants)
+            throw new InvalidDataException("Invalid participant limit.");
         var value = new RoomSnapshot { RoomId = ReadGuid(wire.RoomId), MatchId = wire.HasMatchId ? ReadGuid(wire.MatchId) : null,
             MatchStarted = wire.MatchStarted, DraftRevision = wire.DraftRevision, MapId = wire.MapId,
             MapTitle = wire.MapTitle, FowType = wire.FowType, WinCondition = wire.WinCondition, QuickStart = wire.QuickStart, Difficulty = wire.Difficulty,
-            SavedGame = wire.SavedGame, UserMap = wire.UserMap, MapPreview = wire.MapPreview.ToByteArray() };
+            SavedGame = wire.SavedGame, UserMap = wire.UserMap, MapPreview = wire.MapPreview.ToByteArray(),
+            MaxParticipants = wire.MaxParticipants, ParticipantRevision = wire.ParticipantRevision };
         foreach (var seat in wire.Seats)
         {
             if (seat.PassiveIds.Count > MaxSeats) throw new InvalidDataException("Invalid commander passive count.");
@@ -120,6 +131,7 @@ public static class ProtocolCodec
             item.PassiveIds.AddRange(seat.PassiveIds);
             value.Seats.Add(item);
         }
+        value.Participants.AddRange(wire.Participants.Select(FromWire));
         return value;
     }
 
@@ -145,7 +157,8 @@ public static class ProtocolCodec
     {
         RequestId = value.RequestId, RoomId = GuidBytes(value.RoomId), RoomName = value.RoomName,
         HostName = value.HostName, Password = value.Password, PluginVersion = value.PluginVersion,
-        GameFingerprint = value.GameFingerprint, ContentFingerprint = value.ContentFingerprint
+        GameFingerprint = value.GameFingerprint, ContentFingerprint = value.ContentFingerprint,
+        MaxParticipants = value.MaxParticipants
     });
 
     public static RelayRegisterRoomRequest DecodeRelayRegisterRoom(byte[] bytes)
@@ -154,14 +167,14 @@ public static class ProtocolCodec
         return new RelayRegisterRoomRequest { RequestId = wire.RequestId, RoomId = ReadGuid(wire.RoomId),
             RoomName = wire.RoomName, HostName = wire.HostName, Password = wire.Password,
             PluginVersion = wire.PluginVersion, GameFingerprint = wire.GameFingerprint,
-            ContentFingerprint = wire.ContentFingerprint };
+            ContentFingerprint = wire.ContentFingerprint, MaxParticipants = wire.MaxParticipants };
     }
 
     public static byte[] EncodeRelayUpdateRoom(RelayUpdateRoomRequest value)
     {
         var wire = new Wire.RelayUpdateRoomRequest { RequestId = value.RequestId, RoomId = GuidBytes(value.RoomId), MapTitle = value.MapTitle,
             ConnectedPlayers = value.ConnectedPlayers, HumanSeats = value.HumanSeats, Status = (Wire.RelayRoomStatus)value.Status,
-            AvailableSeats = value.AvailableSeats };
+            AvailableSeats = value.AvailableSeats, MaxParticipants = value.MaxParticipants };
         if (value.MatchId.HasValue) wire.MatchId = GuidBytes(value.MatchId.Value);
         return Serialize(wire);
     }
@@ -172,7 +185,8 @@ public static class ProtocolCodec
         var status = CheckedRelayRoomStatus(wire.Status);
         return new RelayUpdateRoomRequest { RequestId = wire.RequestId, RoomId = ReadGuid(wire.RoomId),
             MapTitle = wire.MapTitle, ConnectedPlayers = wire.ConnectedPlayers, HumanSeats = wire.HumanSeats, Status = status,
-            AvailableSeats = wire.AvailableSeats, MatchId = wire.HasMatchId ? ReadGuid(wire.MatchId) : null };
+            AvailableSeats = wire.AvailableSeats, MatchId = wire.HasMatchId ? ReadGuid(wire.MatchId) : null,
+            MaxParticipants = wire.MaxParticipants };
     }
 
     public static byte[] EncodeRelayListRoomsRequest(ulong requestId) => Serialize(new Wire.RelayListRoomsRequest { RequestId = requestId });
@@ -246,8 +260,81 @@ public static class ProtocolCodec
         return new RelayPeerNotice { ClientId = ReadGuid(wire.ClientId), Reason = wire.Reason };
     }
 
-    public static byte[] EncodeJoinMatchRequest(JoinMatchRequest value) => Serialize(new Wire.JoinMatchRequest { SeatId = GuidBytes(value.SeatId) });
-    public static JoinMatchRequest DecodeJoinMatchRequest(byte[] bytes) => new JoinMatchRequest { SeatId = ReadGuid(Parse(Wire.JoinMatchRequest.Parser, bytes).SeatId) };
+    public static byte[] EncodeJoinMatchRequest(JoinMatchRequest value)
+    {
+        var wire = new Wire.JoinMatchRequest();
+        if (value.SeatId.HasValue) wire.SeatId = GuidBytes(value.SeatId.Value);
+        return Serialize(wire);
+    }
+    public static JoinMatchRequest DecodeJoinMatchRequest(byte[] bytes)
+    {
+        var wire = Parse(Wire.JoinMatchRequest.Parser, bytes);
+        return new JoinMatchRequest { SeatId = wire.HasSeatId ? ReadGuid(wire.SeatId) : null };
+    }
+
+    public static byte[] EncodeJoinMatchAccepted(JoinMatchAccepted value)
+    {
+        var wire = new Wire.JoinMatchAcceptedMessage { Spectator = value.Spectator };
+        if (value.SeatId.HasValue) wire.SeatId = GuidBytes(value.SeatId.Value);
+        return Serialize(wire);
+    }
+    public static JoinMatchAccepted DecodeJoinMatchAccepted(byte[] bytes)
+    {
+        var wire = Parse(Wire.JoinMatchAcceptedMessage.Parser, bytes);
+        return new JoinMatchAccepted { SeatId = wire.HasSeatId ? ReadGuid(wire.SeatId) : null, Spectator = wire.Spectator };
+    }
+
+    public static byte[] EncodeChatSend(ChatSend value) => Serialize(new Wire.ChatSendMessage
+        { Channel = (Wire.ChatChannel)value.Channel, Text = value.Text });
+    public static ChatSend DecodeChatSend(byte[] bytes)
+    {
+        var wire = Parse(Wire.ChatSendMessage.Parser, bytes);
+        return new ChatSend { Channel = CheckedChatChannel(wire.Channel), Text = wire.Text };
+    }
+    public static byte[] EncodeChatEvent(ChatEvent value) => Serialize(ToWire(value));
+    public static ChatEvent DecodeChatEvent(byte[] bytes) => FromWire(Parse(Wire.ChatEventMessage.Parser, bytes));
+    public static byte[] EncodePingSend(PingSend value) => Serialize(new Wire.PingSendMessage { TileX = value.TileX, TileY = value.TileY });
+    public static PingSend DecodePingSend(byte[] bytes)
+    {
+        var wire = Parse(Wire.PingSendMessage.Parser, bytes); return new PingSend { TileX = wire.TileX, TileY = wire.TileY };
+    }
+    public static byte[] EncodePingEvent(PingEvent value) => Serialize(ToWire(value));
+    public static PingEvent DecodePingEvent(byte[] bytes) => FromWire(Parse(Wire.PingEventMessage.Parser, bytes));
+    public static byte[] EncodeSocialSyncRequest(ulong requestId) => Serialize(new Wire.SocialSyncRequestMessage { RequestId = requestId });
+    public static ulong DecodeSocialSyncRequest(byte[] bytes) => Parse(Wire.SocialSyncRequestMessage.Parser, bytes).RequestId;
+    public static byte[] EncodeSocialSyncBegin(SocialSyncBegin value)
+    {
+        if (value.Participants.Count > 8) throw new InvalidDataException("Social sync state is too large.");
+        var wire = new Wire.SocialSyncBeginMessage { RequestId = value.RequestId, Watermark = value.Watermark, ChunkCount = value.ChunkCount };
+        wire.Participants.Add(value.Participants.Select(ToWire)); return Serialize(wire);
+    }
+    public static SocialSyncBegin DecodeSocialSyncBegin(byte[] bytes)
+    {
+        var wire = Parse(Wire.SocialSyncBeginMessage.Parser, bytes);
+        if (wire.Participants.Count > 8) throw new InvalidDataException("Social sync state is too large.");
+        var value = new SocialSyncBegin { RequestId = wire.RequestId, Watermark = wire.Watermark, ChunkCount = wire.ChunkCount };
+        value.Participants.AddRange(wire.Participants.Select(FromWire)); return value;
+    }
+    public static byte[] EncodeSocialSyncChunk(SocialSyncChunk value)
+    {
+        if (value.Messages.Count > 64) throw new InvalidDataException("Social sync chunk is too large.");
+        var wire = new Wire.SocialSyncChunkMessage { RequestId = value.RequestId, ChunkIndex = value.ChunkIndex };
+        wire.Messages.Add(value.Messages.Select(ToWire)); return Serialize(wire);
+    }
+    public static SocialSyncChunk DecodeSocialSyncChunk(byte[] bytes)
+    {
+        var wire = Parse(Wire.SocialSyncChunkMessage.Parser, bytes);
+        if (wire.Messages.Count > 64) throw new InvalidDataException("Social sync chunk is too large.");
+        var value = new SocialSyncChunk { RequestId = wire.RequestId, ChunkIndex = wire.ChunkIndex };
+        value.Messages.AddRange(wire.Messages.Select(FromWire)); return value;
+    }
+    public static byte[] EncodeSocialSyncComplete(SocialSyncComplete value) => Serialize(new Wire.SocialSyncCompleteMessage
+        { RequestId = value.RequestId, Watermark = value.Watermark });
+    public static SocialSyncComplete DecodeSocialSyncComplete(byte[] bytes)
+    {
+        var wire = Parse(Wire.SocialSyncCompleteMessage.Parser, bytes);
+        return new SocialSyncComplete { RequestId = wire.RequestId, Watermark = wire.Watermark };
+    }
 
     public static byte[] EncodeResumeSession(ResumeSessionRequest value) => Serialize(new Wire.ResumeSessionRequest
         { RoomId = GuidBytes(value.RoomId), MatchId = GuidBytes(value.MatchId), ClientId = GuidBytes(value.ClientId),
@@ -402,7 +489,8 @@ public static class ProtocolCodec
         MapTitle = value.MapTitle, ConnectedPlayers = value.ConnectedPlayers, HumanSeats = value.HumanSeats,
         HasPassword = value.HasPassword, Status = (Wire.RelayRoomStatus)value.Status,
         PluginVersion = value.PluginVersion, GameFingerprint = value.GameFingerprint,
-        ContentFingerprint = value.ContentFingerprint, AvailableSeats = value.AvailableSeats
+        ContentFingerprint = value.ContentFingerprint, AvailableSeats = value.AvailableSeats,
+        MaxParticipants = value.MaxParticipants
     };
 
     private static RelayRoomInfo FromWire(Wire.RelayRoomInfo wire) => new RelayRoomInfo
@@ -411,7 +499,66 @@ public static class ProtocolCodec
         MapTitle = wire.MapTitle, ConnectedPlayers = wire.ConnectedPlayers, HumanSeats = wire.HumanSeats,
         HasPassword = wire.HasPassword, Status = CheckedRelayRoomStatus(wire.Status),
         PluginVersion = wire.PluginVersion, GameFingerprint = wire.GameFingerprint,
-        ContentFingerprint = wire.ContentFingerprint, AvailableSeats = wire.AvailableSeats
+        ContentFingerprint = wire.ContentFingerprint, AvailableSeats = wire.AvailableSeats,
+        MaxParticipants = wire.MaxParticipants
+    };
+
+    private static Wire.Participant ToWire(ParticipantInfo value)
+    {
+        var wire = new Wire.Participant { ClientId = GuidBytes(value.ClientId), DisplayName = value.DisplayName, Ready = value.Ready,
+            Connected = value.Connected, Reconnecting = value.Reconnecting, IsHost = value.IsHost,
+            Admission = (Wire.ParticipantAdmission)value.Admission };
+        if (value.SeatId.HasValue) wire.SeatId = GuidBytes(value.SeatId.Value);
+        return wire;
+    }
+
+    private static ParticipantInfo FromWire(Wire.Participant wire)
+    {
+        var admission = (ParticipantAdmission)wire.Admission;
+        if (!Enum.IsDefined(typeof(ParticipantAdmission), admission)) throw new InvalidDataException("Unknown participant admission.");
+        return new ParticipantInfo { ClientId = ReadGuid(wire.ClientId), DisplayName = wire.DisplayName, Ready = wire.Ready,
+            Connected = wire.Connected, Reconnecting = wire.Reconnecting, IsHost = wire.IsHost, Admission = admission,
+            SeatId = wire.HasSeatId ? ReadGuid(wire.SeatId) : null };
+    }
+
+    private static Wire.ChatEventMessage ToWire(ChatEvent value)
+    {
+        var wire = new Wire.ChatEventMessage { SocialSeq = value.SocialSeq, ServerTicks = value.ServerTicks,
+            Channel = (Wire.ChatChannel)value.Channel, Kind = (Wire.ChatKind)value.Kind,
+            SystemKind = (Wire.SystemEventKind)value.SystemKind, SenderName = value.SenderName,
+            SenderTeam = value.SenderTeam, SenderColor = value.SenderColor,
+            SenderIsSpectator = value.SenderIsSpectator, Text = value.Text };
+        if (value.SenderClientId.HasValue) wire.SenderClientId = GuidBytes(value.SenderClientId.Value);
+        return wire;
+    }
+
+    private static ChatEvent FromWire(Wire.ChatEventMessage wire)
+    {
+        var kind = (ChatKind)wire.Kind;
+        var systemKind = (SystemEventKind)wire.SystemKind;
+        if (!Enum.IsDefined(typeof(ChatKind), kind)) throw new InvalidDataException("Unknown chat kind.");
+        if (!Enum.IsDefined(typeof(SystemEventKind), systemKind)) throw new InvalidDataException("Unknown system event kind.");
+        return new ChatEvent
+        {
+            SocialSeq = wire.SocialSeq, ServerTicks = wire.ServerTicks, Channel = CheckedChatChannel(wire.Channel),
+            Kind = kind, SystemKind = systemKind,
+            SenderClientId = wire.HasSenderClientId ? ReadGuid(wire.SenderClientId) : null,
+            SenderName = wire.SenderName, SenderTeam = wire.SenderTeam, SenderColor = wire.SenderColor,
+            SenderIsSpectator = wire.SenderIsSpectator, Text = wire.Text
+        };
+    }
+
+    private static Wire.PingEventMessage ToWire(PingEvent value) => new Wire.PingEventMessage
+    {
+        SenderClientId = GuidBytes(value.SenderClientId), SenderName = value.SenderName,
+        SenderTeam = value.SenderTeam, SenderColor = value.SenderColor, TileX = value.TileX, TileY = value.TileY,
+        RemainingTtlMillis = value.RemainingTtlMillis
+    };
+    private static PingEvent FromWire(Wire.PingEventMessage wire) => new PingEvent
+    {
+        SenderClientId = ReadGuid(wire.SenderClientId), SenderName = wire.SenderName,
+        SenderTeam = wire.SenderTeam, SenderColor = wire.SenderColor, TileX = wire.TileX, TileY = wire.TileY,
+        RemainingTtlMillis = wire.RemainingTtlMillis
     };
 
     private static Wire.GameCommandMessage ToWire(GameCommand value)
@@ -478,5 +625,12 @@ public static class ProtocolCodec
         var status = (RelayRoomStatus)value;
         if (!Enum.IsDefined(typeof(RelayRoomStatus), status)) throw new InvalidDataException("Unknown relay room status.");
         return status;
+    }
+
+    private static ChatChannel CheckedChatChannel(Wire.ChatChannel value)
+    {
+        var channel = (ChatChannel)value;
+        if (!Enum.IsDefined(typeof(ChatChannel), channel)) throw new InvalidDataException("Unknown chat channel.");
+        return channel;
     }
 }

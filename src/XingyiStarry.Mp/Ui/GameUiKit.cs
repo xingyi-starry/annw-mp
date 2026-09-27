@@ -97,7 +97,7 @@ internal static class GameUiKit
         if (inputTemplate != null)
         {
             var go = UnityEngine.Object.Instantiate(inputTemplate.gameObject, parent, false); go.name = name; go.SetActive(true);
-            input = go.GetComponent<TMP_InputField>(); input.onValueChanged.RemoveAllListeners(); input.onEndEdit.RemoveAllListeners();
+            input = go.GetComponent<TMP_InputField>(); input.onValueChanged.RemoveAllListeners(); input.onEndEdit.RemoveAllListeners(); input.onSubmit.RemoveAllListeners();
         }
         else
         {

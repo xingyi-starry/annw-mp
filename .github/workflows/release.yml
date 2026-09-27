@@ -113,7 +113,7 @@ jobs:
           $bundledInstallerEntries = tar -tf $bundledInstaller
           if ($standardInstallerEntries -match '(^|/)BepInEx/core/') { throw 'Standard installer contains BepInEx core.' }
           if (-not ($bundledInstallerEntries -match 'BepInEx/core/BepInEx.dll')) { throw 'Bundled installer is missing BepInEx.' }
-          foreach ($required in @('Uninstall-XingyiStarry-MP.bat', 'Uninstall-XingyiStarry-MP.ps1')) {
+          foreach ($required in @('Uninstall-XingyiStarry-MP.bat')) {
             if ($required -notin $standardInstallerEntries -or $required -notin $bundledInstallerEntries) {
               throw "An installer is missing $required."
             }
