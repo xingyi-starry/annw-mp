@@ -30,7 +30,9 @@ internal static class KeyBindingCommandCapturePatch
 {
     private static void Postfix(InputAction action, ref bool __result)
     {
-        if (!__result || !KeyboardInputScopePatch.Active || !InputGate.MultiplayerActive) return;
+        if (!__result || !InputGate.MultiplayerActive) return;
+        if (InputGate.TextInputCaptured) { __result = false; return; }
+        if (!KeyboardInputScopePatch.Active) return;
         if (action == InputAction.SelfDestroy)
         {
             if (!InputGate.MaySubmit) __result = false;
@@ -67,4 +69,19 @@ internal static class KeyBindingCommandCapturePatch
             DesiredToggleState = uniform && !current
         });
     }
+}
+
+[HarmonyPatch(typeof(InputKeybinding), nameof(InputKeybinding.IsActionKeyHeld))]
+internal static class HeldKeyBindingUiCapturePatch
+{
+    private static void Postfix(ref bool __result)
+    {
+        if (__result && InputGate.MultiplayerActive && InputGate.TextInputCaptured) __result = false;
+    }
+}
+
+[HarmonyPatch(typeof(CameraInput), "UpdateCameraZoom")]
+internal static class CameraZoomUiCapturePatch
+{
+    private static bool Prefix() => !InputGate.MultiplayerActive || !InputGate.PointerOverChat;
 }

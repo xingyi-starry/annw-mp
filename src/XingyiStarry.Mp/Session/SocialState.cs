@@ -8,7 +8,6 @@ namespace XingyiStarry.Mp.Session;
 internal sealed class HostSocialState
 {
     private readonly List<StoredChat> chats = new List<StoredChat>();
-    private readonly Dictionary<Guid, TokenBucket> chatLimits = new Dictionary<Guid, TokenBucket>();
     private ulong nextSeq;
 
     public ulong Watermark => nextSeq;
@@ -18,7 +17,6 @@ internal sealed class HostSocialState
         var participant = room.FindParticipant(clientId) ?? throw new InvalidOperationException("参与者不存在。");
         var text = Sanitize(request.Text);
         if (text.Length == 0 || text.Length > 512) throw new InvalidOperationException("聊天内容长度必须为 1–512 个字符。");
-        if (!Limit(chatLimits, clientId, 5, TimeSpan.FromSeconds(2))) throw new InvalidOperationException("聊天发送过于频繁。");
         var seat = room.Seats.FirstOrDefault(value => value.ClientId == clientId && value.Connected);
         if (request.Channel == ChatChannel.Team && (!room.MatchStarted || participant.Admission != ParticipantAdmission.Player || seat is null))
             throw new InvalidOperationException("当前只能使用公共聊天。");
@@ -60,12 +58,6 @@ internal sealed class HostSocialState
     public IReadOnlyList<ChatEvent> ChatsFor(Guid clientId) => chats
         .Where(value => value.Audience is null || value.Audience.Contains(clientId)).Select(value => value.Message).ToArray();
 
-    private static bool Limit(Dictionary<Guid, TokenBucket> values, Guid id, int burst, TimeSpan refill)
-    {
-        if (!values.TryGetValue(id, out var bucket)) { bucket = new TokenBucket(burst, refill); values.Add(id, bucket); }
-        return bucket.TryTake();
-    }
-
     private static string Sanitize(string value) => new string((value ?? "").Trim().Where(character => character == '\t' || character >= ' ').ToArray());
 
     private sealed class StoredChat
@@ -73,16 +65,5 @@ internal sealed class HostSocialState
         public ChatEvent Message { get; }
         public HashSet<Guid>? Audience { get; }
         public StoredChat(ChatEvent message, HashSet<Guid>? audience) { Message = message; Audience = audience; }
-    }
-    private sealed class TokenBucket
-    {
-        private readonly int capacity; private readonly TimeSpan refill;
-        private double tokens; private DateTime updatedUtc;
-        public TokenBucket(int capacity, TimeSpan refill) { this.capacity = capacity; this.refill = refill; tokens = capacity; updatedUtc = DateTime.UtcNow; }
-        public bool TryTake()
-        {
-            var now = DateTime.UtcNow; tokens = Math.Min(capacity, tokens + (now - updatedUtc).TotalMilliseconds / refill.TotalMilliseconds); updatedUtc = now;
-            if (tokens < 1) return false; tokens -= 1; return true;
-        }
     }
 }

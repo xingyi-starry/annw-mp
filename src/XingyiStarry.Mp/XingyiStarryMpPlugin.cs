@@ -25,7 +25,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.9.0";
+    public const string PluginVersion = "0.9.1";
 
     private Harmony? harmony;
     private HostSession? host;
@@ -1488,7 +1488,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         forcedDisconnectedEndTurnPending = false; forcedDisconnectedEndTurnRunning = false; fastReconnectRunning = false; fastReconnectCancelRequested = false; savedGamePath = "";
         HideFastReconnectPopup();
         ChatWindow.Reset(); PingFeature.Reset(); SpectatorFeature.Reset();
-        InputGate.MultiplayerActive = false; InputGate.LocalSeatMayAct = false; InputGate.UiInputCaptured = false; Status = "未连接";
+        InputGate.MultiplayerActive = false; InputGate.LocalSeatMayAct = false; Status = "未连接";
     }
 
     private void OnDestroy()

@@ -549,7 +549,15 @@ internal static class NativeSkirmishLobby
     {
         if (screen?.btn_confirm == null) return;
         var localized = screen.btn_confirm.GetComponentInChildren<Localized_Txt>(true); if (localized != null) localized.enabled = false;
-        var text = screen.btn_confirm.GetComponentInChildren<TextMeshProUGUI>(true); if (text != null) text.text = value;
+        var text = screen.btn_confirm.GetComponentInChildren<TextMeshProUGUI>(true);
+        if (text == null) return;
+        text.text = value;
+        text.alignment = TextAlignmentOptions.Center;
+        text.textWrappingMode = TextWrappingModes.NoWrap;
+        text.overflowMode = TextOverflowModes.Ellipsis;
+        text.enableAutoSizing = true;
+        text.fontSizeMin = 10f;
+        text.fontSizeMax = 30f;
     }
 }
 

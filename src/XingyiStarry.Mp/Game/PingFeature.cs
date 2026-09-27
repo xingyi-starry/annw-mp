@@ -15,7 +15,7 @@ internal static class PingFeature
     internal static void Tick(XingyiStarryMpPlugin plugin)
     {
         UpdateMarkers();
-        if (!InputGate.MultiplayerActive || InputGate.UiInputCaptured || plugin.IsSpectator || GS_Battle.self?.game_running != true || GS_Battle.self.is_movie_mode) return;
+        if (!InputGate.MultiplayerActive || InputGate.TextInputCaptured || plugin.IsSpectator || GS_Battle.self?.game_running != true || GS_Battle.self.is_movie_mode) return;
         if (InputKeybinding.IsTextInputActive() || UI_POP_KeyBinding.is_capturing || SUI_DBG_BATTLE.IsOpen()) return;
         if (StackableUIManager.self != null && StackableUIManager.self.HasActiveUI) return;
         if (GG.IsMouseOverUI()) return;
