@@ -104,6 +104,7 @@ public sealed class HelloMessage
     public string GameFingerprint { get; set; } = "";
     public string ContentFingerprint { get; set; } = "";
     public string DisplayName { get; set; } = "";
+    public string Password { get; set; } = "";
 }
 
 public sealed class WelcomeMessage
@@ -135,6 +136,7 @@ public sealed class SeatInfo
     public float AiIntelligence { get; set; } = 1f;
     public string CommanderId { get; set; } = "";
     public int CommanderMode { get; set; } = 1;
+    public bool KeepMapCommander { get; set; }
     public string SkillId { get; set; } = "";
     public List<string> PassiveIds { get; } = new List<string>();
     public bool Defeated { get; set; }

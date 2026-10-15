@@ -39,6 +39,7 @@ message Hello {
   string game_fingerprint    = 3;
   string content_fingerprint = 4;
   string display_name        = 5;
+  string password            = 6;
 }
 
 message Welcome {
@@ -100,6 +101,7 @@ message Seat {
   repeated string passive_ids = 20;
   bool defeated = 21;
   bool pending_activation = 22;
+  bool keep_map_commander = 23;
 }
 
 message Room {

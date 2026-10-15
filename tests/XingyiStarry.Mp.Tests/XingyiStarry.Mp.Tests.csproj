@@ -10,5 +10,12 @@
     <Compile Include="..\..\src\XingyiStarry.Mp\Session\RoomState.cs" Link="Session\RoomState.cs" />
     <Compile Include="..\..\src\XingyiStarry.Mp\Session\RuntimePlayerIndexResolver.cs" Link="Session\RuntimePlayerIndexResolver.cs" />
     <Compile Include="..\..\src\XingyiStarry.Mp\Session\SocialState.cs" Link="Session\SocialState.cs" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Session\HandshakeValidator.cs" Link="Session\HandshakeValidator.cs" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Infrastructure\Transport.cs" Link="Infrastructure\Transport.cs" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Infrastructure\CompositeHostTransport.cs" Link="Infrastructure\CompositeHostTransport.cs" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Infrastructure\PeerConnection.cs" Link="Infrastructure\PeerConnection.cs" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Infrastructure\NetworkHost.cs" Link="Infrastructure\NetworkHost.cs" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Infrastructure\NetworkClient.cs" Link="Infrastructure\NetworkClient.cs" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Infrastructure\RelayTransport.cs" Link="Infrastructure\RelayTransport.cs" />
   </ItemGroup>
 </Project>

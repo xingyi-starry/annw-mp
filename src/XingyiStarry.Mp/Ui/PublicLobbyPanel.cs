@@ -19,6 +19,7 @@ internal static class PublicLobbyPanel
     private static TMP_InputField? nameInput;
     private static TMP_InputField? roomNameInput;
     private static TMP_InputField? createPasswordInput;
+    private static TMP_InputField? portInput;
     private static TMP_InputField? maxParticipantsInput;
     private static TMP_InputField? joinPasswordInput;
     private static TextMeshProUGUI? selectedRoomText;
@@ -207,6 +208,7 @@ internal static class PublicLobbyPanel
         roomNameInput = AddInputRow(body, "房间名", (XingyiStarryMpPlugin.Instance?.ConfiguredDisplayName ?? Environment.UserName) + " 的房间", "输入房间名");
         createPasswordInput = AddInputRow(body, "密码", "", "可选");
         createPasswordInput.contentType = TMP_InputField.ContentType.Password;
+        portInput = AddInputRow(body, "端口", (XingyiStarryMpPlugin.Instance?.ConfiguredPort ?? ProtocolConstants.DefaultPort).ToString(), "1–65535");
         maxParticipantsInput = AddInputRow(body, "总人数", "4", "1–8，包含房主和观战");
         NativeButton(body, "Create", "创建房间", CreateRoom);
         NativeButton(body, "CreateFromSave", "从存档创建房间", CreateRoomFromSave);
@@ -218,7 +220,7 @@ internal static class PublicLobbyPanel
         joinButton = NativeButton(body, "Join", "加入所选房间", JoinSelected);
         joinButton.interactable = false;
         AddSeparator(body);
-        NativeButton(body, "Lan", "局域网联机", OpenLan);
+        NativeButton(body, "Lan", "手动连接", OpenLan);
         var spacer = GameUiKit.Rect("Spacer", body);
         spacer.gameObject.AddComponent<LayoutElement>().flexibleHeight = 1f;
         status = AddText(body, "正在读取公共房间", 16f, 48f, TextAlignmentOptions.BottomLeft);
@@ -362,9 +364,10 @@ internal static class PublicLobbyPanel
             if (status != null) status.text = "房间密码不能超过 64 个字符";
             return;
         }
+        if (!TryReadPort(out var port)) return;
         if (!TryReadMaxParticipants(out var maxParticipants)) return;
         enteringRoom = true;
-        XingyiStarryMpPlugin.Instance?.HostPublic(name, password, maxParticipants);
+        XingyiStarryMpPlugin.Instance?.HostPublic(name, password, port, maxParticipants);
     }
 
     private static void CreateRoomFromSave()
@@ -374,12 +377,13 @@ internal static class PublicLobbyPanel
         var name = roomNameInput?.text.Trim() ?? ""; var password = createPasswordInput?.text ?? "";
         if (name.Length == 0 || name.Length > 48) { if (status != null) status.text = "房间名长度必须为 1–48 个字符"; return; }
         if (password.Length > 64) { if (status != null) status.text = "房间密码不能超过 64 个字符"; return; }
+        if (!TryReadPort(out var port)) return;
         if (!TryReadMaxParticipants(out var maxParticipants)) return;
         root.SetActive(false);
         SavedRoomFlow.Open(menu, path =>
         {
             enteringRoom = true; if (root != null) { root.SetActive(true); root.transform.SetAsLastSibling(); }
-            XingyiStarryMpPlugin.Instance?.HostPublicFromSave(name, password, path, maxParticipants);
+            XingyiStarryMpPlugin.Instance?.HostPublicFromSave(name, password, port, path, maxParticipants);
         }, () => { if (root != null) { root.SetActive(true); root.transform.SetAsLastSibling(); } });
     }
 
@@ -387,6 +391,15 @@ internal static class PublicLobbyPanel
     {
         if (!int.TryParse(maxParticipantsInput?.text, out value) || value < 1 || value > 8)
         { if (status != null) status.text = "总人数必须是 1–8"; return false; }
+        return true;
+    }
+
+    private static bool TryReadPort(out int value)
+    {
+        if (!int.TryParse(portInput?.text, out value) || value < 1 || value > 65535)
+        { if (status != null) status.text = "端口必须在 1–65535 之间"; return false; }
+        var plugin = XingyiStarryMpPlugin.Instance;
+        if (plugin != null) plugin.ConfiguredPort = value;
         return true;
     }
 
@@ -487,6 +500,11 @@ internal static class PublicLobbyPanel
             if (status != null) status.text = "请输入所选房间的密码";
             return;
         }
+        if (password.Length > 64)
+        {
+            if (status != null) status.text = "房间密码不能超过 64 个字符";
+            return;
+        }
         enteringRoom = true;
         XingyiStarryMpPlugin.Instance?.JoinPublic(room.RoomId, password);
     }
@@ -553,6 +571,7 @@ internal static class PublicLobbyPanel
         nameInput = null;
         roomNameInput = null;
         createPasswordInput = null;
+        portInput = null;
         maxParticipantsInput = null;
         joinPasswordInput = null;
         selectedRoomText = null;

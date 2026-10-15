@@ -22,6 +22,7 @@ internal sealed class HostSession : IDisposable
     private readonly string pluginVersion;
     private readonly string gameFingerprint;
     private readonly string contentFingerprint;
+    private readonly string password;
     private AuthorityJournal? journal;
     private SnapshotManifest? latestSnapshotManifest;
     private byte[]? latestCompressedSnapshot;
@@ -29,19 +30,15 @@ internal sealed class HostSession : IDisposable
     public RoomState Room { get; }
     public Guid? MatchId { get; private set; }
     public Guid LocalHostClientId { get; }
-    public bool ConnectionLost { get; private set; }
-    public string ConnectionError { get; private set; } = "";
     public IReadOnlyList<ChatEvent> ChatHistory => social.ChatsFor(LocalHostClientId);
 
-    public HostSession(int port, string pluginVersion, string gameFingerprint, string contentFingerprint, string hostName, int maxParticipants = 4)
-        : this(new NetworkHost(port), pluginVersion, gameFingerprint, contentFingerprint, hostName, null, null, maxParticipants)
-    {
-    }
-
     public HostSession(IHostTransport network, string pluginVersion, string gameFingerprint, string contentFingerprint, string hostName,
-        Guid? localHostClientId = null, Guid? roomId = null, int maxParticipants = 4)
+        string password, Guid? localHostClientId = null, Guid? roomId = null, int maxParticipants = 4)
     {
         this.pluginVersion = pluginVersion; this.gameFingerprint = gameFingerprint; this.contentFingerprint = contentFingerprint;
+        this.password = password ?? "";
+        if (this.password.Length > HandshakeValidator.MaxPasswordCharacters)
+            throw new ArgumentOutOfRangeException(nameof(password), "房间密码不能超过 64 个字符。");
         LocalHostClientId = localHostClientId ?? Guid.NewGuid();
         this.network = network;
         Room = new RoomState(roomId, maxParticipants);
@@ -57,7 +54,6 @@ internal sealed class HostSession : IDisposable
         while (network.TryDequeueError(out var error))
         {
             log(SessionLogLevel.Warning, "Network host: " + error);
-            if (UsesRelay) { ConnectionLost = true; ConnectionError = error?.Message ?? "中继连接已关闭"; }
         }
         while (network.TryDequeue(out var inbound) && inbound is not null)
         {
@@ -157,13 +153,10 @@ internal sealed class HostSession : IDisposable
 
     private void HandleHello(IRemotePeer peer, HelloMessage hello, Action<string> participantNotice)
     {
-        if (hello.ProtocolVersion != ProtocolConstants.Version || hello.PluginVersion != pluginVersion || hello.GameFingerprint != gameFingerprint || hello.ContentFingerprint != contentFingerprint)
-        {
-            _ = RejectHandshakeAsync(peer, "Version or content fingerprint mismatch."); return;
-        }
-        var cleanName = (hello.DisplayName ?? "").Trim();
-        if (cleanName.Length == 0 || cleanName.Length > 32) { _ = RejectHandshakeAsync(peer, "用户名长度必须为 1–32 个字符。"); return; }
-        var clientId = UsesRelay ? peer.ConnectionId : Guid.NewGuid();
+        if (!HandshakeValidator.TryValidate(hello, pluginVersion, gameFingerprint, contentFingerprint, password,
+            out var cleanName, out var rejection))
+        { _ = RejectHandshakeAsync(peer, rejection); return; }
+        var clientId = peer.ConnectionId;
         if (!Room.TryAddParticipant(clientId, cleanName, out var participantReason))
         { _ = RejectHandshakeAsync(peer, participantReason); return; }
         var record = new ClientRecord { ClientId = clientId, DisplayName = cleanName, Peer = peer };
@@ -285,6 +278,7 @@ internal sealed class HostSession : IDisposable
             fingerprint.Append('|').Append(player.exist).Append(',').Append((int)player.controller).Append(',').Append((int)player.team).Append(',').Append((int)player.color)
                 .Append(',').Append(player.pos_ind).Append(',').Append(player.pos_random).Append(',').Append(player.res_percent.ToString("R", CultureInfo.InvariantCulture))
                 .Append(',').Append(player.ai_interlligence.ToString("R", CultureInfo.InvariantCulture)).Append(',').Append(intent?.CommanderMode ?? 1)
+                .Append(',').Append(intent?.KeepMapCommander ?? false)
                 .Append(',').Append(intent?.CommanderId ?? "").Append(',').Append(intent?.SkillId ?? "");
             if (intent is not null) foreach (var passive in intent.PassiveIds) fingerprint.Append(',').Append(passive);
         }
@@ -314,7 +308,7 @@ internal sealed class HostSession : IDisposable
                 AiControlled = true, Defeated = runtime.GetKey_Bool("wipe_out"), Controller = (int)setting.controller,
                 Team = (int)setting.team, Color = (int)setting.color, Position = setting.pos_ind, PositionRandom = setting.pos_random,
                 ResourceMultiplier = setting.res_percent, AiIntelligence = setting.ai_interlligence, CommanderId = setting.sd_co ?? "",
-                CommanderMode = string.IsNullOrEmpty(setting.sd_co) ? 1 : 2, SkillId = setting.skill?.name ?? ""
+                CommanderMode = string.IsNullOrEmpty(setting.sd_co) ? 1 : 2, KeepMapCommander = setting.keep_map_co, SkillId = setting.skill?.name ?? ""
             };
             if (setting.ps_list is not null) foreach (var passive in setting.ps_list) if (passive is not null) seat.PassiveIds.Add(passive.name);
             seats.Add(seat);
@@ -356,7 +350,7 @@ internal sealed class HostSession : IDisposable
             DisplayName = human ? "空闲真人席位" : "原版 AI", OriginallyHuman = human, Connected = false, Ready = !human, AiControlled = !human,
             Controller = (int)player.controller, Team = (int)player.team, Color = (int)player.color, Position = player.pos_ind, PositionRandom = player.pos_random,
             ResourceMultiplier = player.res_percent, AiIntelligence = player.ai_interlligence, CommanderId = intent?.CommanderId ?? "",
-            CommanderMode = intent?.CommanderMode ?? 1, SkillId = intent?.SkillId ?? ""
+            CommanderMode = intent?.CommanderMode ?? 1, KeepMapCommander = intent?.KeepMapCommander ?? player.keep_map_co, SkillId = intent?.SkillId ?? ""
         };
         if (intent is not null) foreach (var passive in intent.PassiveIds) result.PassiveIds.Add(passive);
         return result;
@@ -383,9 +377,9 @@ internal sealed class HostSession : IDisposable
     {
         var snapshot = Room.Snapshot(); snapshot.MatchId = MatchId;
         _ = network.BroadcastAsync(MessageType.RoomState, ProtocolCodec.EncodeRoom(snapshot));
-        if (network is RelayHostTransport relay)
+        if (network is IRoomDirectoryPublisher publisher)
         {
-            _ = relay.UpdateRoomAsync(new RelayUpdateRoomRequest { RequestId = 0, RoomId = Room.RoomId,
+            _ = publisher.UpdateRoomAsync(new RelayUpdateRoomRequest { RequestId = 0, RoomId = Room.RoomId,
                 MapTitle = snapshot.MapTitle, ConnectedPlayers = snapshot.Participants.Count(value => value.Connected),
                 HumanSeats = snapshot.Seats.Count(value => value.OriginallyHuman),
                 Status = snapshot.MatchStarted ? RelayRoomStatus.Playing : RelayRoomStatus.Waiting,
@@ -445,8 +439,8 @@ internal sealed class HostSession : IDisposable
     }
     public void BroadcastMatchStarting() =>
         _ = network.BroadcastAsync(MessageType.MatchStarting, Array.Empty<byte>());
-    public bool UsesRelay => network is RelayHostTransport;
-    public Task CloseRelayJoiningAsync(ulong requestId) => network is RelayHostTransport relay ? relay.CloseJoiningAsync(requestId) : Task.CompletedTask;
+    public Task CloseRelayJoiningAsync(ulong requestId) =>
+        network is IRoomDirectoryPublisher publisher ? publisher.CloseJoiningAsync(requestId) : Task.CompletedTask;
     public Task BroadcastSessionEndedAsync(string reason) =>
         network.BroadcastAsync(MessageType.SessionEnded, ProtocolCodec.EncodeString(reason));
     public void Accept(IRemotePeer peer, ulong requestId, long frameId) => _ = network.SendAsync(peer, MessageType.CommandAccepted, ProtocolCodec.EncodeCommandResponse(new CommandResponse { RequestId = requestId, AuthorityFrameId = frameId }));

@@ -21,7 +21,7 @@ internal static class RelayEndpoint
     }
 }
 
-internal sealed class RelayHostTransport : IHostTransport
+internal sealed class RelayHostTransport : IHostTransport, IRoomDirectoryPublisher
 {
     private readonly Guid roomId;
     private readonly Guid hostClientId;
@@ -30,21 +30,25 @@ internal sealed class RelayHostTransport : IHostTransport
     private readonly Dictionary<Guid, RelayRemotePeer> peers = new Dictionary<Guid, RelayRemotePeer>();
     private readonly object peerLock = new object();
     private long controlSequence = long.MinValue;
+    private bool failed;
 
     private RelayHostTransport(Guid roomId, Guid hostClientId, RelaySocket socket)
     { this.roomId = roomId; this.hostClientId = hostClientId; this.socket = socket; }
-    public Guid HostClientId => hostClientId;
-
     public static async Task<RelayHostTransport> ConnectAsync(string endpoint, RelayRegisterRoomRequest registration)
     {
         var parsed = RelayEndpoint.Parse(endpoint); var socket = new RelaySocket();
-        await socket.ConnectAsync(parsed.Host, parsed.Port).ConfigureAwait(false);
-        var response = await socket.RequestAsync(new Envelope { Type = MessageType.RelayRegisterRoom, Delivery = Delivery.RelayControl,
-            Payload = ProtocolCodec.EncodeRelayRegisterRoom(registration) },
-            MessageType.RelayControlResponse, registration.RequestId, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-        var result = ProtocolCodec.DecodeRelayControlResponse(response.Payload);
-        if (!result.Success || !result.ClientId.HasValue) { socket.Dispose(); throw new InvalidDataException(result.Reason.Length == 0 ? "中继服务器拒绝创建房间。" : result.Reason); }
-        return new RelayHostTransport(registration.RoomId, result.ClientId.Value, socket);
+        try
+        {
+            await socket.ConnectAsync(parsed.Host, parsed.Port).ConfigureAwait(false);
+            var response = await socket.RequestAsync(new Envelope { Type = MessageType.RelayRegisterRoom, Delivery = Delivery.RelayControl,
+                Payload = ProtocolCodec.EncodeRelayRegisterRoom(registration) },
+                MessageType.RelayControlResponse, registration.RequestId, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+            var result = ProtocolCodec.DecodeRelayControlResponse(response.Payload);
+            if (!result.Success || !result.ClientId.HasValue)
+                throw new InvalidDataException(result.Reason.Length == 0 ? "中继服务器拒绝创建房间。" : result.Reason);
+            return new RelayHostTransport(registration.RoomId, result.ClientId.Value, socket);
+        }
+        catch { socket.Dispose(); throw; }
     }
 
     public void Start() { }
@@ -59,7 +63,7 @@ internal sealed class RelayHostTransport : IHostTransport
                 lock (peerLock)
                 {
                     if (!peers.TryGetValue(clientId, out peer!)) { peer = new RelayRemotePeer(this, clientId); peers.Add(clientId, peer); }
-                    peer.Touch();
+                    if (failed) peer.MarkClosed(); else peer.Touch();
                 }
                 envelope = new InboundEnvelope(peer, wire); return true;
             }
@@ -81,15 +85,40 @@ internal sealed class RelayHostTransport : IHostTransport
         envelope = null; return false;
     }
 
-    public bool TryDequeueError(out Exception? exception) => socket.TryDequeueError(out exception);
-    public Task SendAsync(IRemotePeer peer, MessageType type, byte[] payload)
+    public bool TryDequeueError(out Exception? exception)
+    {
+        if (!socket.TryDequeueError(out exception)) return false;
+        MarkFailed();
+        return true;
+    }
+    public async Task SendAsync(IRemotePeer peer, MessageType type, byte[] payload)
     {
         if (peer is not RelayRemotePeer relay || relay.Owner != this) throw new InvalidOperationException("Peer does not belong to this relay host.");
-        return socket.SendAsync(new Envelope { Type = type, Payload = payload, RoomId = roomId, ClientId = hostClientId,
-            TargetClientId = relay.ClientId, Delivery = Delivery.ToClient });
+        try
+        {
+            await socket.SendAsync(new Envelope { Type = type, Payload = payload, RoomId = roomId, ClientId = hostClientId,
+                TargetClientId = relay.ClientId, Delivery = Delivery.ToClient }).ConfigureAwait(false);
+        }
+        catch { MarkFailed(); throw; }
     }
-    public Task BroadcastAsync(MessageType type, byte[] payload) => socket.SendAsync(new Envelope
-        { Type = type, Payload = payload, RoomId = roomId, ClientId = hostClientId, Delivery = Delivery.Broadcast });
+    public async Task BroadcastAsync(MessageType type, byte[] payload)
+    {
+        try
+        {
+            await socket.SendAsync(new Envelope
+                { Type = type, Payload = payload, RoomId = roomId, ClientId = hostClientId, Delivery = Delivery.Broadcast }).ConfigureAwait(false);
+        }
+        catch { MarkFailed(); throw; }
+    }
+
+    private void MarkFailed()
+    {
+        lock (peerLock)
+        {
+            failed = true;
+            foreach (var peer in peers.Values) peer.MarkClosed();
+        }
+    }
     public async Task UpdateRoomAsync(RelayUpdateRoomRequest update)
     {
         update.RequestId = (ulong)Interlocked.Increment(ref controlSequence);
@@ -231,7 +260,15 @@ internal sealed class RelaySocket : IDisposable
     public bool IsConnected => client?.Connected == true && !stop.IsCancellationRequested;
     public async Task ConnectAsync(string host, int port)
     {
-        client = new TcpClient { NoDelay = true }; await client.ConnectAsync(host, port).ConfigureAwait(false);
+        client = new TcpClient { NoDelay = true };
+        var connecting = client.ConnectAsync(host, port);
+        if (await Task.WhenAny(connecting, Task.Delay(TimeSpan.FromSeconds(10))).ConfigureAwait(false) != connecting)
+        {
+            client.Close();
+            try { await connecting.ConfigureAwait(false); } catch { }
+            throw new TimeoutException("连接中继服务器超时。");
+        }
+        await connecting.ConfigureAwait(false);
         _ = ReceiveLoopAsync(); _ = HeartbeatLoopAsync();
     }
     public async Task SendAsync(Envelope envelope)

@@ -39,6 +39,12 @@ internal static class GameCompatibility
             typeof(UI_MENU_LevelSelect_InfoSkm).GetField("cur_selected_diff", BindingFlags.Instance | BindingFlags.NonPublic) is null ||
             typeof(UI_MENU_LevelSelect_InfoSkm).GetMethod("RefreshDiffSelBtn", BindingFlags.Instance | BindingFlags.NonPublic) is null)
             missing.Add("v1.0.9 skirmish difficulty selection");
+        if (typeof(SGS_Player).GetField("keep_map_co") is null ||
+            typeof(UI_SKM_PlayerSetting).GetField("cur_selected_co_is_map_preset", BindingFlags.Instance | BindingFlags.NonPublic) is null ||
+            typeof(UI_SKM_PlayerSetting).GetField("cur_map_co_name", BindingFlags.Instance | BindingFlags.NonPublic) is null ||
+            typeof(UI_MENU_LevelSelect_InfoSkm).GetMethod("Render", new[] { typeof(string), typeof(string), typeof(ulong) }) is null ||
+            typeof(Player).GetMethod("proc_DescendResidualUnits") is null)
+            missing.Add("v1.0.11 map commander, workshop selection and defeated-player cleanup");
         return missing;
     }
 

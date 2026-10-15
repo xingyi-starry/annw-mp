@@ -17,13 +17,23 @@ internal sealed class NetworkHost : IHostTransport
     private readonly ConcurrentQueue<Exception> errors = new ConcurrentQueue<Exception>();
     private readonly List<PeerConnection> peers = new List<PeerConnection>();
     private readonly object peerLock = new object();
+    private int started;
 
     public NetworkHost(int port) => listener = new TcpListener(IPAddress.Any, port);
 
     public void Start()
     {
-        listener.Start();
-        _ = AcceptLoopAsync();
+        if (Interlocked.Exchange(ref started, 1) != 0) return;
+        try
+        {
+            listener.Start();
+            _ = AcceptLoopAsync();
+        }
+        catch
+        {
+            Interlocked.Exchange(ref started, 0);
+            throw;
+        }
     }
 
     private async Task AcceptLoopAsync()

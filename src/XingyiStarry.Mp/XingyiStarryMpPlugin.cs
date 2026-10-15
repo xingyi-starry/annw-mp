@@ -25,7 +25,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.9.1";
+    public const string PluginVersion = "0.10.0";
 
     private Harmony? harmony;
     private HostSession? host;
@@ -203,14 +203,6 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         PumpHostSeatChanges();
         client?.Pump(LogSessionEvent, OnClientCommandResponse, OnAuthorityFrame, OnSnapshotReceived, ShowParticipantNotice);
         PumpSocialEvents();
-        if (host?.ConnectionLost == true)
-        {
-            var reason = string.IsNullOrWhiteSpace(host.ConnectionError) ? "与公共中继服务器的连接已中断。" : host.ConnectionError;
-            host.Dispose(); host = null; InputGate.MultiplayerActive = false; InputGate.LocalSeatMayAct = false;
-            Status = "公共联机会话已结束：" + reason; pendingNativeNotice = reason; nativeNoticeEarliest = Time.unscaledTime + 0.25f;
-            if (GS_Battle.self?.game_running == true && SingletonMono<SS_ANNW_Game>.self is not null) SingletonMono<SS_ANNW_Game>.self.DoQuitOut();
-            else NativeSkirmishLobby.TerminateFromRemote();
-        }
         PumpAuthorityFrames();
         if (client?.ConnectionLost == true && !fastReconnectRunning)
         {
@@ -428,7 +420,8 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             var items = AccessTools.Method(typeof(UI_SKM_PlayerSettingGroup), "GetItems")?.Invoke(info.group, Array.Empty<object>()) as List<UI_SKM_PlayerSetting>;
             var item = items is not null && index < items.Count ? items[index] : null;
             var selection = item is null ? 1 : (int)(AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co")?.GetValue(item) ?? 1);
-            seat.CommanderMode = selection <= 1 ? selection : 2;
+            seat.CommanderMode = player.keep_map_co ? 2 : selection <= 1 ? selection : 2;
+            seat.KeepMapCommander = player.keep_map_co;
             if (seat.CommanderMode == 2)
             {
                 seat.CommanderId = player.sd_co ?? "";
@@ -602,36 +595,11 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         }
     }
 
-    internal void Host(int port, int maxParticipants = 4)
-    {
-        Disconnect();
-        try
-        {
-            var name = NormalizeDisplayName();
-            host = new HostSession(port, PluginVersion, gameFingerprint, contentFingerprint, name, maxParticipants); host.Start();
-            Status = $"正在主持 0.0.0.0:{port}";
-        }
-        catch (Exception ex) { Disconnect(); Status = "创建失败：" + ex.Message; Logger.LogError(ex); }
-    }
-
-    internal void HostFromSave(int port, string path, int maxParticipants = 4)
-    {
-        Disconnect();
-        try
-        {
-            var save = Singleton<BattleAndMapFileSystem>.self.ReadFileWithMeta_Local(path) ?? throw new InvalidDataException("无法读取遭遇战存档。");
-            if (!save.HasKey("startGameSetting")) throw new InvalidDataException("该文件不是可联机的遭遇战存档。");
-            var settings = StartGameSetting.LoadOb(save.GetKey_Obj("startGameSetting"));
-            var name = NormalizeDisplayName(); host = new HostSession(port, PluginVersion, gameFingerprint, contentFingerprint, name, maxParticipants);
-            host.ConfigureSavedGame(save, settings); host.Start(); savedGamePath = path; Status = "已从存档创建局域网房间";
-        }
-        catch (Exception ex) { Disconnect(); Status = "从存档创建失败：" + ex.Message; Logger.LogError(ex); }
-    }
-
-    internal async void HostPublic(string roomName, string password, int maxParticipants = 4)
+    internal async void HostPublic(string roomName, string password, int port, int maxParticipants = 4)
     {
         Disconnect();
         var generation = connectionGeneration;
+        CompositeHostTransport? transport = null;
         try
         {
             var name = NormalizeDisplayName(); var roomId = Guid.NewGuid();
@@ -647,24 +615,27 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
                 ContentFingerprint = contentFingerprint,
                 MaxParticipants = maxParticipants
             };
-            Status = "正在连接公共中继服务器";
-            var transport = await RelayHostTransport.ConnectAsync(ConfiguredRelayEndpoint, registration);
-            if (generation != connectionGeneration) { transport.Dispose(); return; }
+            Status = $"正在监听 0.0.0.0:{port} 并连接公共中继服务器";
+            var created = await CreateHostTransportAsync(port, registration, generation);
+            transport = created.Transport;
             host = new HostSession(transport, PluginVersion, gameFingerprint, contentFingerprint, name,
-                transport.HostClientId, roomId, maxParticipants);
+                password ?? "", roomId: roomId, maxParticipants: maxParticipants);
+            transport = null;
             host.Start();
-            Status = "公共房间已创建";
+            Status = created.RelayAvailable ? "房间已创建，可通过公共中继或手动直连加入" : "房间已创建；中继不可用，仅支持手动直连";
         }
         catch (Exception ex)
         {
+            transport?.Dispose();
             if (generation != connectionGeneration) return;
-            Disconnect(); Status = "创建公共房间失败：" + ex.Message; Logger.LogError(ex);
+            Disconnect(); Status = "创建房间失败：" + ex.Message; Logger.LogError(ex);
         }
     }
 
-    internal async void HostPublicFromSave(string roomName, string password, string path, int maxParticipants = 4)
+    internal async void HostPublicFromSave(string roomName, string password, int port, string path, int maxParticipants = 4)
     {
         Disconnect(); var generation = connectionGeneration;
+        CompositeHostTransport? transport = null;
         try
         {
             var save = Singleton<BattleAndMapFileSystem>.self.ReadFileWithMeta_Local(path) ?? throw new InvalidDataException("无法读取遭遇战存档。");
@@ -683,27 +654,50 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
                 ContentFingerprint = contentFingerprint,
                 MaxParticipants = maxParticipants
             };
-            Status = "正在从存档创建公共房间";
-            var transport = await RelayHostTransport.ConnectAsync(ConfiguredRelayEndpoint, registration);
-            if (generation != connectionGeneration) { transport.Dispose(); return; }
-            host = new HostSession(transport, PluginVersion, gameFingerprint, contentFingerprint, name, transport.HostClientId, roomId, maxParticipants);
-            host.ConfigureSavedGame(save, settings); host.Start(); savedGamePath = path; Status = "已从存档创建公共房间";
+            Status = $"正在监听 0.0.0.0:{port} 并从存档创建房间";
+            var created = await CreateHostTransportAsync(port, registration, generation);
+            transport = created.Transport;
+            host = new HostSession(transport, PluginVersion, gameFingerprint, contentFingerprint, name,
+                password ?? "", roomId: roomId, maxParticipants: maxParticipants);
+            transport = null;
+            host.ConfigureSavedGame(save, settings); host.Start(); savedGamePath = path;
+            Status = created.RelayAvailable ? "已从存档创建房间，可通过公共中继或手动直连加入" : "已从存档创建房间；中继不可用，仅支持手动直连";
         }
         catch (Exception ex)
         {
+            transport?.Dispose();
             if (generation != connectionGeneration) return;
-            Disconnect(); Status = "从存档创建公共房间失败：" + ex.Message; Logger.LogError(ex);
+            Disconnect(); Status = "从存档创建房间失败：" + ex.Message; Logger.LogError(ex);
         }
     }
 
-    internal async void Join(string address, int port)
+    private async Task<(CompositeHostTransport Transport, bool RelayAvailable)> CreateHostTransportAsync(
+        int port, RelayRegisterRoomRequest registration, int generation)
+    {
+        var direct = new NetworkHost(port);
+        RelayHostTransport? relay = null;
+        try
+        {
+            direct.Start();
+            try { relay = await RelayHostTransport.ConnectAsync(ConfiguredRelayEndpoint, registration); }
+            catch (Exception ex) { Logger.LogWarning("Relay registration failed; continuing with direct TCP hosting: " + ex.Message); }
+            if (generation != connectionGeneration) throw new OperationCanceledException("A newer connection attempt replaced this host operation.");
+            return (relay is null ? new CompositeHostTransport(direct) : new CompositeHostTransport(direct, relay), relay is not null);
+        }
+        catch
+        {
+            relay?.Dispose(); direct.Dispose(); throw;
+        }
+    }
+
+    internal async void Join(string address, int port, string password)
     {
         Disconnect();
         try
         {
             NormalizeDisplayName();
             client = new ClientSession(); Status = $"正在连接 {address}:{port}";
-            await client.ConnectAsync(address, port, CreateHello());
+            await client.ConnectAsync(address, port, CreateHello(password));
             Status = $"已连接 {address}:{port}，等待握手";
         }
         catch (Exception ex) { Disconnect(); Status = "连接失败：" + ex.Message; Logger.LogError(ex); }
@@ -719,7 +713,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             var connectingClient = new ClientSession(new RelayClientTransport(roomId, password, ++nextRequestId));
             client = connectingClient;
             Status = "正在加入公共房间";
-            await connectingClient.ConnectAsync(endpoint.Host, endpoint.Port, CreateHello());
+            await connectingClient.ConnectAsync(endpoint.Host, endpoint.Port, CreateHello(password));
             if (generation != connectionGeneration) { connectingClient.Dispose(); return; }
             Status = "已连接公共房间，等待主机握手";
         }
@@ -735,12 +729,13 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     internal bool IsPublicRoomCompatible(RelayRoomInfo room) => room.PluginVersion == PluginVersion &&
         room.GameFingerprint == gameFingerprint && room.ContentFingerprint == contentFingerprint;
 
-    private HelloMessage CreateHello() => new HelloMessage
+    private HelloMessage CreateHello(string password = "") => new HelloMessage
     {
         PluginVersion = PluginVersion,
         GameFingerprint = gameFingerprint,
         ContentFingerprint = contentFingerprint,
-        DisplayName = NormalizeDisplayName()
+        DisplayName = NormalizeDisplayName(),
+        Password = password ?? ""
     };
 
     private string NormalizeDisplayName()

@@ -252,6 +252,9 @@ internal static class NativeSkirmishLobby
         var passivesField = AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co_ps");
         var namesField = AccessTools.Field(typeof(UI_SKM_PlayerSetting), "list_hero_name");
         var selection = seat.CommanderMode;
+        // Native GenerateData uses these flags independently of the selected commander index.
+        AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co_is_map_preset").SetValue(item, seat.KeepMapCommander);
+        AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_map_co_name").SetValue(item, seat.KeepMapCommander ? seat.CommanderId : null);
         if (seat.CommanderMode == 2)
         {
             var names = namesField?.GetValue(item) as List<string>;
@@ -270,11 +273,11 @@ internal static class NativeSkirmishLobby
             skillField?.SetValue(item, null); passivesField?.SetValue(item, null);
         }
         selectedField?.SetValue(item, selection);
-        if (selection == 0)
+        if (selection == 0 && !seat.KeepMapCommander)
         {
             item.icon_icon.gameObject.SetActive(false); item.txt_co.text = LAN.Get("UI_NoCO");
         }
-        else if (selection == 1)
+        else if (selection == 1 && !seat.KeepMapCommander)
         {
             item.icon_icon.gameObject.SetActive(false); item.txt_co.text = LAN.Get("UI_RdCO");
         }
@@ -282,7 +285,8 @@ internal static class NativeSkirmishLobby
         {
             item.icon_icon.gameObject.SetActive(true);
             item.icon_icon.sprite = PrebuildIconDic.self.GetSprite("co", seat.CommanderId + "_1");
-            item.txt_co.text = AccessTools.Method(typeof(LAN), "GetCOName")?.Invoke(null, new object[] { seat.CommanderId }) as string ?? seat.CommanderId;
+            item.txt_co.text = (AccessTools.Method(typeof(LAN), "GetCOName")?.Invoke(null, new object[] { seat.CommanderId }) as string ?? seat.CommanderId)
+                + (seat.KeepMapCommander ? "*" : "");
         }
     }
 
@@ -483,6 +487,7 @@ internal static class NativeSkirmishLobby
                 value = value * 31 + (item.is_open ? 1 : 0);
                 foreach (var dropdown in item.GetComponentsInChildren<TMP_Dropdown>(true)) value = value * 31 + dropdown.value;
                 value = value * 31 + (int)(AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co")?.GetValue(item) ?? 1);
+                value = value * 31 + ((bool)(AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co_is_map_preset")?.GetValue(item) ?? false) ? 1 : 0);
                 value = value * 31 + ((AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co_sk")?.GetValue(item) as SD_ANNW_SKILL)?.name?.GetHashCode() ?? 0);
                 if (AccessTools.Field(typeof(UI_SKM_PlayerSetting), "cur_selected_co_ps")?.GetValue(item) is System.Collections.IEnumerable passives)
                     foreach (var passive in passives) value = value * 31 + ((passive as SD_ANNW_PS)?.name?.GetHashCode() ?? 0);
@@ -579,7 +584,7 @@ internal static class NativeSkirmishBuiltinRenderPatch
     private static void Postfix(UI_MENU_LevelSelect_InfoSkm __instance) => NativeSkirmishLobby.OnInfoRendered(__instance);
 }
 
-[HarmonyPatch(typeof(UI_MENU_LevelSelect_InfoSkm), nameof(UI_MENU_LevelSelect_InfoSkm.Render), new[] { typeof(string) })]
+[HarmonyPatch(typeof(UI_MENU_LevelSelect_InfoSkm), nameof(UI_MENU_LevelSelect_InfoSkm.Render), new[] { typeof(string), typeof(string), typeof(ulong) })]
 internal static class NativeSkirmishLocalRenderPatch
 {
     private static void Postfix(UI_MENU_LevelSelect_InfoSkm __instance) => NativeSkirmishLobby.OnInfoRendered(__instance);

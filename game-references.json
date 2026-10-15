@@ -2,13 +2,13 @@
   "packageId": "XingyiStarry.AnnW.GameReferences",
   "owner": "xingyi-starry",
   "source": "https://nuget.pkg.github.com/xingyi-starry/index.json",
-  "tag": "game-1.0.9",
-  "version": "1.0.9",
+  "tag": "game-1.0.11",
+  "version": "1.0.11",
   "files": [
     {
       "file": "Assembly-CSharp.dll",
-      "size": 1691136,
-      "sha256": "121a47c440358b7a485f71674f7ec361e46b7d717a2d60477375c26edccc8da1"
+      "size": 1813504,
+      "sha256": "983177448720f2d6b097c5018bb750c47549a57b6d6afa691c7090b8e8ed05f6"
     },
     {
       "file": "UnityEngine.dll",

@@ -216,7 +216,7 @@ internal sealed class RoomState
             OriginallyHuman = seat.OriginallyHuman, Connected = seat.Connected, Ready = seat.Ready, AiControlled = seat.AiControlled, ClientId = seat.ClientId,
             Controller = seat.Controller, Team = seat.Team, Color = seat.Color, Position = seat.Position, PositionRandom = seat.PositionRandom,
             ResourceMultiplier = seat.ResourceMultiplier, AiIntelligence = seat.AiIntelligence, CommanderId = seat.CommanderId
-            , CommanderMode = seat.CommanderMode, SkillId = seat.SkillId, Defeated = seat.Defeated,
+            , CommanderMode = seat.CommanderMode, KeepMapCommander = seat.KeepMapCommander, SkillId = seat.SkillId, Defeated = seat.Defeated,
             PendingActivation = seat.PendingActivation
         });
         for (var index = 0; index < seats.Count; index++)

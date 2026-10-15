@@ -46,14 +46,15 @@ public static class ProtocolCodec
     {
         ProtocolVersion = value.ProtocolVersion, PluginVersion = value.PluginVersion,
         GameFingerprint = value.GameFingerprint, ContentFingerprint = value.ContentFingerprint,
-        DisplayName = value.DisplayName
+        DisplayName = value.DisplayName, Password = value.Password
     });
 
     public static HelloMessage DecodeHello(byte[] bytes)
     {
         var wire = Parse(Wire.Hello.Parser, bytes);
         return new HelloMessage { ProtocolVersion = CheckedUShort(wire.ProtocolVersion), PluginVersion = wire.PluginVersion,
-            GameFingerprint = wire.GameFingerprint, ContentFingerprint = wire.ContentFingerprint, DisplayName = wire.DisplayName };
+            GameFingerprint = wire.GameFingerprint, ContentFingerprint = wire.ContentFingerprint,
+            DisplayName = wire.DisplayName, Password = wire.Password };
     }
 
     public static byte[] EncodeWelcome(WelcomeMessage value)
@@ -95,7 +96,7 @@ public static class ProtocolCodec
                 PositionRandom = seat.PositionRandom, ResourceMultiplier = seat.ResourceMultiplier,
                 AiIntelligence = seat.AiIntelligence, CommanderId = seat.CommanderId,
                 CommanderMode = seat.CommanderMode, SkillId = seat.SkillId, Defeated = seat.Defeated,
-                PendingActivation = seat.PendingActivation };
+                PendingActivation = seat.PendingActivation, KeepMapCommander = seat.KeepMapCommander };
             if (seat.ClientId.HasValue) item.ClientId = GuidBytes(seat.ClientId.Value);
             item.PassiveIds.Add(seat.PassiveIds);
             wire.Seats.Add(item);
@@ -127,7 +128,7 @@ public static class ProtocolCodec
                 Team = seat.Team, Color = seat.Color, Position = seat.Position, PositionRandom = seat.PositionRandom,
                 ResourceMultiplier = seat.ResourceMultiplier, AiIntelligence = seat.AiIntelligence,
                 CommanderId = seat.CommanderId, CommanderMode = seat.CommanderMode, SkillId = seat.SkillId,
-                Defeated = seat.Defeated, PendingActivation = seat.PendingActivation };
+                Defeated = seat.Defeated, PendingActivation = seat.PendingActivation, KeepMapCommander = seat.KeepMapCommander };
             item.PassiveIds.AddRange(seat.PassiveIds);
             value.Seats.Add(item);
         }

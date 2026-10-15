@@ -22,6 +22,12 @@ internal interface IHostTransport : IDisposable
     Task BroadcastAsync(MessageType type, byte[] payload);
 }
 
+internal interface IRoomDirectoryPublisher
+{
+    Task UpdateRoomAsync(RelayUpdateRoomRequest update);
+    Task CloseJoiningAsync(ulong requestId);
+}
+
 internal interface IClientTransport : IDisposable
 {
     bool IsConnected { get; }

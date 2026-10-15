@@ -14,7 +14,7 @@ internal static class NativeLobbyPanel
     private static TMP_InputField? nameInput;
     private static TMP_InputField? hostInput;
     private static TMP_InputField? portInput;
-    private static TMP_InputField? maxParticipantsInput;
+    private static TMP_InputField? passwordInput;
     private static TextMeshProUGUI? status;
     private static bool waitingForHandshake;
     private static bool returnToPublic;
@@ -41,20 +41,19 @@ internal static class NativeLobbyPanel
         var full = GameUiKit.Rect(RootName, UI_Floater.self.transform); GameUiKit.Stretch(full);
         root = full.gameObject;
         var dim = GameUiKit.Rect("Dim", full); GameUiKit.Stretch(dim); var dimImage = dim.gameObject.AddComponent<Image>(); dimImage.color = new Color(0f, 0f, 0f, 0.68f);
-        var panel = GameUiKit.Rect("Panel", full); panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f); panel.pivot = new Vector2(0.5f, 0.5f); panel.sizeDelta = new Vector2(700f, 550f);
+        var panel = GameUiKit.Rect("Panel", full); panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f); panel.pivot = new Vector2(0.5f, 0.5f); panel.sizeDelta = new Vector2(700f, 520f);
         GameUiKit.Panel(panel);
         var body = GameUiKit.Rect("Body", panel); GameUiKit.Stretch(body); body.offsetMin = new Vector2(36, 28); body.offsetMax = new Vector2(-36, -28);
         var vertical = body.gameObject.AddComponent<VerticalLayoutGroup>(); vertical.spacing = 10f; vertical.childControlWidth = true; vertical.childControlHeight = true; vertical.childForceExpandWidth = true; vertical.childForceExpandHeight = false;
-        AddFixedText(body, "联机遭遇战", 32f, 50f, TextAlignmentOptions.Center);
-        AddFixedText(body, "创建或连接房间后，双方共同进入遭遇战配置页选择席位。", 18f, 38f, TextAlignmentOptions.Center);
+        AddFixedText(body, "手动连接", 32f, 50f, TextAlignmentOptions.Center);
+        AddFixedText(body, "输入主机地址和端口，直接连接联机房间。", 18f, 38f, TextAlignmentOptions.Center);
         nameInput = AddInputRow(body, "用户名", XingyiStarryMpPlugin.Instance?.ConfiguredDisplayName ?? Environment.UserName);
         hostInput = AddInputRow(body, "主机地址", XingyiStarryMpPlugin.Instance?.ConfiguredAddress ?? "127.0.0.1");
         portInput = AddInputRow(body, "端口", (XingyiStarryMpPlugin.Instance?.ConfiguredPort ?? Protocol.ProtocolConstants.DefaultPort).ToString());
-        maxParticipantsInput = AddInputRow(body, "总人数", "4");
+        passwordInput = AddInputRow(body, "密码", "");
+        passwordInput.contentType = TMP_InputField.ContentType.Password;
         var row = GameUiKit.Rect("Actions", body); row.gameObject.AddComponent<LayoutElement>().preferredHeight = 48f;
         var horizontal = row.gameObject.AddComponent<HorizontalLayoutGroup>(); horizontal.spacing = 12f; horizontal.childControlHeight = true; horizontal.childControlWidth = true; horizontal.childForceExpandWidth = true;
-        GameUiKit.Button(row, "Host", "创建房间", OnHost);
-        GameUiKit.Button(row, "HostSave", "从存档创建", OnHostSave);
         GameUiKit.Button(row, "Join", "连接房间", OnJoin);
         GameUiKit.Button(row, "Close", "返回", Close);
         status = AddFixedText(body, "未连接", 17f, 48f, TextAlignmentOptions.Center);
@@ -76,39 +75,12 @@ internal static class NativeLobbyPanel
         return GameUiKit.Input(row, "XingyiStarryMp_" + label, value);
     }
 
-    private static void OnHost()
-    {
-        var plugin = ApplyInputs(); if (plugin == null) return;
-        if (!TryReadMaxParticipants(out var maxParticipants)) return;
-        plugin.Host(plugin.ConfiguredPort, maxParticipants);
-        if (plugin.IsHost) EnterConfiguration();
-    }
-
     private static void OnJoin()
     {
         var plugin = ApplyInputs(); if (plugin == null) return;
-        waitingForHandshake = true; plugin.Join(plugin.ConfiguredAddress, plugin.ConfiguredPort);
-    }
-
-    private static void OnHostSave()
-    {
-        var plugin = ApplyInputs(); if (plugin == null) return;
-        if (menu == null || root == null) return;
-        root.SetActive(false);
-        SavedRoomFlow.Open(menu, path =>
-        {
-            if (!TryReadMaxParticipants(out var maxParticipants)) { if (root != null) root.SetActive(true); return; }
-            plugin.HostFromSave(plugin.ConfiguredPort, path, maxParticipants);
-            if (plugin.IsHost) EnterConfiguration();
-            else if (root != null) root.SetActive(true);
-        }, () => { if (root != null) { root.SetActive(true); root.transform.SetAsLastSibling(); } });
-    }
-
-    private static bool TryReadMaxParticipants(out int value)
-    {
-        if (!int.TryParse(maxParticipantsInput?.text, out value) || value < 1 || value > 8)
-        { if (status != null) status.text = "总人数必须是 1–8"; return false; }
-        return true;
+        var password = passwordInput?.text ?? "";
+        if (password.Length > 64) { if (status != null) status.text = "房间密码不能超过 64 个字符"; return; }
+        waitingForHandshake = true; plugin.Join(plugin.ConfiguredAddress, plugin.ConfiguredPort, password);
     }
 
     private static XingyiStarryMpPlugin? ApplyInputs()
@@ -152,7 +124,7 @@ internal static class NativeLobbyPanel
         nameInput = null;
         hostInput = null;
         portInput = null;
-        maxParticipantsInput = null;
+        passwordInput = null;
         status = null;
     }
 }

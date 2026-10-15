@@ -1,9 +1,11 @@
 using System;
 using System.IO;
+using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using XingyiStarry.Mp.Protocol;
+using XingyiStarry.Mp.Infrastructure;
 using XingyiStarry.Mp.Session;
 using Wire = XingyiStarry.Mp.Protocol.Wire;
 
@@ -20,13 +22,16 @@ internal static class Program
         Test("tamper detection", TamperDetection);
         Test("snapshot codec", SnapshotRoundTrip);
         Test("room round trip", RoomRoundTrip);
+        Test("map commander survives room cloning and replacement", MapCommanderState);
         Test("snapshot assembly", SnapshotAssembly);
         Test("operation failure codec", OperationFailureRoundTrip);
         Test("protobuf wire format", ProtobufWireFormat);
         Test("all protobuf messages", AllProtobufMessagesRoundTrip);
         Test("relay protobuf messages", RelayMessagesRoundTrip);
-        Test("v17 session messages", SessionMessagesRoundTrip);
-        Test("v17 social messages", SocialMessagesRoundTrip);
+        Test("v18 session messages", SessionMessagesRoundTrip);
+        Test("v18 social messages", SocialMessagesRoundTrip);
+        Test("host handshake password", HostHandshakePassword);
+        Test("local host port is required", LocalHostPortIsRequired);
         Test("seatless ready becomes spectator", SeatlessReadyBecomesSpectator);
         Test("mid-match player or spectator admission", MidMatchAdmission);
         Test("spectator social permissions", SpectatorSocialPermissions);
@@ -35,9 +40,36 @@ internal static class Program
         Test("runtime player indices ignore spawn positions", RuntimePlayerIndicesIgnoreSpawnPositions);
         Test("runtime player indices compact disabled slots", RuntimePlayerIndicesCompactDisabledSlots);
         await TestAsync("packet framing", PacketRoundTrip);
+        await TestAsync("composite host transport", CompositeHostTransportTests.Run);
         var relayEndpoint = Environment.GetEnvironmentVariable("XINGYI_RELAY_TEST_ENDPOINT");
-        if (!string.IsNullOrWhiteSpace(relayEndpoint)) await TestAsync("C# to Go relay integration", () => RelayIntegration(relayEndpoint));
-        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 20 : 21)}"); return 0;
+        if (!string.IsNullOrWhiteSpace(relayEndpoint))
+        {
+            await TestAsync("C# to Go relay integration", () => RelayIntegration(relayEndpoint));
+            await TestAsync("direct and relay host integration", () => MultiStackHostIntegration(relayEndpoint));
+        }
+        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 24 : 26)}"); return 0;
+    }
+
+    private static void HostHandshakePassword()
+    {
+        var hello = new HelloMessage { PluginVersion = "plugin", GameFingerprint = "game", ContentFingerprint = "content",
+            DisplayName = " 玩家 ", Password = "secret" };
+        True(HandshakeValidator.TryValidate(hello, "plugin", "game", "content", "secret", out var name, out var reason));
+        Equal("玩家", name); Equal("", reason);
+        hello.Password = "wrong";
+        True(!HandshakeValidator.TryValidate(hello, "plugin", "game", "content", "secret", out _, out reason));
+        Equal("房间密码错误。", reason);
+        hello.Password = "";
+        True(HandshakeValidator.TryValidate(hello, "plugin", "game", "content", "", out _, out _));
+    }
+
+    private static void LocalHostPortIsRequired()
+    {
+        var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start();
+        var port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
+        using var first = new NetworkHost(port); first.Start();
+        using var second = new NetworkHost(port);
+        Throws<SocketException>(second.Start);
     }
 
     private static void RuntimePlayerIndicesIgnoreSpawnPositions()
@@ -128,6 +160,20 @@ internal static class Program
         Throws<InvalidDataException>(() => ProtocolCodec.EncodeRoom(new RoomSnapshot { RoomId = Guid.NewGuid(), MapPreview = new byte[ProtocolConstants.MaxMapPreviewBytes + 1] }));
     }
 
+    private static void MapCommanderState()
+    {
+        var room = new RoomState();
+        var seat = new SeatInfo { SeatId = Guid.NewGuid(), CommanderId = "CO_Zero", CommanderMode = 2, KeepMapCommander = true };
+        room.ReplaceSeats(new[] { seat });
+        var snapshot = room.Snapshot();
+        True(snapshot.Seats[0].KeepMapCommander);
+        True(ProtocolCodec.DecodeRoom(ProtocolCodec.EncodeRoom(snapshot)).Seats[0].KeepMapCommander);
+        // Selecting the same commander explicitly must clear the map-preservation flag.
+        seat.KeepMapCommander = false;
+        True(snapshot.Seats[0].KeepMapCommander);
+        True(!ProtocolCodec.DecodeRoom(ProtocolCodec.EncodeRoom(room.Snapshot())).Seats[0].KeepMapCommander);
+    }
+
     private static void SnapshotAssembly()
     {
         var bytes = new byte[ProtocolConstants.SnapshotChunkBytes + 17]; new Random(7).NextBytes(bytes);
@@ -174,8 +220,8 @@ internal static class Program
     {
         var clientId = Guid.NewGuid(); var roomId = Guid.NewGuid(); var matchId = Guid.NewGuid();
         var hello = ProtocolCodec.DecodeHello(ProtocolCodec.EncodeHello(new HelloMessage
-            { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.9.0", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "玩家" }));
-        Equal("玩家", hello.DisplayName); Equal(ProtocolConstants.Version, hello.ProtocolVersion);
+            { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.10.0", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "玩家", Password = "secret" }));
+        Equal("玩家", hello.DisplayName); Equal("secret", hello.Password); Equal(ProtocolConstants.Version, hello.ProtocolVersion);
 
         var welcome = ProtocolCodec.DecodeWelcome(ProtocolCodec.EncodeWelcome(new WelcomeMessage
             { ClientId = clientId, RoomId = roomId, MatchId = matchId, LatestFrameId = 41, Mode = WelcomeMode.JoinSelection }));
@@ -254,7 +300,7 @@ internal static class Program
     private static void SessionMessagesRoundTrip()
     {
         Equal((ushort)34, (ushort)MessageType.ReleaseSeat); Equal((ushort)41, (ushort)MessageType.RelayResumeRoom);
-        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)50, (ushort)MessageType.SocialSyncComplete); Equal((ushort)17, ProtocolConstants.Version);
+        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)50, (ushort)MessageType.SocialSyncComplete); Equal((ushort)18, ProtocolConstants.Version);
         var room = Guid.NewGuid(); var match = Guid.NewGuid(); var client = Guid.NewGuid(); var seat = Guid.NewGuid();
         Equal(seat, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest { SeatId = seat })).SeatId);
         Equal(null, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest())).SeatId);
@@ -375,8 +421,9 @@ internal static class Program
 
         await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Type = MessageType.Hello, Delivery = Delivery.ToHost,
             RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeHello(new HelloMessage { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.9.0",
-                GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "client" }) }, CancellationToken.None);
+                GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "client", Password = "secret" }) }, CancellationToken.None);
         var hello = await ReadType(host, MessageType.Hello); Equal(clientId, hello.ClientId); Equal(Delivery.ToHost, hello.Delivery);
+        Equal("secret", ProtocolCodec.DecodeHello(hello.Payload).Password);
 
         await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.Welcome, Delivery = Delivery.ToClient,
             RoomId = roomId, ClientId = registered.ClientId, TargetClientId = clientId,
@@ -417,6 +464,75 @@ internal static class Program
             RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeResumeSession(resumeSession) }, CancellationToken.None);
         var forwardedResume = ProtocolCodec.DecodeResumeSession((await ReadType(host, MessageType.ResumeSession)).Payload);
         Equal(7L, forwardedResume.AppliedFrameId); Equal(9L, forwardedResume.VerifiedFrameId);
+    }
+
+    private static async Task MultiStackHostIntegration(string endpoint)
+    {
+        var split = endpoint.LastIndexOf(':'); var relayHostName = endpoint.Substring(0, split); var relayPort = int.Parse(endpoint.Substring(split + 1));
+        var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start();
+        var directPort = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
+
+        var roomId = Guid.NewGuid();
+        var directHost = new NetworkHost(directPort); directHost.Start();
+        RelayHostTransport? relayHost = null;
+        var compositeOwnsTransports = false;
+        try
+        {
+            relayHost = await RelayHostTransport.ConnectAsync(endpoint, new RelayRegisterRoomRequest
+            {
+                RequestId = 201, RoomId = roomId, RoomName = "multi-stack", HostName = "host", Password = "secret",
+                PluginVersion = "test", GameFingerprint = "game", ContentFingerprint = "content", MaxParticipants = 4
+            });
+            using var composite = new CompositeHostTransport(directHost, relayHost);
+            compositeOwnsTransports = true;
+            relayHost = null;
+            composite.Start();
+            using var directClient = new NetworkClient();
+            using var relayClient = new RelayClientTransport(roomId, "secret", 202);
+            await directClient.ConnectAsync(IPAddress.Loopback.ToString(), directPort);
+            await relayClient.ConnectAsync(relayHostName, relayPort);
+            await directClient.SendAsync(MessageType.Hello, new byte[] { 1 });
+            await relayClient.SendAsync(MessageType.Heartbeat, new byte[] { 2 });
+
+            var first = await ReadHostEnvelope(composite);
+            var second = await ReadHostEnvelope(composite);
+            True(first.Envelope.Type != second.Envelope.Type);
+            True(first.Envelope.Type is MessageType.Hello or MessageType.Heartbeat);
+            True(second.Envelope.Type is MessageType.Hello or MessageType.Heartbeat);
+
+            await composite.BroadcastAsync(MessageType.ParticipantNotice, new byte[] { 3 });
+            Equal(MessageType.ParticipantNotice, (await ReadClientEnvelope(directClient)).Type);
+            Equal(MessageType.ParticipantNotice, (await ReadClientEnvelope(relayClient)).Type);
+        }
+        finally
+        {
+            relayHost?.Dispose();
+            if (!compositeOwnsTransports) directHost.Dispose();
+        }
+    }
+
+    private static async Task<InboundEnvelope> ReadHostEnvelope(IHostTransport host)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (host.TryDequeueError(out var error)) throw error ?? new IOException("Host transport failed.");
+            if (host.TryDequeue(out var envelope) && envelope is not null) return envelope;
+            await Task.Delay(10);
+        }
+        throw new TimeoutException("Timed out waiting for the composite host transport.");
+    }
+
+    private static async Task<Envelope> ReadClientEnvelope(IClientTransport client)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (client.TryDequeueError(out var error)) throw error ?? new IOException("Client transport failed.");
+            if (client.TryDequeue(out var envelope) && envelope is not null) return envelope;
+            await Task.Delay(10);
+        }
+        throw new TimeoutException("Timed out waiting for a client transport.");
     }
 
     private static async Task<Envelope> ReadType(TcpClient client, MessageType type)

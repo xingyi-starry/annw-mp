@@ -291,7 +291,7 @@ internal sealed class GameCommandExecutor
     private static IEnumerator ExecuteTurnAdvance()
     {
         var battle = GS_Battle.self;
-        do
+        while (true)
         {
             battle.current_co_index++;
             if (battle.current_co_index >= battle.all_player.players.Count)
@@ -308,8 +308,12 @@ internal sealed class GameCommandExecutor
                 BattleEventBus.self.TriggerTurnStarted(battle.turns);
                 HarmonyLib.AccessTools.Method(typeof(GS_Battle), "CaptureAllTurnSnaps")?.Invoke(battle, null);
             }
+            var candidate = battle.all_player.players[battle.current_co_index];
+            if (candidate.fraction != Fraction.NEUTRAL && !candidate.defeated) break;
+            if (candidate.defeated && (candidate.units.Count > 0 ||
+                (int)(HarmonyLib.AccessTools.Method(typeof(Player), "GetRifCount").Invoke(candidate, null) ?? 0) > 0))
+                yield return candidate.proc_DescendResidualUnits();
         }
-        while (battle.all_player.players[battle.current_co_index].fraction == Fraction.NEUTRAL || battle.all_player.players[battle.current_co_index].defeated);
 
         battle.cur_player = battle.all_player.players[battle.current_co_index];
         var start = GameController.self.StartPlayerTurn(battle.cur_player);
