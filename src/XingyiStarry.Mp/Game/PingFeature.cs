@@ -91,7 +91,7 @@ internal static class MultiplayerPingQuickMenuPatch
         if (plugin is null || !InputGate.MultiplayerActive || plugin.IsSpectator || GS_Battle.self?.game_running != true ||
             __instance.stacks.Count == 0 || __instance.stacks.Peek() != "root") return;
         var tile = OpenedTile(__instance); if (!GameTileData.IsValid(tile)) return;
-        __instance.items.Add(new QuickMenuItem { name = "标记此处", interactable = true, auto_close = true,
+        __instance.items.Add(new QuickMenuItem { name = MpText.Render("${ui_ping_here}"), interactable = true, auto_close = true,
             cb = () => PingFeature.TrySend(plugin, tile) });
     }
 }

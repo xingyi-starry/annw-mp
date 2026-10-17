@@ -69,8 +69,8 @@ internal static class PublicLobbyPanel
             EnterConfiguration();
             return;
         }
-        if (status != null && enteringRoom) status.text = plugin.Status;
-        if (enteringRoom && !plugin.IsHost && !plugin.IsClient && plugin.Status.IndexOf("失败", StringComparison.Ordinal) >= 0)
+        if (status != null && enteringRoom) MpLocalizedText.Set(status, plugin.Status);
+        if (enteringRoom && plugin.ConnectionFailed)
         {
             enteringRoom = false;
             nextRefresh = 0f;
@@ -128,10 +128,10 @@ internal static class PublicLobbyPanel
         layout.childControlHeight = true;
         layout.childForceExpandWidth = false;
         layout.childForceExpandHeight = true;
-        NativeButton(header, "Back", "返回", Close, 118f);
+        NativeButton(header, "Back", "${ui_back}", Close, 118f);
         var titleHost = GameUiKit.Rect("Title", header);
         titleHost.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-        GameUiKit.Text(titleHost, "Text", "联机遭遇战", 34f, TextAlignmentOptions.MidlineLeft);
+        GameUiKit.Text(titleHost, "Text", "${ui_multiplayer_skirmish}", 34f, TextAlignmentOptions.MidlineLeft);
     }
 
     private static void BuildRoomColumn(RectTransform column)
@@ -154,8 +154,8 @@ internal static class PublicLobbyPanel
         headingLayout.childForceExpandHeight = true;
         var title = GameUiKit.Rect("Title", heading);
         title.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-        GameUiKit.Text(title, "Text", "公共房间", 25f, TextAlignmentOptions.MidlineLeft);
-        NativeButton(heading, "Refresh", "刷新", RefreshRooms, 120f);
+        GameUiKit.Text(title, "Text", "${ui_public_rooms}", 25f, TextAlignmentOptions.MidlineLeft);
+        NativeButton(heading, "Refresh", "${ui_refresh}", RefreshRooms, 120f);
 
         var viewport = GameUiKit.Rect("RoomViewport", body);
         viewport.anchorMin = Vector2.zero;
@@ -201,29 +201,29 @@ internal static class PublicLobbyPanel
         vertical.childForceExpandWidth = true;
         vertical.childForceExpandHeight = false;
 
-        AddText(body, "玩家", 24f, 38f, TextAlignmentOptions.MidlineLeft);
-        nameInput = AddInputRow(body, "用户名", XingyiStarryMpPlugin.Instance?.ConfiguredDisplayName ?? Environment.UserName, "输入用户名");
+        AddText(body, "${ui_players}", 24f, 38f, TextAlignmentOptions.MidlineLeft);
+        nameInput = AddInputRow(body, "${ui_username}", XingyiStarryMpPlugin.Instance?.ConfiguredDisplayName ?? Environment.UserName, "${ui_enter_username}");
         AddSeparator(body);
-        AddText(body, "创建房间", 24f, 38f, TextAlignmentOptions.MidlineLeft);
-        roomNameInput = AddInputRow(body, "房间名", (XingyiStarryMpPlugin.Instance?.ConfiguredDisplayName ?? Environment.UserName) + " 的房间", "输入房间名");
-        createPasswordInput = AddInputRow(body, "密码", "", "可选");
+        AddText(body, "${ui_create_room}", 24f, 38f, TextAlignmentOptions.MidlineLeft);
+        roomNameInput = AddInputRow(body, "${ui_room_name}", MpText.Render((XingyiStarryMpPlugin.Instance?.ConfiguredDisplayName ?? Environment.UserName) + "${ui_room_name_suffix}"), "${ui_enter_room_name}");
+        createPasswordInput = AddInputRow(body, "${ui_password}", "", "${ui_optional}");
         createPasswordInput.contentType = TMP_InputField.ContentType.Password;
-        portInput = AddInputRow(body, "端口", (XingyiStarryMpPlugin.Instance?.ConfiguredPort ?? ProtocolConstants.DefaultPort).ToString(), "1–65535");
-        maxParticipantsInput = AddInputRow(body, "总人数", "4", "1–8，包含房主和观战");
-        NativeButton(body, "Create", "创建房间", CreateRoom);
-        NativeButton(body, "CreateFromSave", "从存档创建房间", CreateRoomFromSave);
+        portInput = AddInputRow(body, "${ui_port}", (XingyiStarryMpPlugin.Instance?.ConfiguredPort ?? ProtocolConstants.DefaultPort).ToString(), "1–65535");
+        maxParticipantsInput = AddInputRow(body, "${ui_capacity}", "4", "${ui_1_8_including_host_and_spectators}");
+        NativeButton(body, "Create", "${ui_create_room}", CreateRoom);
+        NativeButton(body, "CreateFromSave", "${ui_host_from_save}", CreateRoomFromSave);
         AddSeparator(body);
-        AddText(body, "加入房间", 24f, 38f, TextAlignmentOptions.MidlineLeft);
-        selectedRoomText = AddText(body, "请先在左侧选择一个房间", 16f, 58f, TextAlignmentOptions.TopLeft);
-        joinPasswordInput = AddInputRow(body, "密码", "", "有密码时输入");
+        AddText(body, "${ui_join_room}", 24f, 38f, TextAlignmentOptions.MidlineLeft);
+        selectedRoomText = AddText(body, "${ui_select_a_room_on_the_left}", 16f, 58f, TextAlignmentOptions.TopLeft);
+        joinPasswordInput = AddInputRow(body, "${ui_password}", "", "${ui_enter_if_required}");
         joinPasswordInput.contentType = TMP_InputField.ContentType.Password;
-        joinButton = NativeButton(body, "Join", "加入所选房间", JoinSelected);
+        joinButton = NativeButton(body, "Join", "${ui_join_selected_room}", JoinSelected);
         joinButton.interactable = false;
         AddSeparator(body);
-        NativeButton(body, "Lan", "手动连接", OpenLan);
+        NativeButton(body, "Lan", "${ui_direct_connection}", OpenLan);
         var spacer = GameUiKit.Rect("Spacer", body);
         spacer.gameObject.AddComponent<LayoutElement>().flexibleHeight = 1f;
-        status = AddText(body, "正在读取公共房间", 16f, 48f, TextAlignmentOptions.BottomLeft);
+        status = AddText(body, "${ui_loading_public_rooms}", 16f, 48f, TextAlignmentOptions.BottomLeft);
         RefreshSelectedRoom();
     }
 
@@ -272,7 +272,7 @@ internal static class PublicLobbyPanel
         viewport.gameObject.AddComponent<RectMask2D>();
         var placeholder = GameUiKit.Text(viewport, "Placeholder", placeholderValue, 18f, TextAlignmentOptions.MidlineLeft);
         placeholder.color = new Color(0.72f, 0.45f, 0.2f, 0.7f);
-        var text = GameUiKit.Text(viewport, "Text", value, 18f, TextAlignmentOptions.MidlineLeft);
+        var text = GameUiKit.Text(viewport, "Text", value, 18f, TextAlignmentOptions.MidlineLeft, localize: false);
         var input = rect.gameObject.AddComponent<TMP_InputField>();
         input.textViewport = viewport;
         input.textComponent = text;
@@ -310,7 +310,7 @@ internal static class PublicLobbyPanel
         var text = instance.GetComponentInChildren<TextMeshProUGUI>(true);
         if (text != null)
         {
-            text.text = label;
+            MpLocalizedText.Set(text, label);
             text.fontSize = 19f;
             text.enableAutoSizing = true;
             text.fontSizeMin = 12f;
@@ -342,7 +342,7 @@ internal static class PublicLobbyPanel
         var value = nameInput?.text.Trim() ?? "";
         if (plugin == null || value.Length == 0 || value.Length > 32)
         {
-            if (status != null) status.text = "用户名长度必须为 1–32 个字符";
+            if (status != null) MpLocalizedText.Set(status, "${ui_username_must_contain_1_32_characters}");
             return false;
         }
         plugin.ConfiguredDisplayName = value;
@@ -356,12 +356,12 @@ internal static class PublicLobbyPanel
         var password = createPasswordInput?.text ?? "";
         if (name.Length == 0 || name.Length > 48)
         {
-            if (status != null) status.text = "房间名长度必须为 1–48 个字符";
+            if (status != null) MpLocalizedText.Set(status, "${ui_room_name_must_contain_1_48_characters}");
             return;
         }
         if (password.Length > 64)
         {
-            if (status != null) status.text = "房间密码不能超过 64 个字符";
+            if (status != null) MpLocalizedText.Set(status, "${ui_room_password_cannot_exceed_64_characters}");
             return;
         }
         if (!TryReadPort(out var port)) return;
@@ -375,8 +375,8 @@ internal static class PublicLobbyPanel
         if (busy || enteringRoom || !ApplyName()) return;
         if (menu == null || root == null) return;
         var name = roomNameInput?.text.Trim() ?? ""; var password = createPasswordInput?.text ?? "";
-        if (name.Length == 0 || name.Length > 48) { if (status != null) status.text = "房间名长度必须为 1–48 个字符"; return; }
-        if (password.Length > 64) { if (status != null) status.text = "房间密码不能超过 64 个字符"; return; }
+        if (name.Length == 0 || name.Length > 48) { if (status != null) MpLocalizedText.Set(status, "${ui_room_name_must_contain_1_48_characters}"); return; }
+        if (password.Length > 64) { if (status != null) MpLocalizedText.Set(status, "${ui_room_password_cannot_exceed_64_characters}"); return; }
         if (!TryReadPort(out var port)) return;
         if (!TryReadMaxParticipants(out var maxParticipants)) return;
         root.SetActive(false);
@@ -390,14 +390,14 @@ internal static class PublicLobbyPanel
     private static bool TryReadMaxParticipants(out int value)
     {
         if (!int.TryParse(maxParticipantsInput?.text, out value) || value < 1 || value > 8)
-        { if (status != null) status.text = "总人数必须是 1–8"; return false; }
+        { if (status != null) MpLocalizedText.Set(status, "${ui_capacity_must_be_between_1_and_8}"); return false; }
         return true;
     }
 
     private static bool TryReadPort(out int value)
     {
         if (!int.TryParse(portInput?.text, out value) || value < 1 || value > 65535)
-        { if (status != null) status.text = "端口必须在 1–65535 之间"; return false; }
+        { if (status != null) MpLocalizedText.Set(status, "${ui_port_must_be_between_1_and_65535}"); return false; }
         var plugin = XingyiStarryMpPlugin.Instance;
         if (plugin != null) plugin.ConfiguredPort = value;
         return true;
@@ -411,17 +411,17 @@ internal static class PublicLobbyPanel
         var generation = viewGeneration;
         busy = true;
         nextRefresh = Time.unscaledTime + 5f;
-        if (status != null) status.text = "正在读取公共房间";
+        if (status != null) MpLocalizedText.Set(status, "${ui_loading_public_rooms}");
         try
         {
             var rooms = await plugin.ListPublicRoomsAsync();
             if (generation != viewGeneration || root == null) return;
             Rebuild(rooms);
-            if (status != null) status.text = "公共房间列表已更新";
+            if (status != null) MpLocalizedText.Set(status, "${ui_public_room_list_updated}");
         }
         catch (Exception ex)
         {
-            if (generation == viewGeneration && status != null) status.text = "读取房间失败：" + ex.Message;
+            if (generation == viewGeneration && status != null) MpLocalizedText.Set(status, "${ui_failed_to_load_rooms}" + ex.Message);
         }
         finally
         {
@@ -441,7 +441,7 @@ internal static class PublicLobbyPanel
         RefreshSelectedRoom();
         if (rooms.Count == 0)
         {
-            var empty = NativeButton(roomContent, "Empty", "当前没有公共房间", () => { }, 0f, 44f);
+            var empty = NativeButton(roomContent, "Empty", "${ui_no_public_rooms_available}", () => { }, 0f, 44f);
             empty.interactable = false;
             return;
         }
@@ -449,13 +449,13 @@ internal static class PublicLobbyPanel
         foreach (var room in rooms)
         {
             var captured = room;
-            var lockText = room.HasPassword ? "  [密码]" : "";
-            var map = string.IsNullOrWhiteSpace(room.MapTitle) ? "尚未选择地图" : room.MapTitle;
-            var state = room.Status == RelayRoomStatus.Waiting ? "等待中" : room.Status == RelayRoomStatus.Playing ? "游戏中" : "已关闭";
+            var lockText = room.HasPassword ? "${ui_password_2}" : "";
+            var map = string.IsNullOrWhiteSpace(room.MapTitle) ? "${ui_no_map_selected}" : room.MapTitle;
+            var state = room.Status == RelayRoomStatus.Waiting ? "${ui_waiting}" : room.Status == RelayRoomStatus.Playing ? "${ui_playing}" : "${ui_closed}";
             var selected = selectedRoom?.RoomId == room.RoomId ? "▶  " : "";
             var label = plugin.IsPublicRoomCompatible(room)
-                ? $"{selected}{room.RoomName}{lockText}    {map}    {room.ConnectedPlayers}/{(room.MaxParticipants > 0 ? room.MaxParticipants : room.HumanSeats)}    可选席位 {room.AvailableSeats}    {room.HostName}    {state}"
-                : $"{room.RoomName}    版本不兼容";
+                ? $"{selected}{room.RoomName}{lockText}    {map}    {room.ConnectedPlayers}/{(room.MaxParticipants > 0 ? room.MaxParticipants : room.HumanSeats)}${{ui_available_seats_2}}{room.AvailableSeats}    {room.HostName}    {state}"
+                : $"{room.RoomName}${{ui_incompatible_version_2}}";
             var button = NativeButton(roomContent, "Room_" + room.RoomId.ToString("N"), label, () => SelectRoom(captured), 0f, 46f);
             button.interactable = (room.Status == RelayRoomStatus.Waiting || room.Status == RelayRoomStatus.Playing) &&
                 (room.MaxParticipants <= 0 || room.ConnectedPlayers < room.MaxParticipants) && plugin.IsPublicRoomCompatible(room);
@@ -475,15 +475,15 @@ internal static class PublicLobbyPanel
         if (selectedRoomText == null || joinButton == null || joinPasswordInput == null || plugin == null) return;
         if (selectedRoom == null)
         {
-            selectedRoomText.text = "请先在左侧选择一个房间";
+            MpLocalizedText.Set(selectedRoomText, "${ui_select_a_room_on_the_left}");
             joinPasswordInput.interactable = false;
             joinPasswordInput.text = "";
             joinButton.interactable = false;
             return;
         }
         var room = selectedRoom;
-        var map = string.IsNullOrWhiteSpace(room.MapTitle) ? "尚未选择地图" : room.MapTitle;
-        selectedRoomText.text = $"{room.RoomName}\n主机：{room.HostName}    地图：{map}";
+        var map = string.IsNullOrWhiteSpace(room.MapTitle) ? "${ui_no_map_selected}" : room.MapTitle;
+        MpLocalizedText.Set(selectedRoomText, $"{room.RoomName}${{ui_host_2}}{room.HostName}${{ui_map}}{map}");
         joinPasswordInput.interactable = room.HasPassword;
         if (!room.HasPassword) joinPasswordInput.text = "";
         joinButton.interactable = (room.Status == RelayRoomStatus.Waiting || room.Status == RelayRoomStatus.Playing) &&
@@ -497,12 +497,12 @@ internal static class PublicLobbyPanel
         var password = joinPasswordInput?.text ?? "";
         if (room.HasPassword && password.Length == 0)
         {
-            if (status != null) status.text = "请输入所选房间的密码";
+            if (status != null) MpLocalizedText.Set(status, "${ui_enter_the_selected_room_s_password}");
             return;
         }
         if (password.Length > 64)
         {
-            if (status != null) status.text = "房间密码不能超过 64 个字符";
+            if (status != null) MpLocalizedText.Set(status, "${ui_room_password_cannot_exceed_64_characters}");
             return;
         }
         enteringRoom = true;

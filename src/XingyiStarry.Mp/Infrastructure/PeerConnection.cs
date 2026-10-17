@@ -44,7 +44,7 @@ internal sealed class PeerConnection : IRemotePeer, IDisposable
                 var envelope = await PacketFraming.ReadAsync(client.GetStream(), stop.Token).ConfigureAwait(false);
                 if (envelope is null)
                 {
-                    if (!stop.IsCancellationRequested) errors.Enqueue(new EndOfStreamException("远端已关闭连接。"));
+                    if (!stop.IsCancellationRequested) errors.Enqueue(new EndOfStreamException("The remote peer closed the connection."));
                     break;
                 }
                 LastReceivedUtc = DateTime.UtcNow; inbox.Enqueue(new InboundEnvelope(this, envelope));

@@ -2,6 +2,7 @@ using ANNW;
 using HarmonyLib;
 using TMPro;
 using UnityEngine.UI;
+using XingyiStarry.Mp.Ui;
 
 namespace XingyiStarry.Mp.Game;
 
@@ -10,11 +11,19 @@ internal static class MultiplayerPauseMenuPatch
 {
     private static void Postfix(UI_POP_PauseMenu __instance)
     {
-        if (!InputGate.MultiplayerActive) return;
+        if (!InputGate.MultiplayerActive)
+        {
+            if (__instance.btn_load != null)
+            {
+                foreach (var label in __instance.btn_load.GetComponentsInChildren<TMP_Text>(true)) MpLocalizedText.Clear(label);
+                foreach (var localizer in __instance.btn_load.GetComponentsInChildren<Localized_Txt>(true)) localizer.RenderLocalizedContent();
+            }
+            return;
+        }
         Refresh(__instance);
         if (__instance.btn_load is null) return;
         foreach (var label in __instance.btn_load.GetComponentsInChildren<TMP_Text>(true))
-            label.text = "重新同步";
+            MpLocalizedText.Set(label, "${ui_resynchronize}");
     }
 
     internal static void Refresh(UI_POP_PauseMenu __instance)

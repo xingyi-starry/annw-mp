@@ -14,19 +14,19 @@ internal static class HandshakeValidator
         if (hello.ProtocolVersion != ProtocolConstants.Version || hello.PluginVersion != pluginVersion ||
             hello.GameFingerprint != gameFingerprint || hello.ContentFingerprint != contentFingerprint)
         {
-            reason = "Version or content fingerprint mismatch.";
+            reason = "${notice_version_or_content_fingerprint_mismatch}";
             return false;
         }
         var suppliedPassword = hello.Password ?? "";
         if (suppliedPassword.Length > MaxPasswordCharacters ||
             !string.Equals(suppliedPassword, expectedPassword ?? "", StringComparison.Ordinal))
         {
-            reason = "房间密码错误。";
+            reason = "${notice_incorrect_password}";
             return false;
         }
         if (displayName.Length == 0 || displayName.Length > 32)
         {
-            reason = "用户名长度必须为 1–32 个字符。";
+            reason = "${ui_username_must_contain_1_32_characters}";
             return false;
         }
         reason = "";

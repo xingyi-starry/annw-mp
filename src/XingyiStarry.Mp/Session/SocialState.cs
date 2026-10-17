@@ -14,12 +14,12 @@ internal sealed class HostSocialState
 
     public ChatEvent CreatePlayerChat(RoomState room, Guid clientId, ChatSend request, out IReadOnlyCollection<Guid> audience)
     {
-        var participant = room.FindParticipant(clientId) ?? throw new InvalidOperationException("参与者不存在。");
+        var participant = room.FindParticipant(clientId) ?? throw new InvalidOperationException("Participant does not exist.");
         var text = Sanitize(request.Text);
-        if (text.Length == 0 || text.Length > 512) throw new InvalidOperationException("聊天内容长度必须为 1–512 个字符。");
+        if (text.Length == 0 || text.Length > 512) throw new InvalidOperationException("Chat messages must contain 1–512 characters.");
         var seat = room.Seats.FirstOrDefault(value => value.ClientId == clientId && value.Connected);
         if (request.Channel == ChatChannel.Team && (!room.MatchStarted || participant.Admission != ParticipantAdmission.Player || seat is null))
-            throw new InvalidOperationException("当前只能使用公共聊天。");
+            throw new InvalidOperationException("Only public chat is available right now.");
         audience = request.Channel == ChatChannel.Team
             ? room.Participants.Where(value => value.Connected && value.Admission == ParticipantAdmission.Player &&
                 room.Seats.Any(seatValue => seatValue.ClientId == value.ClientId && seatValue.Team == seat!.Team)).Select(value => value.ClientId).ToArray()
@@ -44,10 +44,10 @@ internal sealed class HostSocialState
 
     public PingEvent CreatePing(RoomState room, Guid clientId, PingSend request, out IReadOnlyCollection<Guid> audience)
     {
-        var participant = room.FindParticipant(clientId) ?? throw new InvalidOperationException("参与者不存在。");
+        var participant = room.FindParticipant(clientId) ?? throw new InvalidOperationException("Participant does not exist.");
         var seat = room.Seats.FirstOrDefault(value => value.ClientId == clientId && value.Connected);
         if (!room.MatchStarted || participant.Admission != ParticipantAdmission.Player || seat is null)
-            throw new InvalidOperationException("只有参战玩家可以发送标点。");
+            throw new InvalidOperationException("Only active players can send pings.");
         audience = room.Participants.Where(value => value.Connected && value.Admission == ParticipantAdmission.Player &&
             room.Seats.Any(candidate => candidate.ClientId == value.ClientId && candidate.Team == seat.Team)).Select(value => value.ClientId).ToArray();
         var message = new PingEvent { SenderClientId = clientId, SenderName = participant.DisplayName,

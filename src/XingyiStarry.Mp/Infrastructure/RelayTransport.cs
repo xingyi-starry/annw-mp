@@ -16,9 +16,19 @@ internal static class RelayEndpoint
         var text = (value ?? "").Trim();
         var split = text.LastIndexOf(':');
         if (split <= 0 || split == text.Length - 1 || !int.TryParse(text.Substring(split + 1), out var port) || port < 1 || port > 65535)
-            throw new InvalidDataException("中继服务器地址必须使用 host:port 格式。");
+            throw new InvalidDataException("${notice_relay_address_must_use_host_port_format}");
         return (text.Substring(0, split), port);
     }
+    // Only these join rejections are displayed to the player.
+    internal static string JoinNoticeTemplate(string reason) => reason switch
+    {
+        "invalid password" => "${notice_incorrect_password}",
+        "password attempts are rate limited" => "${notice_relay_password_rate_limit}",
+        "room not found" => "${notice_relay_room_missing}",
+        "room is not accepting players" => "${notice_relay_room_not_accepting}",
+        _ => reason
+    };
+
 }
 
 internal sealed class RelayHostTransport : IHostTransport, IRoomDirectoryPublisher
@@ -45,7 +55,7 @@ internal sealed class RelayHostTransport : IHostTransport, IRoomDirectoryPublish
                 MessageType.RelayControlResponse, registration.RequestId, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
             var result = ProtocolCodec.DecodeRelayControlResponse(response.Payload);
             if (!result.Success || !result.ClientId.HasValue)
-                throw new InvalidDataException(result.Reason.Length == 0 ? "中继服务器拒绝创建房间。" : result.Reason);
+                throw new InvalidDataException(result.Reason.Length == 0 ? "The relay rejected room creation." : result.Reason);
             return new RelayHostTransport(registration.RoomId, result.ClientId.Value, socket);
         }
         catch { socket.Dispose(); throw; }
@@ -127,7 +137,7 @@ internal sealed class RelayHostTransport : IHostTransport, IRoomDirectoryPublish
             Delivery = Delivery.RelayControl }, MessageType.RelayControlResponse, update.RequestId,
             TimeSpan.FromSeconds(10)).ConfigureAwait(false);
         var response = ProtocolCodec.DecodeRelayControlResponse(envelope.Payload);
-        if (!response.Success) throw new InvalidDataException(response.Reason.Length == 0 ? "中继服务器拒绝房间更新。" : response.Reason);
+        if (!response.Success) throw new InvalidDataException(response.Reason.Length == 0 ? "The relay rejected the room update." : response.Reason);
     }
     public async Task CloseJoiningAsync(ulong requestId)
     {
@@ -135,7 +145,7 @@ internal sealed class RelayHostTransport : IHostTransport, IRoomDirectoryPublish
             Delivery = Delivery.RelayControl, Payload = ProtocolCodec.EncodeRelayRoomRequest(new RelayRoomRequest { RequestId = requestId, RoomId = roomId }) },
             MessageType.RelayControlResponse, requestId, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
         var result = ProtocolCodec.DecodeRelayControlResponse(response.Payload);
-        if (!result.Success) throw new InvalidDataException(result.Reason.Length == 0 ? "中继服务器未能关闭房间加入。" : result.Reason);
+        if (!result.Success) throw new InvalidDataException(result.Reason.Length == 0 ? "The relay could not close room admissions." : result.Reason);
     }
     public void Dispose()
     {
@@ -181,7 +191,7 @@ internal sealed class RelayClientTransport : IClientTransport
                 Payload = ProtocolCodec.EncodeRelayJoinRoom(new RelayJoinRoomRequest { RequestId = joinRequestId, RoomId = roomId, Password = password }) },
                 MessageType.RelayControlResponse, joinRequestId, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
             var response = ProtocolCodec.DecodeRelayControlResponse(envelope.Payload);
-            if (!response.Success || !response.ClientId.HasValue) throw new InvalidDataException(response.Reason.Length == 0 ? "中继服务器拒绝加入房间。" : response.Reason);
+            if (!response.Success || !response.ClientId.HasValue) throw new InvalidDataException(response.Reason.Length == 0 ? "${notice_the_relay_rejected_joining_the_room}" : RelayEndpoint.JoinNoticeTemplate(response.Reason));
             if (generation != connectionGeneration) throw new OperationCanceledException("A newer connection attempt replaced this one.");
             socket?.Dispose(); socket = nextSocket; nextSocket = null!;
             clientId = response.ClientId.Value;
@@ -199,7 +209,7 @@ internal sealed class RelayClientTransport : IClientTransport
                 Payload = ProtocolCodec.EncodeRelayResumeRoom(new RelayResumeRoomRequest { RequestId = requestId, RoomId = expectedRoomId,
                     ClientId = expectedClientId, MatchId = matchId }) }, MessageType.RelayControlResponse, requestId, TimeSpan.FromSeconds(3)).ConfigureAwait(false);
             var response = ProtocolCodec.DecodeRelayControlResponse(envelope.Payload);
-            if (!response.Success || response.ClientId != expectedClientId) throw new InvalidDataException(response.Reason.Length == 0 ? "中继服务器拒绝快速重连。" : response.Reason);
+            if (!response.Success || response.ClientId != expectedClientId) throw new InvalidDataException(response.Reason.Length == 0 ? "The relay rejected reconnection." : response.Reason);
             if (generation != connectionGeneration) throw new OperationCanceledException("A newer reconnect attempt replaced this one.");
             socket = nextSocket; nextSocket = null!;
             clientId = expectedClientId;
@@ -213,7 +223,7 @@ internal sealed class RelayClientTransport : IClientTransport
         {
             if (value.Delivery == Delivery.RelayControl && value.Type == MessageType.RelayCloseRoom)
             {
-                envelope = new Envelope { Type = MessageType.SessionEnded, Payload = ProtocolCodec.EncodeString("公共房间已关闭。") }; return true;
+                envelope = new Envelope { Type = MessageType.SessionEnded, Payload = ProtocolCodec.EncodeString("${notice_the_public_room_has_closed}") }; return true;
             }
             if ((value.Delivery == Delivery.ToClient || value.Delivery == Delivery.Broadcast) && value.RoomId == roomId)
             { envelope = value; return true; }
@@ -266,7 +276,7 @@ internal sealed class RelaySocket : IDisposable
         {
             client.Close();
             try { await connecting.ConfigureAwait(false); } catch { }
-            throw new TimeoutException("连接中继服务器超时。");
+            throw new TimeoutException("${notice_connection_to_the_relay_timed_out}");
         }
         await connecting.ConfigureAwait(false);
         _ = ReceiveLoopAsync(); _ = HeartbeatLoopAsync();
@@ -288,7 +298,7 @@ internal sealed class RelaySocket : IDisposable
         {
             await SendAsync(request).ConfigureAwait(false);
             var delay = Task.Delay(timeout); var completed = await Task.WhenAny(completion.Task, delay).ConfigureAwait(false);
-            if (completed != completion.Task) throw new TimeoutException("等待中继服务器响应超时。");
+            if (completed != completion.Task) throw new TimeoutException("${notice_timed_out_waiting_for_the_relay_response}");
             return await completion.Task.ConfigureAwait(false);
         }
         finally { pending.TryRemove(key, out _); }
@@ -300,7 +310,7 @@ internal sealed class RelaySocket : IDisposable
             while (!stop.IsCancellationRequested)
             {
                 var envelope = await PacketFraming.ReadAsync(client!.GetStream(), stop.Token).ConfigureAwait(false);
-                if (envelope is null) throw new EndOfStreamException("中继服务器已关闭连接。");
+                if (envelope is null) throw new EndOfStreamException("${notice_the_relay_closed_the_connection}");
                 if (envelope.Type == MessageType.RelayControlResponse || envelope.Type == MessageType.RelayRoomList)
                 {
                     var requestId = ProtocolCodec.DecodeRelayControlRequestId(envelope.Payload, envelope.Type);

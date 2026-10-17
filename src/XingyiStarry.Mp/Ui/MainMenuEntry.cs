@@ -14,6 +14,7 @@ internal static class MainMenuEntry
 
     public static void Ensure(UI_MENU_MainMenu menu)
     {
+        MpText.SetLanguage(Singleton<LAN>.self.cur_language == LocalizedLanguage.zh_CN);
         EnsureVersionText();
         if (menu?.pop_skirmish is null || FindDeep(menu.pop_skirmish.transform, ObjectName) is not null) return;
         var buttons = menu.pop_skirmish.GetComponentsInChildren<Button>(true);
@@ -23,8 +24,8 @@ internal static class MainMenuEntry
         if (clone.transform is RectTransform rect && buttons[0].transform is RectTransform source)
             rect.anchoredPosition = source.anchoredPosition + new Vector2(0, -60);
         var label = clone.GetComponentInChildren<TextMeshProUGUI>(true);
-        if (label is not null) label.text = "联机遭遇战";
-        foreach (var localized in clone.GetComponentsInChildren<Localized_Txt>(true)) Object.Destroy(localized);
+        if (label is not null) MpLocalizedText.Set(label, "${ui_multiplayer_skirmish}");
+        foreach (var localized in clone.GetComponentsInChildren<Localized_Txt>(true)) { localized.enabled = false; Object.Destroy(localized); }
         var button = clone.GetComponent<Button>() ?? clone.GetComponentInChildren<Button>(true);
         button.onClick = new Button.ButtonClickedEvent();
         button.onClick.AddListener(new UnityAction(() => PublicLobbyPanel.Open(menu)));

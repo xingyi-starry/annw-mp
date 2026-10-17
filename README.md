@@ -1,5 +1,7 @@
 # XingyiStarry MP
 
+[简体中文](README.md) | [English](README_en.md)
+
 《湮灭之战》（Tactical Annihilation）的多人联机插件，基于 BepInEx 5。
 
 项目仍处于开发阶段。目前面向游戏 1.0.11，主机与客机必须使用相同的插件和游戏版本。
@@ -10,8 +12,7 @@
 - 原版遭遇战式准备房间、选席和准备流程。
 - 对局中加入、意外断线快速重连、掉线席位 AI 接管。
 - 内置地图与用户地图联机；客机无需预装主机选择的用户地图。
-- 从遭遇战存档创建房间，并支持联机安全边界保存。
-- 主机权威的回合、单位操作、AI 行动和战局随机结果同步。
+- 从遭遇战存档创建房间，并支持联机存档。
 
 带脚本地图可以创建联机房间，但脚本行为尚未完成系统性的多人确定性验证。
 
@@ -24,9 +25,9 @@ Release 提供两个版本：
 
 完全退出游戏，将下载内容中的安装文件解压到 `AnnW.exe` 所在目录并保留目录结构。启动游戏后，从“遭遇战”的联机入口创建或加入房间。
 
-创建房间时需要指定本地 TCP 监听端口。插件会同时监听该端口并向公共 Relay 注册房间；如果 Relay 暂时不可用，只要本地端口可用，房间仍可通过手动连接使用。公共房间列表中的加入操作始终通过 Relay；需要直连时，选择“手动连接”并填写主机地址、端口和房间密码。路由器或系统防火墙可能需要放行所选 TCP 端口。
+可以从公共房间列表加入，也可以选择“手动连接”，填写主机地址、端口和房间密码。创建房间时需要指定本地 TCP 端口；路由器或系统防火墙可能需要放行该端口。公共中继暂时不可用时，仍可通过手动连接加入房间。
 
-房间密码由 Relay 在公共加入阶段校验，并由主机在游戏握手时再次校验，因此手动直连不会绕过密码。当前连接未加密，不要复用重要账户的密码。
+当前连接未加密，房间密码不要复用重要账户的密码。
 
 需要卸载时，双击游戏根目录的 `Uninstall-XingyiStarry-MP.bat`。默认只删除本插件；也可以选择同时删除整个 BepInEx 框架。后一模式会一并删除其他 BepInEx 模组和配置，请谨慎选择。
 
@@ -41,7 +42,7 @@ Release 提供两个版本：
 
 游戏程序集不属于本项目，也不会提交到仓库。日常开发默认使用仓库相邻目录 `..\Tactical Annihilation` 中的合法游戏安装；其他位置可传入 `GameRoot`。
 
-BepInEx 编译引用由 `tools\Ensure-BepInEx.ps1` 从官方 Release 下载。版本与 SHA-256 固定，缓存位于 `.deps\`，不再依赖其他插件仓库或本机已有 BepInEx 安装。
+构建脚本会自动下载并校验官方 BepInEx 依赖，无需另行安装。
 
 ### 构建与测试
 
@@ -60,7 +61,7 @@ dotnet .\tests\XingyiStarry.Mp.Tests\bin\Release\net8.0\XingyiStarry.Mp.Tests.dl
   -OutputDirectory .\releases
 ```
 
-指定 `GameReferencesTag` 时，脚本从私有 GitHub Packages 下载并逐文件校验固定的游戏编译引用，以确保正式构建使用已审阅的程序集版本。维护者需要先用带 `read:packages` 权限的 `gh` 登录，也可以通过 `GH_PACKAGES_TOKEN` 提供令牌。
+正式打包使用 `GameReferencesTag` 指定游戏引用版本。维护者需要先用带 `read:packages` 权限的 `gh` 登录，也可以通过 `GH_PACKAGES_TOKEN` 提供令牌。
 
 一次打包同时生成标准包和 `with-BepInEx` 整合包，并输出各自 SHA-256。打包前应确认版本号、游戏引用和测试结果均已更新。
 
@@ -88,6 +89,6 @@ dotnet .\tests\XingyiStarry.Mp.Tests\bin\Release\net8.0\XingyiStarry.Mp.Tests.dl
 
 ## 许可证
 
-本项目推荐并采用 [MIT License](LICENSE)。它简短、宽松，允许社区修改和再分发，同时保留版权与免责声明，适合独立游戏插件。
+本项目采用 [MIT License](LICENSE)。
 
 第三方组件及整合 BepInEx 包的分发声明见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 和 [licenses](licenses)。

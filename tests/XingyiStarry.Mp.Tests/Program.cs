@@ -31,6 +31,10 @@ internal static class Program
         Test("v18 session messages", SessionMessagesRoundTrip);
         Test("v18 social messages", SocialMessagesRoundTrip);
         Test("host handshake password", HostHandshakePassword);
+        Test("localized template rendering", LocalizationTests.Rendering);
+        Test("template language switch", LocalizationTests.LanguageSwitch);
+        Test("templates survive wire round trips", LocalizationTests.WireRoundTrips);
+        Test("localization catalog coverage", LocalizationTests.CatalogCoverage);
         Test("local host port is required", LocalHostPortIsRequired);
         Test("seatless ready becomes spectator", SeatlessReadyBecomesSpectator);
         Test("mid-match player or spectator admission", MidMatchAdmission);
@@ -47,7 +51,7 @@ internal static class Program
             await TestAsync("C# to Go relay integration", () => RelayIntegration(relayEndpoint));
             await TestAsync("direct and relay host integration", () => MultiStackHostIntegration(relayEndpoint));
         }
-        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 24 : 26)}"); return 0;
+        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 28 : 30)}"); return 0;
     }
 
     private static void HostHandshakePassword()
@@ -58,7 +62,9 @@ internal static class Program
         Equal("玩家", name); Equal("", reason);
         hello.Password = "wrong";
         True(!HandshakeValidator.TryValidate(hello, "plugin", "game", "content", "secret", out _, out reason));
-        Equal("房间密码错误。", reason);
+        Equal("${notice_incorrect_password}", reason);
+        Equal("房间密码错误。", MpText.Render(reason, chinese: true));
+        Equal("Incorrect room password.", MpText.Render(reason, chinese: false));
         hello.Password = "";
         True(HandshakeValidator.TryValidate(hello, "plugin", "game", "content", "", out _, out _));
     }
@@ -500,9 +506,29 @@ internal static class Program
             True(first.Envelope.Type is MessageType.Hello or MessageType.Heartbeat);
             True(second.Envelope.Type is MessageType.Hello or MessageType.Heartbeat);
 
-            await composite.BroadcastAsync(MessageType.ParticipantNotice, new byte[] { 3 });
-            Equal(MessageType.ParticipantNotice, (await ReadClientEnvelope(directClient)).Type);
-            Equal(MessageType.ParticipantNotice, (await ReadClientEnvelope(relayClient)).Type);
+            const string notice = "Alice${notice_joined}";
+            await composite.BroadcastAsync(MessageType.ParticipantNotice, ProtocolCodec.EncodeString(notice));
+            var directNotice = await ReadClientEnvelope(directClient);
+            var relayNotice = await ReadClientEnvelope(relayClient);
+            Equal(MessageType.ParticipantNotice, directNotice.Type);
+            Equal(MessageType.ParticipantNotice, relayNotice.Type);
+            Equal(notice, ProtocolCodec.DecodeString(directNotice.Payload));
+            Equal(notice, ProtocolCodec.DecodeString(relayNotice.Payload));
+            Equal("Alice加入了房间。", MpText.Render(ProtocolCodec.DecodeString(directNotice.Payload), true));
+            Equal("Alice joined the room.", MpText.Render(ProtocolCodec.DecodeString(relayNotice.Payload), false));
+
+            using var wrongPasswordClient = new RelayClientTransport(roomId, "wrong", 203);
+            try
+            {
+                await wrongPasswordClient.ConnectAsync(relayHostName, relayPort);
+                throw new Exception("Relay accepted an incorrect password.");
+            }
+            catch (InvalidDataException ex)
+            {
+                Equal("${notice_incorrect_password}", ex.Message);
+                Equal("房间密码错误。", MpText.Render(ex.Message, true));
+                Equal("Incorrect room password.", MpText.Render(ex.Message, false));
+            }
         }
         finally
         {

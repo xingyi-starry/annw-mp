@@ -86,7 +86,7 @@ internal static class NativeSkirmishLobby
             try { ApplyGuestDraft(room); }
             catch (Exception ex)
             {
-                previewError = "主机地图预览无效：" + ex.Message;
+                previewError = "${ui_invalid_host_map_preview}" + ex.Message;
                 lastAppliedRevision = room.DraftRevision;
                 info.gameObject.SetActive(false);
                 Debug.LogError("[XingyiStarry MP] " + previewError);
@@ -123,7 +123,7 @@ internal static class NativeSkirmishLobby
             var path = AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_map")?.GetValue(value) as string;
             selected = Singleton<BattleAndMapFileSystem>.self.ReadFileWithMeta_Local(path ?? "");
         }
-        if (selected is null) throw new InvalidDataException("原版未能读取地图预览。");
+        if (selected is null) throw new InvalidDataException("The game could not read the map preview.");
         var preview = new DynOb();
         preview.SetKey("terrain", selected.GetKey_Obj("terrain"));
         preview.SetKey("commander", selected.GetKey_Obj("commander"));
@@ -133,9 +133,9 @@ internal static class NativeSkirmishLobby
         if (selected.HasKey("lock_quick_start")) preview.SetKey("lock_quick_start", selected.GetKey_Enum("lock_quick_start", QuickStartSetting.None));
         if (selected.HasKey("expose_diff_flags")) preview.SetKey("expose_diff_flags", selected.GetKey_Int("expose_diff_flags"));
         var plain = Encoding.UTF8.GetBytes(preview.ToString());
-        if (plain.Length > ProtocolConstants.MaxExpandedMapPreviewBytes) throw new InvalidDataException("地图预览数据过大。");
+        if (plain.Length > ProtocolConstants.MaxExpandedMapPreviewBytes) throw new InvalidDataException("Map preview data is too large.");
         var compressed = SnapshotCodec.Compress(plain);
-        if (compressed.Length > ProtocolConstants.MaxMapPreviewBytes) throw new InvalidDataException("地图预览压缩数据过大。");
+        if (compressed.Length > ProtocolConstants.MaxMapPreviewBytes) throw new InvalidDataException("Compressed map preview data is too large.");
         cachedUserMap = userMap; cachedMapPreview = compressed;
         return compressed;
     }
@@ -176,7 +176,7 @@ internal static class NativeSkirmishLobby
         var vertical = root.gameObject.AddComponent<VerticalLayoutGroup>();
         vertical.padding = new RectOffset(8, 8, 6, 6); vertical.spacing = 5f; vertical.childControlWidth = true; vertical.childControlHeight = true; vertical.childForceExpandWidth = true; vertical.childForceExpandHeight = false;
         var statusHost = GameUiKit.Rect("Status", root); statusHost.gameObject.AddComponent<LayoutElement>().preferredHeight = 27f;
-        statusText = GameUiKit.Text(statusHost, "Text", "请选择地图", 16f, TextAlignmentOptions.Center);
+        statusText = GameUiKit.Text(statusHost, "Text", "${ui_select_a_map}", 16f, TextAlignmentOptions.Center);
         actionsRow = GameUiKit.Rect("Actions", root); actionsRow.gameObject.AddComponent<LayoutElement>().preferredHeight = 44f;
         var horizontal = actionsRow.gameObject.AddComponent<HorizontalLayoutGroup>();
         horizontal.spacing = 7f; horizontal.childControlWidth = true; horizontal.childControlHeight = true; horizontal.childForceExpandWidth = true; horizontal.childForceExpandHeight = true;
@@ -202,12 +202,12 @@ internal static class NativeSkirmishLobby
         if (room.MapPreview.Length == 0) return;
         var bytes = SnapshotCodec.Decompress(room.MapPreview, ProtocolConstants.MaxExpandedMapPreviewBytes);
         var preview = DynOb.Parse(Encoding.UTF8.GetString(bytes)) as DynOb;
-        if (preview is null) throw new InvalidDataException("无法解析主机地图预览。");
+        if (preview is null) throw new InvalidDataException("Unable to parse the host map preview.");
         info.gameObject.SetActive(true);
         AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_ob")?.SetValue(info, preview);
         AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_ob_name")?.SetValue(info, room.MapId);
         AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_map")?.SetValue(info, null);
-        if (info.txt_info_title != null) info.txt_info_title.text = room.MapTitle;
+        if (info.txt_info_title != null) MpLocalizedText.Set(info.txt_info_title, room.MapTitle);
         AccessTools.Method(typeof(UI_MENU_LevelSelect_InfoSkm), "RenderForOb")?.Invoke(info, new object[] { preview });
         AccessTools.Method(typeof(UI_MENU_LevelSelect_InfoSkm), "ReadLocks")?.Invoke(info, new object[] { preview });
         AccessTools.Method(typeof(UI_MENU_LevelSelect_InfoSkm), "SetUpOptions")?.Invoke(info, Array.Empty<object>());
@@ -314,7 +314,7 @@ internal static class NativeSkirmishLobby
             room!.Seats.Any(value => value.ClientId == localId && value.PendingActivation);
         var canStart = plugin.IsHost && plugin.CanStartHostedRoom;
         screen.btn_confirm.interactable = canStart || canJoinRunning;
-        SetConfirmLabel(canJoinRunning ? (selectedRunningSeat ? "接管并加入" : "直接加入观战") : plugin.IsClient ? "等待主机开始" : "开始联机对局");
+        SetConfirmLabel(canJoinRunning ? (selectedRunningSeat ? "${ui_take_over_and_join}" : "${ui_join_as_spectator}") : plugin.IsClient ? "${ui_waiting_for_host}" : "${ui_start_multiplayer_match}");
     }
 
     private static void RebuildSeats(XingyiStarryMpPlugin plugin, RoomSnapshot? room)
@@ -323,11 +323,11 @@ internal static class NativeSkirmishLobby
         for (var index = actionsRow.childCount - 1; index >= 0; index--) UnityEngine.Object.Destroy(actionsRow.GetChild(index).gameObject);
         RebuildRowActions(plugin, room);
         var localParticipant = plugin.LocalIdentityId is Guid id ? room?.Participants.Find(value => value.ClientId == id) : null;
-        var cancel = GameUiKit.Button(actionsRow, "CancelSeat", "取消选择", () => XingyiStarryMpPlugin.Instance?.ReleaseSeat());
+        var cancel = GameUiKit.Button(actionsRow, "CancelSeat", "${ui_release_seat}", () => XingyiStarryMpPlugin.Instance?.ReleaseSeat());
         cancel.interactable = plugin.CanReleaseSeat;
         if (room?.MatchStarted != true)
         {
-            var ready = GameUiKit.Button(actionsRow, "Ready", localParticipant?.Ready == true ? "取消准备" : "准备", () => XingyiStarryMpPlugin.Instance?.ToggleReady());
+            var ready = GameUiKit.Button(actionsRow, "Ready", localParticipant?.Ready == true ? "${ui_cancel_ready}" : "${ui_ready_up}", () => XingyiStarryMpPlugin.Instance?.ToggleReady());
             ready.interactable = plugin.CanSetReady;
         }
     }
@@ -353,7 +353,7 @@ internal static class NativeSkirmishLobby
             if (!rowAugmentations.TryGetValue(item, out var augmentation)) augmentation = MountInNativeSlot(item);
             EnsureMounted(augmentation);
             var label = augmentation.Button.GetComponentInChildren<TextMeshProUGUI>(true);
-            if (label != null) label.text = SeatLabel(seat!, room);
+            if (label != null) MpLocalizedText.Set(label, SeatLabel(seat!, room));
             augmentation.Button.interactable = plugin.CanClaimSeat && (!seat!.Connected || seat.ClientId == plugin.LocalIdentityId);
         }
     }
@@ -373,7 +373,7 @@ internal static class NativeSkirmishLobby
             var row = GameUiKit.Rect("Seat" + seat.LobbySlotIndex, root); row.gameObject.AddComponent<LayoutElement>().preferredHeight = 48f;
             var horizontal = row.gameObject.AddComponent<HorizontalLayoutGroup>(); horizontal.spacing = 8f; horizontal.childControlWidth = true; horizontal.childControlHeight = true; horizontal.childForceExpandWidth = false; horizontal.childForceExpandHeight = true;
             var labelHost = GameUiKit.Rect("Label", row); labelHost.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-            GameUiKit.Text(labelHost, "Text", $"P{seat.PlayerIndex + 1} · 队伍 {seat.Team} · {seat.DisplayName}", 18f, TextAlignmentOptions.MidlineLeft);
+            GameUiKit.Text(labelHost, "Text", $"P{seat.PlayerIndex + 1}${{ui_team_3}}{seat.Team} · {seat.DisplayName}", 18f, TextAlignmentOptions.MidlineLeft);
             var slot = seat.LobbySlotIndex; var button = GameUiKit.Button(row, "Select", SeatLabel(seat, plugin.CurrentRoom), () => XingyiStarryMpPlugin.Instance?.ClaimSeat(slot));
             var element = button.gameObject.AddComponent<LayoutElement>(); element.preferredWidth = 132f; element.minWidth = 104f;
             button.interactable = plugin.CanClaimSeat && (!seat.Connected || seat.ClientId == plugin.LocalIdentityId);
@@ -395,7 +395,7 @@ internal static class NativeSkirmishLobby
         slot.enabled = false;
         slot.interactable = false;
 
-        var button = GameUiKit.Button(slot.transform, "XingyiStarryMp_SelectSeat", "选择",
+        var button = GameUiKit.Button(slot.transform, "XingyiStarryMp_SelectSeat", "${ui_select}",
             () => XingyiStarryMpPlugin.Instance?.ClaimSeat(IndexOfItem(item)));
         var buttonRect = button.transform as RectTransform;
         if (buttonRect != null) GameUiKit.Stretch(buttonRect);
@@ -441,14 +441,14 @@ internal static class NativeSkirmishLobby
     private static void RefreshStatus(XingyiStarryMpPlugin plugin, RoomSnapshot? room)
     {
         if (statusText == null) return;
-        if (previewError.Length != 0) { statusText.text = previewError; return; }
+        if (previewError.Length != 0) { MpLocalizedText.Set(statusText, previewError); return; }
         var localId = plugin.LocalIdentityId;
         var local = localId is Guid seatOwner ? room?.Seats.Find(value => value.ClientId == seatOwner) : null;
         var participant = localId is Guid participantId ? room?.Participants.Find(value => value.ClientId == participantId) : null;
-        if (room == null || string.IsNullOrEmpty(room.MapId)) statusText.text = plugin.IsHost ? "请选择地图并设置 Human / AI" : "等待主机选择地图";
-        else if (local == null) statusText.text = room.MatchStarted ? "可选择右侧席位接管，或不选席直接加入观战" : $"未选席（开局后观战） · {(participant?.Ready == true ? "已准备" : "未准备")}";
-        else if (room.MatchStarted) statusText.text = $"已选择 {local.DisplayName} · P{local.LobbySlotIndex + 1}，点击加入游戏后开始同步";
-        else statusText.text = $"{local.DisplayName} · P{local.LobbySlotIndex + 1} · {(participant?.Ready == true ? "已准备" : "未准备")}";
+        if (room == null || string.IsNullOrEmpty(room.MapId)) MpLocalizedText.Set(statusText, plugin.IsHost ? "${ui_select_a_map_and_configure_human_ai_seats}" : "${ui_waiting_for_the_host_to_select_a_map}");
+        else if (local == null) MpLocalizedText.Set(statusText, room.MatchStarted ? "${ui_select_a_seat_on_the_right_to_take}" : $"${{ui_no_seat_selected_spectator_when_the_match_starts}}{(participant?.Ready == true ? "${ui_ready}" : "${ui_not_ready}")}");
+        else if (room.MatchStarted) MpLocalizedText.Set(statusText, $"${{ui_selected}}{local.DisplayName} · P{local.LobbySlotIndex + 1}${{ui_join_to_synchronize}}");
+        else MpLocalizedText.Set(statusText, $"{local.DisplayName} · P{local.LobbySlotIndex + 1} · {(participant?.Ready == true ? "${ui_ready}" : "${ui_not_ready}")}");
     }
 
     private static int SeatSignature(RoomSnapshot? room, Guid? localId)
@@ -511,10 +511,13 @@ internal static class NativeSkirmishLobby
     private static void CleanupUi()
     {
         Active = false;
+        if (info?.txt_info_title != null) MpLocalizedText.Clear(info.txt_info_title);
         foreach (var pair in originalInteractable) if (pair.Key != null) pair.Key.interactable = pair.Value;
         originalInteractable.Clear();
         if (screen?.btn_confirm != null)
         {
+            var label = screen.btn_confirm.GetComponentInChildren<TMP_Text>(true);
+            if (label != null) MpLocalizedText.Clear(label);
             var localized = screen.btn_confirm.GetComponentInChildren<Localized_Txt>(true);
             if (localized != null) { localized.enabled = true; localized.RenderLocalizedContent(); }
         }
@@ -526,7 +529,7 @@ internal static class NativeSkirmishLobby
         cachedMapPreview = null; previewError = "";
     }
 
-    private static string SeatLabel(SeatInfo seat, RoomSnapshot? room) => seat.Defeated ? "已战败" : !seat.Connected ? "选择" :
+    private static string SeatLabel(SeatInfo seat, RoomSnapshot? room) => seat.Defeated ? "${ui_defeated}" : !seat.Connected ? "${ui_select}" :
         $"{seat.DisplayName}{(room?.Participants.Find(value => value.ClientId == seat.ClientId)?.Ready == true ? " ✓" : "")}";
 
     private sealed class SeatSlotAugmentation
@@ -556,7 +559,7 @@ internal static class NativeSkirmishLobby
         var localized = screen.btn_confirm.GetComponentInChildren<Localized_Txt>(true); if (localized != null) localized.enabled = false;
         var text = screen.btn_confirm.GetComponentInChildren<TextMeshProUGUI>(true);
         if (text == null) return;
-        text.text = value;
+        MpLocalizedText.Set(text, value);
         text.alignment = TextAlignmentOptions.Center;
         text.textWrappingMode = TextWrappingModes.NoWrap;
         text.overflowMode = TextOverflowModes.Ellipsis;

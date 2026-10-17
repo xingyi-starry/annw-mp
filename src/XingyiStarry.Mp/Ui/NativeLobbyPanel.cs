@@ -45,18 +45,18 @@ internal static class NativeLobbyPanel
         GameUiKit.Panel(panel);
         var body = GameUiKit.Rect("Body", panel); GameUiKit.Stretch(body); body.offsetMin = new Vector2(36, 28); body.offsetMax = new Vector2(-36, -28);
         var vertical = body.gameObject.AddComponent<VerticalLayoutGroup>(); vertical.spacing = 10f; vertical.childControlWidth = true; vertical.childControlHeight = true; vertical.childForceExpandWidth = true; vertical.childForceExpandHeight = false;
-        AddFixedText(body, "手动连接", 32f, 50f, TextAlignmentOptions.Center);
-        AddFixedText(body, "输入主机地址和端口，直接连接联机房间。", 18f, 38f, TextAlignmentOptions.Center);
-        nameInput = AddInputRow(body, "用户名", XingyiStarryMpPlugin.Instance?.ConfiguredDisplayName ?? Environment.UserName);
-        hostInput = AddInputRow(body, "主机地址", XingyiStarryMpPlugin.Instance?.ConfiguredAddress ?? "127.0.0.1");
-        portInput = AddInputRow(body, "端口", (XingyiStarryMpPlugin.Instance?.ConfiguredPort ?? Protocol.ProtocolConstants.DefaultPort).ToString());
-        passwordInput = AddInputRow(body, "密码", "");
+        AddFixedText(body, "${ui_direct_connection}", 32f, 50f, TextAlignmentOptions.Center);
+        AddFixedText(body, "${notice_enter_the_host_address_and_port_to_connect}", 18f, 38f, TextAlignmentOptions.Center);
+        nameInput = AddInputRow(body, "${ui_username}", XingyiStarryMpPlugin.Instance?.ConfiguredDisplayName ?? Environment.UserName);
+        hostInput = AddInputRow(body, "${ui_host_address}", XingyiStarryMpPlugin.Instance?.ConfiguredAddress ?? "127.0.0.1");
+        portInput = AddInputRow(body, "${ui_port}", (XingyiStarryMpPlugin.Instance?.ConfiguredPort ?? Protocol.ProtocolConstants.DefaultPort).ToString());
+        passwordInput = AddInputRow(body, "${ui_password}", "");
         passwordInput.contentType = TMP_InputField.ContentType.Password;
         var row = GameUiKit.Rect("Actions", body); row.gameObject.AddComponent<LayoutElement>().preferredHeight = 48f;
         var horizontal = row.gameObject.AddComponent<HorizontalLayoutGroup>(); horizontal.spacing = 12f; horizontal.childControlHeight = true; horizontal.childControlWidth = true; horizontal.childForceExpandWidth = true;
-        GameUiKit.Button(row, "Join", "连接房间", OnJoin);
-        GameUiKit.Button(row, "Close", "返回", Close);
-        status = AddFixedText(body, "未连接", 17f, 48f, TextAlignmentOptions.Center);
+        GameUiKit.Button(row, "Join", "${ui_connect}", OnJoin);
+        GameUiKit.Button(row, "Close", "${ui_back}", Close);
+        status = AddFixedText(body, "${status_disconnected}", 17f, 48f, TextAlignmentOptions.Center);
         root.SetActive(false); return true;
     }
 
@@ -79,15 +79,15 @@ internal static class NativeLobbyPanel
     {
         var plugin = ApplyInputs(); if (plugin == null) return;
         var password = passwordInput?.text ?? "";
-        if (password.Length > 64) { if (status != null) status.text = "房间密码不能超过 64 个字符"; return; }
+        if (password.Length > 64) { if (status != null) MpLocalizedText.Set(status, "${ui_room_password_cannot_exceed_64_characters}"); return; }
         waitingForHandshake = true; plugin.Join(plugin.ConfiguredAddress, plugin.ConfiguredPort, password);
     }
 
     private static XingyiStarryMpPlugin? ApplyInputs()
     {
         var plugin = XingyiStarryMpPlugin.Instance; if (plugin == null || nameInput == null || hostInput == null || portInput == null) return null;
-        var name = nameInput.text.Trim(); if (name.Length == 0 || name.Length > 32) { if (status != null) status.text = "用户名长度必须为 1–32 个字符"; return null; }
-        if (!int.TryParse(portInput.text, out var port) || port < 1 || port > 65535) { if (status != null) status.text = "端口必须在 1–65535 之间"; return null; }
+        var name = nameInput.text.Trim(); if (name.Length == 0 || name.Length > 32) { if (status != null) MpLocalizedText.Set(status, "${ui_username_must_contain_1_32_characters}"); return null; }
+        if (!int.TryParse(portInput.text, out var port) || port < 1 || port > 65535) { if (status != null) MpLocalizedText.Set(status, "${ui_port_must_be_between_1_and_65535}"); return null; }
         plugin.ConfiguredDisplayName = name; plugin.ConfiguredAddress = string.IsNullOrWhiteSpace(hostInput.text) ? "127.0.0.1" : hostInput.text.Trim(); plugin.ConfiguredPort = port;
         return plugin;
     }
@@ -101,7 +101,7 @@ internal static class NativeLobbyPanel
         if (source != null) NativeSkirmishLobby.Enter(source);
     }
 
-    private static void Refresh(XingyiStarryMpPlugin? plugin) { if (status != null && plugin != null) status.text = plugin.Status; }
+    private static void Refresh(XingyiStarryMpPlugin? plugin) { if (status != null && plugin != null) MpLocalizedText.Set(status, plugin.Status); }
     private static void Close()
     {
         waitingForHandshake = false;

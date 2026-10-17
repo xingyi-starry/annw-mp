@@ -38,7 +38,7 @@ internal sealed class HostSession : IDisposable
         this.pluginVersion = pluginVersion; this.gameFingerprint = gameFingerprint; this.contentFingerprint = contentFingerprint;
         this.password = password ?? "";
         if (this.password.Length > HandshakeValidator.MaxPasswordCharacters)
-            throw new ArgumentOutOfRangeException(nameof(password), "房间密码不能超过 64 个字符。");
+            throw new ArgumentOutOfRangeException(nameof(password), "Room password cannot exceed 64 characters.");
         LocalHostClientId = localHostClientId ?? Guid.NewGuid();
         this.network = network;
         Room = new RoomState(roomId, maxParticipants);
@@ -70,13 +70,13 @@ internal sealed class HostSession : IDisposable
                 {
                     client.Reconnecting = true; client.ReconnectDeadlineUtc = now.AddSeconds(15);
                     Room.MarkReconnecting(client.ClientId, true); BroadcastRoom();
-                    PublishSystem(SystemEventKind.Disconnected, client.DisplayName + " 连接中断，正在等待重连。");
+                    PublishSystem(SystemEventKind.Disconnected, client.DisplayName + "${notice_disconnected}");
                     log(SessionLogLevel.Info, "Client reconnect grace started: " + client.DisplayName);
                 }
-                else FinalizeClient(client, "退出了房间。", participantLeft, message => log(SessionLogLevel.Info, message));
+                else FinalizeClient(client, "${notice_left}", participantLeft, message => log(SessionLogLevel.Info, message));
             }
             if (!client.Finalized && client.Reconnecting && now >= client.ReconnectDeadlineUtc)
-                FinalizeClient(client, "重连超时，席位已由 AI 接管。", participantLeft, message => log(SessionLogLevel.Info, message));
+                FinalizeClient(client, "${notice_timed_out_reconnecting_ai_has_taken_over_the}", participantLeft, message => log(SessionLogLevel.Info, message));
         }
     }
 
@@ -116,12 +116,12 @@ internal sealed class HostSession : IDisposable
                     ProtocolCodec.EncodeJoinMatchAccepted(new JoinMatchAccepted { SeatId = join.SeatId, Spectator = spectator }));
                 var admittedSeat = join.SeatId.HasValue ? Room.Seats.FirstOrDefault(value => value.SeatId == join.SeatId.Value) : null;
                 PublishSystem(spectator ? SystemEventKind.EnteredSpectator : SystemEventKind.EnteredPlayer,
-                    client.DisplayName + "加入了房间，" + (spectator ? "观战者。" : $"位置{(admittedSeat?.LobbySlotIndex ?? -1) + 1}。"));
+                    client.DisplayName + "${ui_joined_the_room_as}" + (spectator ? "${notice_a_spectator}" : $"${{ui_player}}{(admittedSeat?.LobbySlotIndex ?? -1) + 1}."));
                 BroadcastRoom();
                 _ = SendSnapshotAsync(inbound.Peer);
                 break;
             case MessageType.LeaveSession:
-                FinalizeClient(client, "退出了房间。", participantLeft, _ => { });
+                FinalizeClient(client, "${notice_left}", participantLeft, _ => { });
                 inbound.Peer.Close();
                 break;
             case MessageType.SetReady: Room.SetReady(client.ClientId, ProtocolCodec.DecodeInt64(inbound.Envelope.Payload) != 0); BroadcastRoom(); break;
@@ -143,7 +143,7 @@ internal sealed class HostSession : IDisposable
                 PublishChat(client.ClientId, ProtocolCodec.DecodeChatSend(inbound.Envelope.Payload)); break;
             case MessageType.PingSend:
                 var ping = ProtocolCodec.DecodePingSend(inbound.Envelope.Payload);
-                if (!GameTileData.IsValid(new Inctor2(ping.TileX, ping.TileY))) throw new InvalidDataException("标点不在有效地图格上。");
+                if (!GameTileData.IsValid(new Inctor2(ping.TileX, ping.TileY))) throw new InvalidDataException("Ping is not on a valid map tile.");
                 PublishPing(client.ClientId, ping); break;
             case MessageType.SocialSyncRequest:
                 _ = SendSocialSyncAsync(client, ProtocolCodec.DecodeSocialSyncRequest(inbound.Envelope.Payload)); break;
@@ -166,7 +166,7 @@ internal sealed class HostSession : IDisposable
         _ = network.SendAsync(peer, MessageType.Welcome, ProtocolCodec.EncodeWelcome(new WelcomeMessage { ClientId = record.ClientId, RoomId = Room.RoomId, MatchId = MatchId, LatestFrameId = journal?.Frames.Count ?? 0, Mode = mode }));
         var room = Room.Snapshot(); room.MatchId = MatchId;
         _ = network.SendAsync(peer, MessageType.RoomState, ProtocolCodec.EncodeRoom(room));
-        var notice = cleanName + "加入了房间。";
+        var notice = cleanName + "${notice_joined}";
         PublishSystem(SystemEventKind.Joined, notice);
         participantNotice(notice);
         BroadcastRoom();
@@ -178,7 +178,7 @@ internal sealed class HostSession : IDisposable
             !clientsById.TryGetValue(request.ClientId, out var record) || !record.Reconnecting || record.Finalized ||
             DateTime.UtcNow >= record.ReconnectDeadlineUtc)
         {
-            _ = network.SendAsync(peer, MessageType.ResumeSessionRejected, ProtocolCodec.EncodeString("快速重连身份不存在或已经过期。")); return;
+            _ = network.SendAsync(peer, MessageType.ResumeSessionRejected, ProtocolCodec.EncodeString("${notice_reconnection_identity_does_not_exist_or_has_expired}")); return;
         }
         if (record.Peer is not null) clientsByConnection.Remove(record.Peer.ConnectionId);
         record.Peer = peer; record.Reconnecting = false;
@@ -189,7 +189,7 @@ internal sealed class HostSession : IDisposable
         var room = Room.Snapshot(); room.MatchId = MatchId;
         _ = network.SendAsync(peer, MessageType.RoomState, ProtocolCodec.EncodeRoom(room));
         _ = SendSnapshotAsync(peer);
-        PublishSystem(SystemEventKind.Reconnected, record.DisplayName + " 已重新连接。");
+        PublishSystem(SystemEventKind.Reconnected, record.DisplayName + "${notice_reconnected}");
         BroadcastRoom();
     }
 
@@ -237,7 +237,7 @@ internal sealed class HostSession : IDisposable
     {
         try
         {
-            if (!GameTileData.IsValid(new Inctor2(tileX, tileY))) throw new InvalidDataException("标点不在有效地图格上。");
+            if (!GameTileData.IsValid(new Inctor2(tileX, tileY))) throw new InvalidDataException("Ping is not on a valid map tile.");
             PublishPing(LocalHostClientId, new PingSend { TileX = tileX, TileY = tileY }); reason = ""; return true;
         }
         catch (Exception ex) { reason = ex.Message; return false; }
@@ -288,11 +288,11 @@ internal sealed class HostSession : IDisposable
 
     public void ConfigureSavedGame(DynOb save, StartGameSetting settings)
     {
-        if (settings.players is null || !save.HasKey("commander")) throw new InvalidDataException("存档缺少遭遇战席位信息。");
+        if (settings.players is null || !save.HasKey("commander")) throw new InvalidDataException("The save is missing skirmish seat information.");
         var commander = save.GetKey_Obj("commander");
         var playerObjects = commander.GetKey_List(commander.HasKey("player_list") ? "player_list" : "co_list")
             .OfType<DynOb>().Where(value => value.GetKey_Enum("fraction", Fraction.TEAM1) != Fraction.NEUTRAL).ToList();
-        if (playerObjects.Count == 0) throw new InvalidDataException("存档中没有可用玩家。");
+        if (playerObjects.Count == 0) throw new InvalidDataException("The save contains no available players.");
         var seats = new List<SeatInfo>();
         for (var playerIndex = 0; playerIndex < playerObjects.Count; playerIndex++)
         {
@@ -304,7 +304,7 @@ internal sealed class HostSession : IDisposable
             var seat = new SeatInfo
             {
                 SeatId = Guid.NewGuid(), LobbySlotIndex = lobbySlotIndex, PlayerIndex = playerIndex,
-                DisplayName = "空闲席位", OriginallyHuman = !runtime.GetKey_Bool("ai"), Connected = false, Ready = false,
+                DisplayName = "${ui_unclaimed_seat}", OriginallyHuman = !runtime.GetKey_Bool("ai"), Connected = false, Ready = false,
                 AiControlled = true, Defeated = runtime.GetKey_Bool("wipe_out"), Controller = (int)setting.controller,
                 Team = (int)setting.team, Color = (int)setting.color, Position = setting.pos_ind, PositionRandom = setting.pos_random,
                 ResourceMultiplier = setting.res_percent, AiIntelligence = setting.ai_interlligence, CommanderId = setting.sd_co ?? "",
@@ -313,7 +313,7 @@ internal sealed class HostSession : IDisposable
             if (setting.ps_list is not null) foreach (var passive in setting.ps_list) if (passive is not null) seat.PassiveIds.Add(passive.name);
             seats.Add(seat);
         }
-        var map = save.GetKey_String("map_name"); if (string.IsNullOrWhiteSpace(map)) map = settings.filename ?? "已保存的遭遇战";
+        var map = save.GetKey_String("map_name"); if (string.IsNullOrWhiteSpace(map)) map = settings.filename ?? "${ui_saved_skirmish}";
         Room.ConfigureSavedGame(map, map, (int)settings.fow_type, (int)settings.win_condition, (int)settings.quick_start, settings.diff, seats);
         BroadcastRoom();
     }
@@ -347,7 +347,7 @@ internal sealed class HostSession : IDisposable
         var result = new SeatInfo
         {
             SeatId = Guid.NewGuid(), LobbySlotIndex = slotIndex, PlayerIndex = -1,
-            DisplayName = human ? "空闲真人席位" : "原版 AI", OriginallyHuman = human, Connected = false, Ready = !human, AiControlled = !human,
+            DisplayName = human ? "${ui_unclaimed_human_seat}" : "${ui_ai}", OriginallyHuman = human, Connected = false, Ready = !human, AiControlled = !human,
             Controller = (int)player.controller, Team = (int)player.team, Color = (int)player.color, Position = player.pos_ind, PositionRandom = player.pos_random,
             ResourceMultiplier = player.res_percent, AiIntelligence = player.ai_interlligence, CommanderId = intent?.CommanderId ?? "",
             CommanderMode = intent?.CommanderMode ?? 1, KeepMapCommander = intent?.KeepMapCommander ?? player.keep_map_co, SkillId = intent?.SkillId ?? ""
@@ -450,13 +450,13 @@ internal sealed class HostSession : IDisposable
     {
         if (request.Command.Kind == CommandKind.DebugAddResources || request.Command.Kind == CommandKind.DebugFillSkill)
         { reason = "Debug commands can only originate on the authority host."; return false; }
-        if (!MatchId.HasValue || !Room.MatchStarted) { reason = "Match has not started."; return false; }
+        if (!MatchId.HasValue || !Room.MatchStarted) { reason = "${notice_match_has_not_started}"; return false; }
         var seat = Room.Seats.FirstOrDefault(value => value.SeatId == request.SeatId);
         if (seat is null || !seat.Connected || seat.ClientId != request.ClientId) { reason = "Client does not own the requested seat."; return false; }
-        if (seat.AiControlled) { reason = "Seat is currently controlled by AI."; return false; }
+        if (seat.AiControlled) { reason = "${notice_seat_is_currently_controlled_by_ai}"; return false; }
         if (request.Command.Kind == CommandKind.Surrender) { reason = ""; return true; }
-        if (seat.PlayerIndex != currentPlayerIndex) { reason = "It is not this seat's turn."; return false; }
-        if (request.Round != currentRound) { reason = "Request belongs to another round."; return false; }
+        if (seat.PlayerIndex != currentPlayerIndex) { reason = "${notice_it_is_not_this_seat_s_turn}"; return false; }
+        if (request.Round != currentRound) { reason = "${notice_request_belongs_to_another_round}"; return false; }
         reason = ""; return true;
     }
 

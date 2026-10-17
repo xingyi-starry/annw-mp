@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using ANNW;
 using HarmonyLib;
 using UnityEngine;
+using XingyiStarry.Mp.Ui;
 
 namespace XingyiStarry.Mp.Game;
 
@@ -24,7 +25,7 @@ internal static class NativePingKeyBinding
         _ = InputKeybinding.GetKeyboardBinding(InputAction.Back);
         var defaults = (Dictionary<InputAction, KeyCode>?)AccessTools.Field(typeof(InputKeybinding), "_kbDefault")?.GetValue(null);
         var current = (Dictionary<InputAction, KeyCode>?)AccessTools.Field(typeof(InputKeybinding), "_keyboard")?.GetValue(null);
-        if (defaults is null || current is null) throw new InvalidOperationException("无法注册原版地图标点按键。");
+        if (defaults is null || current is null) throw new InvalidOperationException("Unable to register the map ping key binding.");
         defaults[Action] = KeyCode.R;
         current[Action] = configured;
     }
@@ -49,9 +50,16 @@ internal static class NativePingKeyBindingLabelPatch
 {
     private static void Postfix(UI_KeyBindingItem __instance)
     {
-        if (__instance.action != NativePingKeyBinding.Action) return;
-        if (__instance.text_name is not null) __instance.text_name.text = "地图标点";
-        if (__instance.tip_action is not null) __instance.tip_action.default_tip = "向同队玩家标记地图位置";
+        if (__instance.action != NativePingKeyBinding.Action)
+        {
+            if (__instance.text_name != null) MpLocalizedText.Clear(__instance.text_name);
+            return;
+        }
+        if (__instance.text_name is not null) MpLocalizedText.Bind(__instance.text_name, () =>
+        {
+            if (__instance.tip_action is not null) __instance.tip_action.default_tip = MpText.Render("${ui_mark_a_map_location_for_teammates}");
+            return MpText.Render("${ui_map_ping}");
+        });
     }
 }
 

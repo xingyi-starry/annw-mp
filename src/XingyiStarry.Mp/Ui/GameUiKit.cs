@@ -58,10 +58,13 @@ internal static class GameUiKit
         image.color = color ?? panelColor; return image;
     }
 
-    internal static TextMeshProUGUI Text(Transform parent, string name, string value, float size, TextAlignmentOptions alignment)
+    internal static TextMeshProUGUI Text(Transform parent, string name, string value, float size, TextAlignmentOptions alignment, bool localize = true)
     {
         var rect = Rect(name, parent); Stretch(rect);
-        var text = rect.gameObject.AddComponent<TextMeshProUGUI>(); text.font = font; text.text = value; text.fontSize = size; text.alignment = alignment;
+        var text = rect.gameObject.AddComponent<TextMeshProUGUI>(); text.font = font;
+        if (localize) MpLocalizedText.Set(text, value); else text.text = value;
+        text.fontSize = size; text.alignment = alignment;
+        if (localize) { text.enableAutoSizing = true; text.fontSizeMin = size * 0.65f; text.fontSizeMax = size; }
         text.color = new Color(0.96f, 0.84f, 0.62f, 1f); text.raycastTarget = false; text.overflowMode = TextOverflowModes.Ellipsis;
         return text;
     }
@@ -82,7 +85,7 @@ internal static class GameUiKit
         var button = go.GetComponent<Button>() ?? go.GetComponentInChildren<Button>(true);
         button.onClick = new Button.ButtonClickedEvent(); button.onClick.AddListener(action);
         var text = go.GetComponentInChildren<TextMeshProUGUI>(true) ?? Text(go.transform, "Label", label, 20f, TextAlignmentOptions.Center);
-        text.text = label; text.font = font; text.fontSize = 20f;
+        MpLocalizedText.Set(text, label); text.font = font; text.fontSize = 20f;
         text.enableAutoSizing = true; text.fontSizeMin = 10f; text.fontSizeMax = 20f;
         var layout = go.GetComponent<LayoutElement>() ?? go.AddComponent<LayoutElement>();
         layout.ignoreLayout = false; layout.minHeight = 42f; layout.preferredHeight = 42f; layout.flexibleHeight = 0f;
@@ -104,7 +107,7 @@ internal static class GameUiKit
             var rect = Rect(name, parent); Panel(rect, new Color(0.08f, 0.045f, 0.025f, 1f));
             var viewport = Rect("Text Area", rect); Stretch(viewport); viewport.offsetMin = new Vector2(10, 3); viewport.offsetMax = new Vector2(-10, -3);
             viewport.gameObject.AddComponent<RectMask2D>();
-            var text = Text(viewport, "Text", value, 20f, TextAlignmentOptions.MidlineLeft);
+            var text = Text(viewport, "Text", value, 20f, TextAlignmentOptions.MidlineLeft, localize: false);
             input = rect.gameObject.AddComponent<TMP_InputField>(); input.textViewport = viewport; input.textComponent = text;
         }
         input.text = value; input.lineType = TMP_InputField.LineType.SingleLine;
@@ -114,6 +117,6 @@ internal static class GameUiKit
 
     internal static void SetLabel(Button? button, string value)
     {
-        var text = button?.GetComponentInChildren<TextMeshProUGUI>(true); if (text != null) text.text = value;
+        var text = button?.GetComponentInChildren<TextMeshProUGUI>(true); if (text != null) MpLocalizedText.Set(text, value);
     }
 }

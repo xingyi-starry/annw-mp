@@ -43,8 +43,8 @@ internal sealed class RoomState
 
     public bool TryAddParticipant(Guid clientId, string displayName, out string reason)
     {
-        if (participants.Count >= MaxParticipants) { reason = "房间人数已满。"; return false; }
-        if (participants.Any(value => value.ClientId == clientId)) { reason = "参与者身份重复。"; return false; }
+        if (participants.Count >= MaxParticipants) { reason = "${notice_the_room_is_full}"; return false; }
+        if (participants.Any(value => value.ClientId == clientId)) { reason = "Duplicate participant identity."; return false; }
         participants.Add(new ParticipantInfo { ClientId = clientId, DisplayName = displayName, Connected = true,
             Admission = MatchStarted ? ParticipantAdmission.JoinSelection : ParticipantAdmission.Lobby });
         ParticipantRevision++; reason = ""; return true;
@@ -107,13 +107,13 @@ internal sealed class RoomState
     public bool TryClaimSeat(Guid clientId, string displayName, int lobbySlotIndex, out SeatInfo? claimed, out string reason)
     {
         var participant = FindParticipant(clientId);
-        if (participant is null) { claimed = null; reason = "参与者不存在。"; return false; }
+        if (participant is null) { claimed = null; reason = "Participant does not exist."; return false; }
         if (participant.Admission == ParticipantAdmission.Spectator || participant.Admission == ParticipantAdmission.Player)
-        { claimed = null; reason = "进入战局后不能更换席位。"; return false; }
+        { claimed = null; reason = "Seats cannot be changed after entering the match."; return false; }
         claimed = seats.FirstOrDefault(s => s.LobbySlotIndex == lobbySlotIndex && (SavedGame || MatchStarted || s.OriginallyHuman));
-        if (claimed is null) { reason = "目标不是可选择的席位。"; return false; }
-        if (claimed.Defeated) { reason = "战败席位不能接管。"; return false; }
-        if (claimed.Connected && claimed.ClientId != clientId) { reason = "该席位已被其他玩家占用。"; return false; }
+        if (claimed is null) { reason = "The selected seat is not available."; return false; }
+        if (claimed.Defeated) { reason = "Defeated seats cannot be taken over."; return false; }
+        if (claimed.Connected && claimed.ClientId != clientId) { reason = "This seat is occupied by another player."; return false; }
         var previous = seats.FirstOrDefault(s => s.ClientId == clientId && s.Connected);
         if (previous is not null && previous != claimed)
         {
@@ -168,14 +168,14 @@ internal sealed class RoomState
     public bool AdmitToMatch(Guid clientId, Guid? seatId, out bool spectator, out string reason)
     {
         spectator = false;
-        if (!MatchStarted) { reason = "战局尚未开始。"; return false; }
+        if (!MatchStarted) { reason = "Match has not started."; return false; }
         var participant = FindParticipant(clientId);
         if (participant is null || participant.Admission != ParticipantAdmission.JoinSelection)
-        { reason = "当前连接不在中途加入选择阶段。"; return false; }
+        { reason = "This connection is not selecting a seat for an ongoing match."; return false; }
         if (seatId.HasValue)
         {
             var seat = seats.FirstOrDefault(value => value.SeatId == seatId.Value && value.ClientId == clientId && value.Connected && value.PendingActivation);
-            if (seat is null) { reason = "请先选择可接管席位。"; return false; }
+            if (seat is null) { reason = "Select an available seat first."; return false; }
             participant.SeatId = seat.SeatId; participant.Admission = ParticipantAdmission.Player;
         }
         else
@@ -257,7 +257,7 @@ internal sealed class RoomState
 
     private static void Release(SeatInfo seat)
     {
-        seat.ClientId = null; seat.DisplayName = seat.OriginallyHuman ? "空闲真人席位" : "原版 AI";
+        seat.ClientId = null; seat.DisplayName = seat.OriginallyHuman ? "${ui_unclaimed_human_seat}" : "${ui_ai}";
         seat.Connected = false; seat.Ready = false; seat.AiControlled = true; seat.PendingActivation = false;
     }
 

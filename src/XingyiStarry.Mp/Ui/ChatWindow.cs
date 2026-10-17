@@ -108,15 +108,15 @@ internal static class ChatWindow
         GUILayout.BeginArea(new Rect(4f, HeaderTop, innerWidth, HeaderHeight));
         var titleRect = new Rect((innerWidth - TitleWidth) * 0.5f, 0f, TitleWidth, HeaderHeight);
         HandleTitleGesture(titleRect);
-        GUI.Box(titleRect, collapsed ? "联机房间  ▶" : "联机房间  ▼", GUI.skin.button);
+        GUI.Box(titleRect, collapsed ? MpText.Render("${ui_room}") : MpText.Render("${ui_room_2}"), GUI.skin.button);
         GUILayout.EndArea();
         if (collapsed) { GUI.FocusControl(null); IsTyping = false; GUI.DragWindow(); return; }
         var contentTop = HeaderTop + HeaderHeight + HeaderGap;
         GUILayout.BeginArea(new Rect(4f, contentTop, innerWidth, window.height - contentTop - 18f));
         GUILayout.BeginHorizontal();
-        if (GUILayout.Toggle(!rosterSelected, "聊天", GUI.skin.button, GUILayout.Width(64f))) rosterSelected = false;
+        if (GUILayout.Toggle(!rosterSelected, MpText.Render("${ui_chat}"), GUI.skin.button, GUILayout.Width(64f))) rosterSelected = false;
         GUILayout.FlexibleSpace();
-        if (GUILayout.Toggle(rosterSelected, "玩家", GUI.skin.button, GUILayout.Width(64f))) rosterSelected = true;
+        if (GUILayout.Toggle(rosterSelected, MpText.Render("${ui_players}"), GUI.skin.button, GUILayout.Width(64f))) rosterSelected = true;
         GUILayout.EndHorizontal();
         if (rosterSelected) { GUI.FocusControl(null); IsTyping = false; DrawRoster(plugin.CurrentRoom); }
         else DrawChat(plugin);
@@ -167,8 +167,8 @@ internal static class ChatWindow
         chatScroll = GUILayout.BeginScrollView(chatScroll, GUI.skin.box, GUILayout.ExpandHeight(true));
         foreach (var message in plugin.CurrentChatHistory.OrderBy(value => value.SocialSeq))
         {
-            var prefix = message.Kind == ChatKind.System ? "[系统] " : message.Channel == ChatChannel.Team ? "[队内] " : "[公共] ";
-            var text = message.Kind == ChatKind.System ? prefix + message.Text : prefix + message.SenderName + "：" + message.Text;
+            var prefix = message.Kind == ChatKind.System ? MpText.Render("${ui_system_2}") : message.Channel == ChatChannel.Team ? MpText.Render("${ui_team}") : MpText.Render("${ui_public}");
+            var text = message.Kind == ChatKind.System ? prefix + MpText.Render(message.Text) : prefix + message.SenderName + MpText.Render("${ui_colon}") + message.Text;
             var previous = GUI.contentColor;
             if (message.Kind == ChatKind.System) GUI.contentColor = new Color(0.85f, 0.85f, 0.85f);
             else if (message.SenderClientId == plugin.LocalIdentityId) GUI.contentColor = new Color(0.55f, 0.86f, 1f);
@@ -183,7 +183,7 @@ internal static class ChatWindow
         if (!canTeam) channel = ChatChannel.Public;
         GUILayout.BeginHorizontal();
         GUI.enabled = canTeam;
-        if (GUILayout.Button(channel == ChatChannel.Team ? "队内" : "公共", compactButtonStyle!, GUILayout.Width(58f)))
+        if (GUILayout.Button(channel == ChatChannel.Team ? MpText.Render("${ui_team_2}") : MpText.Render("${ui_public_2}"), compactButtonStyle!, GUILayout.Width(58f)))
             channel = channel == ChatChannel.Public ? ChatChannel.Team : ChatChannel.Public;
         GUI.enabled = true;
         var enterPressed = GUI.GetNameOfFocusedControl() == "XingyiStarryMpChatInput" &&
@@ -192,7 +192,7 @@ internal static class ChatWindow
         GUI.SetNextControlName("XingyiStarryMpChatInput");
         input = GUILayout.TextField(input, 512, inputStyle!, GUILayout.ExpandWidth(true));
         IsTyping = GUI.GetNameOfFocusedControl() == "XingyiStarryMpChatInput";
-        var submit = GUILayout.Button("发送", compactButtonStyle!, GUILayout.Width(58f));
+        var submit = GUILayout.Button(MpText.Render("${ui_send}"), compactButtonStyle!, GUILayout.Width(58f));
         if (enterPressed) { submit = true; Event.current.Use(); }
         if (submit) Submit(plugin);
         GUILayout.EndHorizontal();
@@ -207,11 +207,11 @@ internal static class ChatWindow
             foreach (var participant in room.Participants.OrderByDescending(value => value.IsHost).ThenBy(value => value.DisplayName))
             {
                 var seat = room.Seats.Find(value => value.ClientId == participant.ClientId);
-                var state = !participant.Connected ? participant.Reconnecting ? "重连中" : "离线" : !room.MatchStarted
-                    ? participant.Ready ? "已准备" : "未准备"
-                    : participant.Admission == ParticipantAdmission.Spectator ? "观战者" : participant.Admission == ParticipantAdmission.JoinSelection ? "选择中" : seat?.Defeated == true ? "已战败" : "存活";
-                var position = seat is null ? "未选位置" : $"位置 {seat.LobbySlotIndex + 1} · 队伍 {seat.Team + 1}";
-                GUILayout.Label($"{(participant.IsHost ? "★" : "•")} {participant.DisplayName}    {position}    [{state}]", messageStyle!);
+                var state = !participant.Connected ? participant.Reconnecting ? "${ui_reconnecting_2}" : "${ui_offline}" : !room.MatchStarted
+                    ? participant.Ready ? "${ui_ready}" : "${ui_not_ready}"
+                    : participant.Admission == ParticipantAdmission.Spectator ? "${ui_spectator}" : participant.Admission == ParticipantAdmission.JoinSelection ? "${ui_selecting}" : seat?.Defeated == true ? "${ui_defeated}" : "${ui_alive}";
+                var position = seat is null ? MpText.Render("${ui_no_seat_selected}") : MpText.Render($"${{ui_seat}}{seat.LobbySlotIndex + 1}${{ui_team_3}}{seat.Team + 1}");
+                GUILayout.Label($"{(participant.IsHost ? "★" : "•")} {participant.DisplayName}    {position}    [{MpText.Render(state)}]", messageStyle!);
             }
         }
         GUILayout.EndScrollView();

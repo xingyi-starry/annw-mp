@@ -64,7 +64,7 @@ internal sealed class ClientSession : IDisposable
     {
         while (network.TryDequeueError(out var error))
         {
-            ConnectionLost = true; ConnectionError = error?.Message ?? "连接已关闭"; log(SessionLogLevel.Warning, "Network client: " + ConnectionError);
+            ConnectionLost = true; ConnectionError = error?.Message ?? "Connection closed"; log(SessionLogLevel.Warning, "Network client: " + ConnectionError);
         }
         while (network.TryDequeue(out var envelope) && envelope is not null)
         {
@@ -85,7 +85,7 @@ internal sealed class ClientSession : IDisposable
                         break;
                     case MessageType.ResumeSessionAccepted:
                         var resumed = ProtocolCodec.DecodeResumeSessionAccepted(envelope.Payload);
-                        if (ClientId != resumed.ClientId || matchId != resumed.MatchId) throw new InvalidDataException("快速重连身份响应不匹配。");
+                        if (ClientId != resumed.ClientId || matchId != resumed.MatchId) throw new InvalidDataException("Reconnection identity response mismatch.");
                         ConnectionLost = false; ConnectionError = ""; ReconnectAcceptedGeneration++; IsCaughtUp = false;
                         _ = RequestSocialSyncAsync();
                         break;
@@ -222,7 +222,7 @@ internal sealed class ClientSession : IDisposable
 
     public async Task ReconnectAttemptAsync(ulong requestId)
     {
-        if (!ClientId.HasValue || !matchId.HasValue) throw new InvalidOperationException("没有可恢复的联机会话。");
+        if (!ClientId.HasValue || !matchId.HasValue) throw new InvalidOperationException("No multiplayer session is available to resume.");
         await network.ReconnectAsync(connectedHost, connectedPort, sessionRoomId, ClientId.Value, matchId.Value, requestId).ConfigureAwait(false);
         await network.SendAsync(MessageType.ResumeSession, ProtocolCodec.EncodeResumeSession(new ResumeSessionRequest
             { RoomId = sessionRoomId, MatchId = matchId.Value, ClientId = ClientId.Value,

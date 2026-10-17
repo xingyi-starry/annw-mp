@@ -15,7 +15,7 @@ internal sealed class GameCommandExecutor
     public string? Validate(GameCommand command)
     {
         if (GS_Battle.self is null || !GS_Battle.self.game_running) return "Battle is not running.";
-        if (IsBusy || GS_Battle.self.unit_busy) return "Another operation is running.";
+        if (IsBusy || GS_Battle.self.unit_busy) return "${notice_another_operation_is_running}";
         if (command.Kind == CommandKind.DebugAddResources || command.Kind == CommandKind.DebugFillSkill)
         {
             if (command.DebugPlayerIndex < -1 || command.DebugPlayerIndex >= GS_Battle.self.all_player.players.Count)
@@ -34,7 +34,7 @@ internal sealed class GameCommandExecutor
         if (command.Kind == CommandKind.Surrender)
         {
             if (command.TargetX < 0 || command.TargetX >= GS_Battle.self.all_player.players.Count) return "Surrender player index is invalid.";
-            if (GS_Battle.self.all_player.players[command.TargetX].defeated) return "Player has already been defeated.";
+            if (GS_Battle.self.all_player.players[command.TargetX].defeated) return "${notice_player_has_already_been_defeated}";
             return null;
         }
         if (command.Kind == CommandKind.EndTurn || command.Kind == CommandKind.TurnAdvance || command.Kind == CommandKind.UndoMove || command.Kind == CommandKind.Skill || command.Kind == CommandKind.AutoGuideCancel) return null;
@@ -43,17 +43,17 @@ internal sealed class GameCommandExecutor
         {
             if (id < int.MinValue || id > int.MaxValue) return "Unit id is outside the game range.";
             var unit = GS_Battle.self.all_unit.GetUnitByID((int)id);
-            if (unit is null) return "Unit does not exist: " + id;
-            if (unit.player != GS_Battle.self.cur_player) return "Unit is not owned by the current player: " + id;
+            if (unit is null) return "${ui_unit_does_not_exist}" + id;
+            if (unit.player != GS_Battle.self.cur_player) return "${ui_unit_is_not_owned_by_the_current_player}" + id;
             if ((command.Kind == CommandKind.Move || command.Kind == CommandKind.Stay) && unit.moved)
-                return "Unit cannot move again this turn: " + id;
+                return "${ui_unit_cannot_move_again_this_turn}" + id;
         }
         if (command.Kind == CommandKind.Move && (command.UnitTargetXs.Length != command.UnitIds.Length || command.UnitTargetYs.Length != command.UnitIds.Length)) return "Move target count mismatch.";
         if (command.Kind == CommandKind.SelfDestruct)
         {
             if (command.UnitIds.Length != 1) return "Self-destruct must contain exactly one unit.";
             var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
-            if (unit.dying || !GameAPI.self.CanDoSelfDestruct(unit)) return "Original self-destruct validation rejected the command.";
+            if (unit.dying || !GameAPI.self.CanDoSelfDestruct(unit)) return "${notice_original_self_destruct_validation_rejected_the_command}";
         }
         if (command.Kind == CommandKind.AiUnitAction)
         {
@@ -72,23 +72,23 @@ internal sealed class GameCommandExecutor
                 if (tile is null) return "Target tile is invalid.";
                 var unit = GS_Battle.self.all_unit.GetUnitByID((int)id);
                 var action = unit.GetAction((ActionCate)command.ActionCategory);
-                if (action is null) return "Unit does not have the requested action.";
-                if (unit.actioned && !action.AlwaysCanDo) return "Unit has already acted this turn: " + id;
+                if (action is null) return "${notice_unit_does_not_have_the_requested_action}";
+                if (unit.actioned && !action.AlwaysCanDo) return "${ui_unit_has_already_acted_this_turn}" + id;
                 if (!string.IsNullOrEmpty(command.TemplateId)) action.train_template = UnitTemplate.Acquire(command.TemplateId);
-                if (action.CanDoAction(tile) != REASON_CANTDO.OK || !action.CanAfford(tile)) return "Original action validation rejected the command.";
+                if (action.CanDoAction(tile) != REASON_CANTDO.OK || !action.CanAfford(tile)) return "${notice_original_action_validation_rejected_the_command}";
             }
         }
         if (command.Kind == CommandKind.EquipmentMoveAction)
         {
             if (command.UnitIds.Length != 1) return "Equipment move action must contain exactly one unit.";
             var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
-            if (unit.actioned || unit.moved) return "Unit cannot perform another move action this turn: " + command.UnitIds[0];
+            if (unit.actioned || unit.moved) return "${ui_unit_cannot_perform_another_move_action_this_turn}" + command.UnitIds[0];
         }
         if (command.Kind == CommandKind.BuildWithMove)
         {
             if (command.UnitIds.Length != 1) return "Build-with-move must contain exactly one unit.";
             var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
-            if (unit.actioned || unit.moved) return "Unit cannot build after moving or acting this turn: " + command.UnitIds[0];
+            if (unit.actioned || unit.moved) return "${ui_unit_cannot_build_after_moving_or_acting_this}" + command.UnitIds[0];
         }
         return null;
     }
@@ -111,14 +111,14 @@ internal sealed class GameCommandExecutor
 
     public void StartEquipmentMoveResolution(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
     {
-        if (IsBusy) { failed(new InvalidOperationException("Another operation is running.")); return; }
+        if (IsBusy) { failed(new InvalidOperationException("${notice_another_operation_is_running}")); return; }
         IsBusy = true;
         GameController.self.StartCoroutine(RunInner(command, ExecuteEquipmentMoveResolution(command), origin, completed, failed), "XingyiStarryMpMoveResolution");
     }
 
     public void StartBuildMoveResolution(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
     {
-        if (IsBusy) { failed(new InvalidOperationException("Another operation is running.")); return; }
+        if (IsBusy) { failed(new InvalidOperationException("${notice_another_operation_is_running}")); return; }
         IsBusy = true;
         GameController.self.StartCoroutine(RunInner(command, ExecuteBuildMoveResolution(command), origin, completed, failed), "XingyiStarryMpBuildResolution");
     }
