@@ -28,11 +28,13 @@ internal static class ChatWindow
     private static bool visible;
     private static bool collapsed;
     private static bool rosterSelected;
+    private static bool? pendingCollapsed;
+    private static bool? pendingRosterSelected;
     private static bool scrollToBottom;
-    private static bool titlePressed;
+    private static int gestureControlId;
+    private static bool resetGestureCapture;
     private static float titleDragDistance;
     private static Vector2 pendingWindowDrag;
-    private static bool resizePressed;
     private static Vector2 pendingWindowResize;
     private static GUIStyle? messageStyle;
     private static GUIStyle? inputStyle;
@@ -73,7 +75,16 @@ internal static class ChatWindow
 
     internal static void Draw(XingyiStarryMpPlugin plugin)
     {
-        if (!visible) return;
+        if (resetGestureCapture) { ReleaseGestureCapture(); resetGestureCapture = false; }
+        if (!visible) { ReleaseGestureCapture(); return; }
+        // Keep the same control tree from Layout through input and Repaint. Applying
+        // a tab/collapse change inside a mouse event can invalidate layout and control IDs.
+        if (Event.current.type == EventType.Layout)
+        {
+            if (pendingCollapsed.HasValue) collapsed = pendingCollapsed.Value;
+            if (pendingRosterSelected.HasValue) rosterSelected = pendingRosterSelected.Value;
+            pendingCollapsed = null; pendingRosterSelected = null;
+        }
         window.width = expandedSize.x; window.height = collapsed ? CollapsedHeight : expandedSize.y;
         window.x = Mathf.Clamp(window.x, 0f, Mathf.Max(0f, Screen.width - window.width));
         window.y = Mathf.Clamp(window.y, 0f, Mathf.Max(0f, Screen.height - window.height));
@@ -95,70 +106,98 @@ internal static class ChatWindow
     internal static void Reset()
     {
         visible = false; collapsed = false; rosterSelected = false; scrollToBottom = false; input = "";
+        // Reset can run from Update; release native GUI capture in the next OnGUI.
+        resetGestureCapture = true;
+        pendingCollapsed = null; pendingRosterSelected = null;
         channel = ChatChannel.Public; lastSeq = 0; chatScroll = Vector2.zero; rosterScroll = Vector2.zero;
-        titlePressed = false; titleDragDistance = 0f; pendingWindowDrag = Vector2.zero;
-        resizePressed = false; pendingWindowResize = Vector2.zero;
+        titleDragDistance = 0f; pendingWindowDrag = Vector2.zero;
+        pendingWindowResize = Vector2.zero;
         expandedSize = new Vector2(DefaultWidth, DefaultHeight);
         IsPointerOver = false; IsTyping = false;
     }
 
     private static void DrawWindow(XingyiStarryMpPlugin plugin)
     {
+        // Allocate gesture IDs before the variable chat/roster controls so capture
+        // remains stable when the page or its content changes.
+        var titleControlId = GUIUtility.GetControlID(WindowId + 1, FocusType.Passive);
+        var resizeControlId = GUIUtility.GetControlID(WindowId + 2, FocusType.Passive);
+        if (Event.current.type == EventType.Layout && (collapsed || rosterSelected)) ReleaseChatFocus();
         var innerWidth = window.width - 8f;
         GUILayout.BeginArea(new Rect(4f, HeaderTop, innerWidth, HeaderHeight));
         var titleRect = new Rect((innerWidth - TitleWidth) * 0.5f, 0f, TitleWidth, HeaderHeight);
-        HandleTitleGesture(titleRect);
+        HandleTitleGesture(titleRect, titleControlId);
         GUI.Box(titleRect, collapsed ? MpText.Render("${ui_room}") : MpText.Render("${ui_room_2}"), GUI.skin.button);
         GUILayout.EndArea();
-        if (collapsed) { GUI.FocusControl(null); IsTyping = false; GUI.DragWindow(); return; }
+        if (collapsed) { IsTyping = false; GUI.DragWindow(); return; }
         var contentTop = HeaderTop + HeaderHeight + HeaderGap;
         GUILayout.BeginArea(new Rect(4f, contentTop, innerWidth, window.height - contentTop - 18f));
         GUILayout.BeginHorizontal();
-        if (GUILayout.Toggle(!rosterSelected, MpText.Render("${ui_chat}"), GUI.skin.button, GUILayout.Width(64f))) rosterSelected = false;
+        if (GUILayout.Toggle(!rosterSelected, MpText.Render("${ui_chat}"), GUI.skin.button, GUILayout.Width(64f)) && rosterSelected) pendingRosterSelected = false;
         GUILayout.FlexibleSpace();
-        if (GUILayout.Toggle(rosterSelected, MpText.Render("${ui_players}"), GUI.skin.button, GUILayout.Width(64f))) rosterSelected = true;
+        if (GUILayout.Toggle(rosterSelected, MpText.Render("${ui_players}"), GUI.skin.button, GUILayout.Width(64f)) && !rosterSelected) pendingRosterSelected = true;
         GUILayout.EndHorizontal();
-        if (rosterSelected) { GUI.FocusControl(null); IsTyping = false; DrawRoster(plugin.CurrentRoom); }
+        if (rosterSelected) { IsTyping = false; DrawRoster(plugin.CurrentRoom); }
         else DrawChat(plugin);
         GUILayout.EndArea();
-        HandleResizeGesture(new Rect(window.width - 18f, window.height - 18f, 16f, 16f));
+        HandleResizeGesture(new Rect(window.width - 18f, window.height - 18f, 16f, 16f), resizeControlId);
         GUI.DragWindow();
     }
 
-    private static void HandleResizeGesture(Rect resizeRect)
+    private static void ReleaseChatFocus()
+    {
+        // Release only our text field, without changing focus during mouse gestures.
+        if (GUI.GetNameOfFocusedControl() == "XingyiStarryMpChatInput") GUI.FocusControl(null);
+        IsTyping = false;
+    }
+
+    private static void ReleaseGestureCapture()
+    {
+        if (gestureControlId == 0) return;
+        if (GUIUtility.hotControl == gestureControlId) GUIUtility.hotControl = 0;
+        gestureControlId = 0;
+    }
+
+    private static void HandleResizeGesture(Rect resizeRect, int controlId)
     {
         GUI.Label(resizeRect, "◢");
         var current = Event.current;
+        var eventType = current.GetTypeForControl(controlId);
+        if (eventType == EventType.Ignore && GUIUtility.hotControl == controlId) { ReleaseGestureCapture(); return; }
         if (current.button != 0) return;
-        if (current.type == EventType.MouseDown && resizeRect.Contains(current.mousePosition))
+        if (eventType == EventType.MouseDown && GUIUtility.hotControl == 0 && resizeRect.Contains(current.mousePosition))
         {
-            resizePressed = true; current.Use(); return;
+            GUIUtility.hotControl = controlId; gestureControlId = controlId; current.Use(); return;
         }
-        if (current.type == EventType.MouseDrag && resizePressed)
+        if (GUIUtility.hotControl != controlId) return;
+        if (eventType == EventType.MouseDrag)
         {
             pendingWindowResize += current.delta; current.Use(); return;
         }
-        if (current.type != EventType.MouseUp || !resizePressed) return;
-        resizePressed = false; current.Use();
+        if (eventType != EventType.MouseUp) return;
+        ReleaseGestureCapture(); current.Use();
     }
 
-    private static void HandleTitleGesture(Rect titleRect)
+    private static void HandleTitleGesture(Rect titleRect, int controlId)
     {
         var current = Event.current;
+        var eventType = current.GetTypeForControl(controlId);
+        if (eventType == EventType.Ignore && GUIUtility.hotControl == controlId) { ReleaseGestureCapture(); titleDragDistance = 0f; return; }
         if (current.button != 0) return;
-        if (current.type == EventType.MouseDown && titleRect.Contains(current.mousePosition))
+        if (eventType == EventType.MouseDown && GUIUtility.hotControl == 0 && titleRect.Contains(current.mousePosition))
         {
-            titlePressed = true; titleDragDistance = 0f; current.Use(); return;
+            GUIUtility.hotControl = controlId; gestureControlId = controlId; titleDragDistance = 0f; current.Use(); return;
         }
-        if (current.type == EventType.MouseDrag && titlePressed)
+        if (GUIUtility.hotControl != controlId) return;
+        if (eventType == EventType.MouseDrag)
         {
             pendingWindowDrag += current.delta;
             titleDragDistance += current.delta.magnitude;
             current.Use(); return;
         }
-        if (current.type != EventType.MouseUp || !titlePressed) return;
-        if (titleDragDistance < 3f && titleRect.Contains(current.mousePosition)) collapsed = !collapsed;
-        titlePressed = false; titleDragDistance = 0f; current.Use();
+        if (eventType != EventType.MouseUp) return;
+        if (titleDragDistance < 3f && titleRect.Contains(current.mousePosition)) pendingCollapsed = !collapsed;
+        ReleaseGestureCapture(); titleDragDistance = 0f; current.Use();
     }
 
     private static void DrawChat(XingyiStarryMpPlugin plugin)
