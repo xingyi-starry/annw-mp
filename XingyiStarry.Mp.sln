@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -7,8 +7,6 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XingyiStarry.Mp", "src\XingyiStarry.Mp\XingyiStarry.Mp.csproj", "{053290A1-50F6-4812-920D-C82789192A80}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XingyiStarry.Mp.Tests", "tests\XingyiStarry.Mp.Tests\XingyiStarry.Mp.Tests.csproj", "{4AA7BC5D-3F67-4C4D-8D11-F71FA6A812CF}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XingyiStarry.Mp.EarlyPatcher", "src\XingyiStarry.Mp.EarlyPatcher\XingyiStarry.Mp.EarlyPatcher.csproj", "{D4B47A25-A813-46ED-82C2-F340444205EC}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XingyiStarry.Mp.DebugTools", "src\XingyiStarry.Mp.DebugTools\XingyiStarry.Mp.DebugTools.csproj", "{6324F816-6CF2-4BCE-AF6C-4D29A527677A}"
 EndProject
@@ -30,10 +28,6 @@ Global
 		{4AA7BC5D-3F67-4C4D-8D11-F71FA6A812CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4AA7BC5D-3F67-4C4D-8D11-F71FA6A812CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4AA7BC5D-3F67-4C4D-8D11-F71FA6A812CF}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D4B47A25-A813-46ED-82C2-F340444205EC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D4B47A25-A813-46ED-82C2-F340444205EC}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D4B47A25-A813-46ED-82C2-F340444205EC}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D4B47A25-A813-46ED-82C2-F340444205EC}.Release|Any CPU.Build.0 = Release|Any CPU
 		{6324F816-6CF2-4BCE-AF6C-4D29A527677A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{6324F816-6CF2-4BCE-AF6C-4D29A527677A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6324F816-6CF2-4BCE-AF6C-4D29A527677A}.Release|Any CPU.ActiveCfg = Release|Any CPU

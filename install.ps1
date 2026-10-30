@@ -14,9 +14,8 @@ foreach ($relative in $required) {
 $coreTarget = Join-Path $GameRoot 'BepInEx\core'
 $pluginTarget = Join-Path $GameRoot 'BepInEx\plugins\XingyiStarry.Mp'
 $debugToolsTarget = Join-Path $GameRoot 'BepInEx\plugins\XingyiStarry.Mp.DebugTools'
-$patcherTarget = Join-Path $GameRoot 'BepInEx\patchers'
 $configTarget = Join-Path $GameRoot 'BepInEx\config'
-New-Item -ItemType Directory -Force -Path $coreTarget, $pluginTarget, $debugToolsTarget, $patcherTarget, $configTarget | Out-Null
+New-Item -ItemType Directory -Force -Path $coreTarget, $pluginTarget, $debugToolsTarget, $configTarget | Out-Null
 Get-ChildItem -File -LiteralPath (Join-Path $BepInExSource 'BepInEx\core') | ForEach-Object {
     $target = Join-Path $coreTarget $_.Name
     if (-not (Test-Path -LiteralPath $target)) { Copy-Item -LiteralPath $_.FullName -Destination $target }
@@ -38,9 +37,5 @@ if ([string]::IsNullOrWhiteSpace($ArtifactsPath)) {
     $debugToolsSource = Join-Path $ArtifactsPath 'bin\XingyiStarry.Mp.DebugTools\release\XingyiStarry.Mp.DebugTools.dll'
 }
 Copy-Item -Force -LiteralPath $debugToolsSource -Destination $debugToolsTarget
-$patcherFile = Join-Path $patcherTarget 'XingyiStarry.Mp.EarlyPatcher.dll'
-Copy-Item -Force -LiteralPath (Join-Path $PSScriptRoot 'dist\BepInEx\patchers\XingyiStarry.Mp.EarlyPatcher.dll') -Destination $patcherFile
-New-Item -ItemType File -Force -Path (Join-Path $GameRoot 'XingyiStarry.Mp.NoSteam') | Out-Null
 Write-Host "Installed XingyiStarry MP to $pluginTarget"
 Write-Host "Installed development DebugTools to $debugToolsTarget"
-Write-Host "Installed development Steam bypass patch and marker to $GameRoot"

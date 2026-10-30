@@ -152,26 +152,70 @@ internal static class MultiplayerIdleButtonsPatch
 }
 
 [HarmonyPatch(typeof(UI_POP_AITurn), "Update")]
-internal static class AiTurnSkipButtonsPatch
+internal static class AiTurnPlaybackButtonsPatch
 {
+    private static void Prefix() => MultiplayerAiPlaybackPatch.Normalize();
+
     private static void Postfix(UI_POP_AITurn __instance)
     {
         if (!InputGate.MultiplayerActive) return;
         if (__instance.btn_skip_cur is not null) __instance.btn_skip_cur.interactable = false;
         if (__instance.btn_skip_all is not null) __instance.btn_skip_all.interactable = false;
+        if (__instance.btn_cancel is not null) __instance.btn_cancel.interactable = false;
+        Disable(__instance.tab_pause);
+        Disable(__instance.tab_play);
+        Disable(__instance.tab_fast);
+        Disable(__instance.tab_skip_unrelated);
+        Disable(__instance.tab_skip_nonbattle);
+    }
+
+    private static void Disable(UI_TAB_BTN? tab)
+    {
+        if (tab is null) return;
+        var button = tab.btn ?? tab.GetComponent<Button>();
+        if (button is not null) button.interactable = false;
     }
 }
 
 [HarmonyPatch]
-internal static class AiTurnSkipClickPatch
+internal static class AiTurnPlaybackClickPatch
 {
     private static System.Collections.Generic.IEnumerable<System.Reflection.MethodBase> TargetMethods()
     {
         yield return AccessTools.Method(typeof(UI_POP_AITurn), nameof(UI_POP_AITurn.OnClick_Skip_Current));
         yield return AccessTools.Method(typeof(UI_POP_AITurn), nameof(UI_POP_AITurn.OnClick_Skip));
+        yield return AccessTools.Method(typeof(UI_POP_AITurn), nameof(UI_POP_AITurn.OnClick_Cancel));
+        yield return AccessTools.Method(typeof(UI_POP_AITurn), nameof(UI_POP_AITurn.OnClick_Pause));
+        yield return AccessTools.Method(typeof(UI_POP_AITurn), nameof(UI_POP_AITurn.OnClick_Play));
+        yield return AccessTools.Method(typeof(UI_POP_AITurn), nameof(UI_POP_AITurn.OnClick_Fast));
+        yield return AccessTools.Method(typeof(UI_POP_AITurn), nameof(UI_POP_AITurn.OnClick_ToggleSkipUnrelated));
+        yield return AccessTools.Method(typeof(UI_POP_AITurn), nameof(UI_POP_AITurn.OnClick_ToggleSkipNonBattle));
     }
 
     private static bool Prefix() => !InputGate.MultiplayerActive;
+}
+
+[HarmonyPatch]
+internal static class MultiplayerAiPlaybackPatch
+{
+    private static System.Collections.Generic.IEnumerable<System.Reflection.MethodBase> TargetMethods()
+    {
+        yield return AccessTools.PropertyGetter(typeof(GS_Battle), nameof(GS_Battle.ai_playback_paused));
+        yield return AccessTools.PropertyGetter(typeof(GS_Battle), nameof(GS_Battle.ai_playback_wait_scale));
+        yield return AccessTools.Method(typeof(GS_Battle), nameof(GS_Battle.ShouldSkipActionAnimation));
+    }
+
+    private static void Prefix() => Normalize();
+
+    internal static void Normalize()
+    {
+        if (!InputGate.MultiplayerActive || GS_Battle.self is null) return;
+        // Native waits also run inside settlements and detached auto-guide batches.
+        // Keep local playback preferences out of authoritative execution, even before UI Update.
+        GS_Battle.self.ai_playback_mode = GS_Battle.AIPlaybackMode.Play;
+        GS_Battle.self.ai_skip_unrelated_actions = false;
+        GS_Battle.self.ai_skip_non_battle_actions = false;
+    }
 }
 
 [HarmonyPatch(typeof(UI_Part_SkillPower), nameof(UI_Part_SkillPower.UpdateRender))]

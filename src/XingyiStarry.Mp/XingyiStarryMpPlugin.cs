@@ -10,6 +10,7 @@ using BepInEx.Configuration;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using XingyiStarry.Mp.Game;
 using XingyiStarry.Mp.Infrastructure;
@@ -249,8 +250,13 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         }
         ApplyLocalPerspectiveAndControl();
         if (InputGate.MultiplayerActive && GS_Battle.self is not null) GS_Battle.self.editor_enabled = false;
-        var pauseMenu = SingletonMono<SS_ANNW_Game>.self?.ui?.pop_pause_menu;
-        if (pauseMenu is not null && pauseMenu.gameObject.activeSelf) MultiplayerPauseMenuPatch.Refresh(pauseMenu);
+        // Scene singletons retain managed references after Unity destroys their native objects.
+        var game = SingletonMono<SS_ANNW_Game>.self;
+        if (InputGate.MultiplayerActive && game != null && game.ui != null)
+        {
+            var pauseMenu = game.ui.pop_pause_menu;
+            if (pauseMenu != null && pauseMenu.gameObject.activeSelf) MultiplayerPauseMenuPatch.Refresh(pauseMenu);
+        }
         PumpOperations();
         TryShowNativeNotice();
     }
@@ -310,17 +316,16 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 
     private void ExitDisconnectedClient(string reason, string resultNotice = "")
     {
-        client?.Dispose(); client = null;
-        pendingAuthorityFrames.Clear(); pendingClientCommands.Clear(); ResetReplayState(); executor.Reset(); GameplayRandom.ActiveTape = null;
-        loadingSnapshot = null; snapshotPreviousBattle = null;
-        InputGate.MultiplayerActive = false; InputGate.LocalSeatMayAct = false; Status = "Multiplayer session ended: " + reason;
+        Disconnect();
+        Status = "Multiplayer session ended: " + reason;
         ShowBattleMessage(string.IsNullOrWhiteSpace(reason) ? "${notice_disconnected_from_the_multiplayer_host}" : reason);
         if (!string.IsNullOrWhiteSpace(resultNotice))
         {
             pendingNativeNotice = resultNotice;
             nativeNoticeEarliest = Time.unscaledTime + 0.25f;
         }
-        if (GS_Battle.self?.game_running == true && SingletonMono<SS_ANNW_Game>.self is not null) SingletonMono<SS_ANNW_Game>.self.DoQuitOut();
+        var game = SingletonMono<SS_ANNW_Game>.self;
+        if (GS_Battle.self?.game_running == true && game != null) game.DoQuitOut();
         else NativeSkirmishLobby.TerminateFromRemote();
     }
 
@@ -480,8 +485,11 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 
     private static bool ShowBattleMessage(string notice)
     {
-        var messages = SingletonMono<SS_ANNW_Game>.self?.ui?.messages;
-        if (GS_Battle.self?.game_running != true || messages is null) return false;
+        if (GS_Battle.self?.game_running != true) return false;
+        var game = SingletonMono<SS_ANNW_Game>.self;
+        if (game == null || game.ui == null) return false;
+        var messages = game.ui.messages;
+        if (messages == null) return false;
         messages.AddMessage("", MpText.Render(notice)); return true;
     }
 
@@ -1470,16 +1478,21 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     private void TryShowNativeNotice()
     {
         if (pendingNativeNotice.Length == 0 || Time.unscaledTime < nativeNoticeEarliest || GS_Battle.self?.game_running == true) return;
-        var popup = UI_Floater.self?.pop_general;
-        if (popup is null) return;
-        var message = pendingNativeNotice; pendingNativeNotice = "";
-        popup.ShowAsSimple(MpText.Render(message));
+        if (host is not null || client is not null || SceneManager.GetActiveScene().name != "ANNW_Menu") return;
+        var menu = SingletonMono<SS_ANNW_Menu>.self;
+        if (menu == null || !menu.isActiveAndEnabled || !menu.gameObject.scene.IsValid() ||
+            menu.gameObject.scene != SceneManager.GetActiveScene()) return;
+        var floater = UI_Floater.self;
+        if (floater == null || floater.pop_general == null) return;
+        floater.pop_general.ShowAsSimple(MpText.Render(pendingNativeNotice));
+        pendingNativeNotice = "";
     }
 
     internal void Disconnect()
     {
         ConnectionFailed = false;
         connectionGeneration++;
+        pendingNativeNotice = ""; nativeNoticeEarliest = 0f;
         host?.Dispose(); host = null; client?.Dispose(); client = null;
         pendingAuthorityFrames.Clear(); pendingClientCommands.Clear(); ResetReplayState(); executor.Reset(); GameplayRandom.ActiveTape = null;
         loadingSnapshot = null; snapshotPreviousBattle = null;

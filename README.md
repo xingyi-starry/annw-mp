@@ -4,7 +4,7 @@
 
 《湮灭之战》（Tactical Annihilation）的多人联机插件，基于 BepInEx 5。
 
-项目仍处于开发阶段。目前面向游戏 1.0.11，主机与客机必须使用相同的插件和游戏版本。
+项目仍处于开发阶段。目前面向游戏 1.0.12，主机与客机必须使用相同的插件和游戏版本。
 
 ## 主要功能
 
@@ -25,10 +25,6 @@ Release 提供两个版本：
 
 完全退出游戏，将下载内容中的安装文件解压到 `AnnW.exe` 所在目录并保留目录结构。启动游戏后，从“遭遇战”的联机入口创建或加入房间。
 
-可以从公共房间列表加入，也可以选择“手动连接”，填写主机地址、端口和房间密码。创建房间时需要指定本地 TCP 端口；路由器或系统防火墙可能需要放行该端口。公共中继暂时不可用时，仍可通过手动连接加入房间。
-
-当前连接未加密，房间密码不要复用重要账户的密码。
-
 需要卸载时，双击游戏根目录的 `Uninstall-XingyiStarry-MP.bat`。默认只删除本插件；也可以选择同时删除整个 BepInEx 框架。后一模式会一并删除其他 BepInEx 模组和配置，请谨慎选择。
 
 ## 开发环境
@@ -37,7 +33,7 @@ Release 提供两个版本：
 
 - Windows PowerShell 5.1 或 PowerShell 7；
 - .NET SDK 8；
-- 合法安装的《湮灭之战》1.0.11；
+- 合法安装的《湮灭之战》1.0.12；
 - 可访问 NuGet、GitHub Packages 和 GitHub Release 的网络。
 
 游戏程序集不属于本项目，也不会提交到仓库。日常开发默认使用仓库相邻目录 `..\Tactical Annihilation` 中的合法游戏安装；其他位置可传入 `GameRoot`。
@@ -57,7 +53,7 @@ dotnet .\tests\XingyiStarry.Mp.Tests\bin\Release\net8.0\XingyiStarry.Mp.Tests.dl
 
 ```powershell
 .\package.ps1 -Configuration Release `
-  -GameReferencesTag game-1.0.11 `
+  -GameReferencesTag game-1.0.12 `
   -OutputDirectory .\releases
 ```
 
@@ -70,7 +66,7 @@ dotnet .\tests\XingyiStarry.Mp.Tests\bin\Release\net8.0\XingyiStarry.Mp.Tests.dl
 ```powershell
 .\tools\Publish-GameReferences.ps1 `
   -GameRoot 'D:\Games\Tactical Annihilation' `
-  -Tag game-1.0.11
+  -Tag game-1.0.12
 ```
 
 上传要求 GitHub 令牌具有 `write:packages` 权限。引用包只用于编译，不会进入插件发布压缩包。
@@ -80,8 +76,6 @@ dotnet .\tests\XingyiStarry.Mp.Tests\bin\Release\net8.0\XingyiStarry.Mp.Tests.dl
 ```powershell
 .\install.ps1 -GameRoot 'D:\Games\Tactical Annihilation'
 ```
-
-开发安装包含 DebugTools 和按标记启用的 EarlyPatcher，用于本地双实例测试；这些内容不进入正式包。安装和更新前应完全退出所有游戏进程。
 
 ### 协议与 Relay
 

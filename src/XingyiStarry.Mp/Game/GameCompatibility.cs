@@ -45,6 +45,22 @@ internal static class GameCompatibility
             typeof(UI_MENU_LevelSelect_InfoSkm).GetMethod("Render", new[] { typeof(string), typeof(string), typeof(ulong) }) is null ||
             typeof(Player).GetMethod("proc_DescendResidualUnits") is null)
             missing.Add("v1.0.11 map commander, workshop selection and defeated-player cleanup");
+        if (typeof(GS_Battle).GetField("ai_playback_mode")?.FieldType != typeof(GS_Battle.AIPlaybackMode) ||
+            typeof(GS_Battle).GetField("ai_skip_unrelated_actions")?.FieldType != typeof(bool) ||
+            typeof(GS_Battle).GetField("ai_skip_non_battle_actions")?.FieldType != typeof(bool) ||
+            typeof(GS_Battle).GetProperty("ai_playback_paused")?.PropertyType != typeof(bool) ||
+            typeof(GS_Battle).GetProperty("ai_playback_wait_scale")?.PropertyType != typeof(float) ||
+            typeof(GS_Battle).GetMethod("AIPause", Type.EmptyTypes) is null ||
+            typeof(GS_Battle).GetMethod("AIWait", new[] { typeof(float) }) is null ||
+            typeof(GS_Battle).GetMethod("ShouldSkipActionAnimation", new[] { typeof(UT_UnitAction) }) is null)
+            missing.Add("v1.0.12 AI playback waits and animation filters");
+        foreach (var name in new[] { "OnClick_Skip_Current", "OnClick_Skip", "OnClick_Cancel", "OnClick_Pause", "OnClick_Play",
+                     "OnClick_Fast", "OnClick_ToggleSkipUnrelated", "OnClick_ToggleSkipNonBattle", "ShowAsAITurn", "ShowAsAutoGuide" })
+            if (typeof(UI_POP_AITurn).GetMethod(name, Type.EmptyTypes) is null) missing.Add("UI_POP_AITurn." + name);
+        foreach (var name in new[] { "tab_pause", "tab_play", "tab_fast", "tab_skip_unrelated", "tab_skip_nonbattle" })
+            if (typeof(UI_POP_AITurn).GetField(name)?.FieldType != typeof(UI_TAB_BTN)) missing.Add("UI_POP_AITurn." + name);
+        if (typeof(UI_POP_AITurn).GetField("btn_cancel")?.FieldType != typeof(UnityEngine.UI.Button))
+            missing.Add("UI_POP_AITurn.btn_cancel");
         return missing;
     }
 

@@ -4,7 +4,7 @@
 
 A multiplayer plugin for Tactical Annihilation, built on BepInEx 5.
 
-The project is still in development and currently targets game version 1.0.11. The host and all clients must use the same plugin and game versions.
+The project is still in development and currently targets game version 1.0.12. The host and all clients must use the same plugin and game versions.
 
 ## Features
 
@@ -25,10 +25,6 @@ Two downloads are available with each release:
 
 Fully exit the game, then extract the installation files into the directory containing `AnnW.exe`, preserving the folder structure. Start the game and choose “Multiplayer Skirmish” from the skirmish menu to host or join a room.
 
-Join from the public room list, or choose “Direct connection” and enter the host address, port, and room password. Hosting requires a local TCP port; you may need to allow that port through your router or system firewall. Direct connections remain available when the public relay is temporarily unavailable.
-
-Connections are currently unencrypted. Do not reuse an important account password as a room password.
-
 To uninstall, double-click `Uninstall-XingyiStarry-MP.bat` in the game directory. By default, it removes only this plugin. You can also choose to remove the entire BepInEx framework; that option also deletes other BepInEx mods and their configuration files, so use it with care.
 
 ## Development environment
@@ -37,7 +33,7 @@ Requirements:
 
 - Windows PowerShell 5.1 or PowerShell 7;
 - .NET SDK 8;
-- A legally installed copy of Tactical Annihilation 1.0.11;
+- A legally installed copy of Tactical Annihilation 1.0.12;
 - Network access to NuGet, GitHub Packages, and GitHub Releases.
 
 Game assemblies are not part of this project and are not committed to the repository. Local development defaults to the game installation in the adjacent `..\Tactical Annihilation` directory. Pass `GameRoot` to use a different location.
@@ -57,7 +53,7 @@ dotnet .\tests\XingyiStarry.Mp.Tests\bin\Release\net8.0\XingyiStarry.Mp.Tests.dl
 
 ```powershell
 .\package.ps1 -Configuration Release `
-  -GameReferencesTag game-1.0.11 `
+  -GameReferencesTag game-1.0.12 `
   -OutputDirectory .\releases
 ```
 
@@ -70,7 +66,7 @@ After a game update, review and update `game-references.json`, then publish the 
 ```powershell
 .\tools\Publish-GameReferences.ps1 `
   -GameRoot 'D:\Games\Tactical Annihilation' `
-  -Tag game-1.0.11
+  -Tag game-1.0.12
 ```
 
 Publishing requires a GitHub token with `write:packages` permission. The reference package is used only for compilation and is not included in plugin release archives.
@@ -80,8 +76,6 @@ Publishing requires a GitHub token with `write:packages` permission. The referen
 ```powershell
 .\install.ps1 -GameRoot 'D:\Games\Tactical Annihilation'
 ```
-
-Development installations include DebugTools and an EarlyPatcher enabled by a marker file for local two-instance testing. These tools are excluded from release packages. Fully exit all game processes before installing or updating.
 
 ### Protocol and relay
 

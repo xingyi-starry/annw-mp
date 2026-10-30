@@ -291,6 +291,7 @@ internal sealed class GameCommandExecutor
     private static IEnumerator ExecuteTurnAdvance()
     {
         var battle = GS_Battle.self;
+        var previousPlayer = battle.cur_player;
         while (true)
         {
             battle.current_co_index++;
@@ -316,6 +317,12 @@ internal sealed class GameCommandExecutor
         }
 
         battle.cur_player = battle.all_player.players[battle.current_co_index];
+        // EndTurn and TurnAdvance are separate authoritative operations. A renderer can
+        // consume EndTurn's dirty flag while cur_player still points at the old player,
+        // after ending_turn and actioned have already been reset. Invalidate that UI
+        // again at the actual ownership change; StartPlayerTurn redraws the new side.
+        if (previousPlayer is not null)
+            foreach (var unit in previousPlayer.units) unit.Event_ReDraw?.Invoke(false);
         var start = GameController.self.StartPlayerTurn(battle.cur_player);
         while (true)
         {
