@@ -145,7 +145,21 @@ message GameCommandMessage {
   sint32 debug_metal_delta  = 13;
   sint32 debug_power_delta  = 14;
   int32  ai_action_type     = 15;
+  repeated ResolvedUnitAction resolved_actions = 16;
+}
 
+// Host-resolved native auto-guide batch. Clients execute these actions without planning.
+message ResolvedUnitAction {
+  int64 unit_id = 1;
+  int32 action_type = 2;
+  sint32 move_x = 3;
+  sint32 move_y = 4;
+  sint32 target_x = 5;
+  sint32 target_y = 6;
+  int32 action_category = 7;
+  string template_id = 8;
+  int64 passenger_unit_id = 9;
+  bool skip_animations = 10;
 }
 
 message CommandRequestMessage {

@@ -28,4 +28,6 @@ internal sealed class OperationQueue
         if (!IsExecuting) throw new InvalidOperationException("There is no executing operation.");
         IsExecuting = false;
     }
+
+    public void Reset() { pending.Clear(); seenRequests.Clear(); IsExecuting = false; }
 }

@@ -18,6 +18,7 @@ internal static partial class MpText
         ["ui_cancel"] = ("取消", "Cancel"),
         ["ui_map_preview_synchronization_failed"] = ("地图预览同步失败：", "Map preview synchronization failed: "),
         ["notice_host_left"] = ("主机退出了房间。", "The host left the room."),
+        ["notice_command_not_allowed"] = ("不允许提交此命令。", "This command cannot be submitted."),
         ["ui_listening_on_0_0_0_0"] = ("正在监听 0.0.0.0:", "Listening on 0.0.0.0:"),
         ["ui_and_connecting_to_the_public_relay"] = (" 并连接公共中继服务器", " and connecting to the public relay"),
         ["ui_failed_to_create_room"] = ("创建房间失败：", "Failed to create room: "),

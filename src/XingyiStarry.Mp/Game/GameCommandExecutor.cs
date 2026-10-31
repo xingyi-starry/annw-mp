@@ -10,12 +10,14 @@ internal sealed class GameCommandExecutor
 {
     public bool IsBusy { get; private set; }
 
-    public void Reset() { IsBusy = false; ExecutionContext.DetachedAuthoritativeExecution = false; ExecutionContext.SuppressAiDecision = false; }
+    public void Reset() { IsBusy = false; ExecutionContext.SuppressAiDecision = false; AuthoritativeAutoGuide.Reset(); }
 
     public string? Validate(GameCommand command)
     {
         if (GS_Battle.self is null || !GS_Battle.self.game_running) return "Battle is not running.";
-        if (IsBusy || GS_Battle.self.unit_busy) return "${notice_another_operation_is_running}";
+        var resolvedError = CommandRules.ValidateResolvedActions(command);
+        if (resolvedError is not null) return resolvedError;
+        if (IsBusy || GS_Battle.self.unit_busy && command.Kind != CommandKind.ResolvedUnitActions) return "${notice_another_operation_is_running}";
         if (command.Kind == CommandKind.DebugAddResources || command.Kind == CommandKind.DebugFillSkill)
         {
             if (command.DebugPlayerIndex < -1 || command.DebugPlayerIndex >= GS_Battle.self.all_player.players.Count)
@@ -37,8 +39,10 @@ internal sealed class GameCommandExecutor
             if (GS_Battle.self.all_player.players[command.TargetX].defeated) return "${notice_player_has_already_been_defeated}";
             return null;
         }
-        if (command.Kind == CommandKind.EndTurn || command.Kind == CommandKind.TurnAdvance || command.Kind == CommandKind.UndoMove || command.Kind == CommandKind.Skill || command.Kind == CommandKind.AutoGuideCancel) return null;
+        if (command.Kind == CommandKind.EndTurn || command.Kind == CommandKind.TurnAdvance || command.Kind == CommandKind.UndoMove || command.Kind == CommandKind.Skill) return null;
         if (command.UnitIds.Length == 0) return "Command contains no units.";
+        if (command.Kind == CommandKind.AutoGuideStart && new System.Collections.Generic.HashSet<long>(command.UnitIds).Count != command.UnitIds.Length)
+            return "Auto-guide request contains duplicate units.";
         foreach (var id in command.UnitIds)
         {
             if (id < int.MinValue || id > int.MaxValue) return "Unit id is outside the game range.";
@@ -61,6 +65,21 @@ internal sealed class GameCommandExecutor
             if (command.UnitIds.Length != 1 || command.UnitTargetXs.Length != 1 || command.UnitTargetYs.Length != 1) return "AI action shape is invalid.";
             if (command.AiActionType < (int)UnitActionType.MOVE || command.AiActionType > (int)UnitActionType.ACTION_UNLOAD) return "AI action type is invalid.";
             if (GameTileData.Get(new Inctor2(command.TargetX, command.TargetY)) is null) return "AI action target is invalid.";
+        }
+        if (command.Kind == CommandKind.ResolvedUnitActions)
+        {
+            foreach (var step in command.ResolvedActions)
+            {
+                var unit = GS_Battle.self.all_unit.GetUnitByID((int)step.UnitId);
+                if (unit.actioned || unit.in_animation || unit.building) return "Resolved unit is not available.";
+                if (GameTileData.Get(new Inctor2(step.MoveX, step.MoveY)) is null) return "Resolved movement target is invalid.";
+                if (step.Type != ResolvedActionType.Move &&
+                    (GameTileData.Get(new Inctor2(step.TargetX, step.TargetY)) is null || unit.GetAction((ActionCate)step.ActionCategory) is null))
+                    return "Resolved action target or category is invalid.";
+                if (step.Type == ResolvedActionType.Unload &&
+                    (step.PassengerUnitId < int.MinValue || step.PassengerUnitId > int.MaxValue ||
+                     GS_Battle.self.all_unit.GetUnitByID((int)step.PassengerUnitId) is null)) return "Resolved passenger is invalid.";
+            }
         }
         if (command.Kind == CommandKind.Action)
         {
@@ -126,11 +145,10 @@ internal sealed class GameCommandExecutor
     private IEnumerator Run(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
     {
         IEnumerator inner;
-        var detachedAuthority = command.Kind == CommandKind.AutoGuideStart;
         var tracksClientUnits = origin == ExecutionOrigin.ClientReplay;
         if (tracksClientUnits) MultiplayerUnitStates.BeginAuthorityExecution(command);
-        if (detachedAuthority) ExecutionContext.DetachedAuthoritativeExecution = true;
         using (ExecutionContext.Enter(origin)) inner = Create(command);
+        using var stack = new CoroutineStack(inner);
         while (true)
         {
             bool more; object? current = null;
@@ -138,20 +156,18 @@ internal sealed class GameCommandExecutor
             {
                 using (ExecutionContext.Enter(origin))
                 {
-                    more = inner.MoveNext();
-                    if (more) current = inner.Current;
+                    more = stack.MoveNext();
+                    if (more) current = stack.Current;
                 }
             }
             catch (Exception ex)
             {
-                if (detachedAuthority) ExecutionContext.DetachedAuthoritativeExecution = false;
                 if (tracksClientUnits) MultiplayerUnitStates.EndAuthorityExecution(command);
                 IsBusy = false; failed(ex); yield break;
             }
             if (!more) break;
             yield return current;
         }
-        if (detachedAuthority) ExecutionContext.DetachedAuthoritativeExecution = false;
         if (tracksClientUnits) MultiplayerUnitStates.EndAuthorityExecution(command);
         IsBusy = false;
         completed();
@@ -161,6 +177,7 @@ internal sealed class GameCommandExecutor
     {
         var tracksClientUnits = origin == ExecutionOrigin.ClientReplay;
         if (tracksClientUnits) MultiplayerUnitStates.BeginAuthorityExecution(command);
+        using var stack = new CoroutineStack(inner);
         while (true)
         {
             bool more; object? current = null;
@@ -168,8 +185,8 @@ internal sealed class GameCommandExecutor
             {
                 using (ExecutionContext.Enter(origin))
                 {
-                    more = inner.MoveNext();
-                    if (more) current = inner.Current;
+                    more = stack.MoveNext();
+                    if (more) current = stack.Current;
                 }
             }
             catch (Exception ex)
@@ -197,8 +214,7 @@ internal sealed class GameCommandExecutor
             case CommandKind.Skill: return UX_Manager.self.proc_SkillDoAction(GameTileData.Get(new Inctor2(command.TargetX, command.TargetY)));
             case CommandKind.UndoMove: return ExecuteUndo();
             case CommandKind.EndTurn: return ExecuteEndTurnOnly(GS_Battle.self.cur_player);
-            case CommandKind.AutoGuideStart: return ExecuteAutoGuide(command);
-            case CommandKind.AutoGuideCancel: return ExecuteAutoGuideCancel();
+            case CommandKind.ResolvedUnitActions: return AuthoritativeAutoGuide.Execute(command);
             case CommandKind.DebugAddResources: return ExecuteDebugAddResources(command);
             case CommandKind.DebugFillSkill: return ExecuteDebugFillSkill(command);
             case CommandKind.AiUnitAction: return ExecuteAiUnitAction(command);
@@ -246,6 +262,19 @@ internal sealed class GameCommandExecutor
             unload_unit = command.PassengerUnitId == 0 ? null : GS_Battle.self.all_unit.GetUnitByID((int)command.PassengerUnitId)
         };
         yield return unit.unit_ai.ExecuteAction(aiAction, command.DesiredToggleState);
+    }
+
+    internal static UT_UnitAction ResolveUnitAction(ResolvedUnitAction step)
+    {
+        var unit = GS_Battle.self.all_unit.GetUnitByID((int)step.UnitId);
+        return new UT_UnitAction
+        {
+            unit = unit, type = (UnitActionType)step.Type, original_pos = unit.pos,
+            move_pos = new Inctor2(step.MoveX, step.MoveY), action_pos = new Inctor2(step.TargetX, step.TargetY),
+            action = step.Type == ResolvedActionType.Move ? null : unit.GetAction((ActionCate)step.ActionCategory),
+            create_tp = step.TemplateId.Length == 0 ? null : UnitTemplate.Acquire(step.TemplateId),
+            unload_unit = step.PassengerUnitId == 0 ? null : GS_Battle.self.all_unit.GetUnitByID((int)step.PassengerUnitId)
+        };
     }
 
     private static IEnumerator ExecuteAiSkill(GameCommand command)
@@ -526,15 +555,6 @@ internal sealed class GameCommandExecutor
     }
 
     private static IEnumerator ExecuteUndo() { GS_Battle.self.undo_move.UndoLastMove(); yield return 0f; }
-    private static IEnumerator ExecuteAutoGuide(GameCommand command)
-    {
-        var units = ResolveUnits(command);
-        UnitSpatialSorter.SortUnitListWithHAC(units);
-        var method = HarmonyLib.AccessTools.Method(typeof(AutoGuideController), "proc_AutoCommand");
-        if (method is null) throw new MissingMethodException(typeof(AutoGuideController).FullName, "proc_AutoCommand");
-        return (IEnumerator)method.Invoke(SingletonMono<SS_ANNW_Game>.self.auto_guide, new object[] { units, false });
-    }
-    private static IEnumerator ExecuteAutoGuideCancel() { GS_Battle.self.auto_guide_canceled = true; yield return 0f; }
     private static IEnumerator Unsupported(CommandKind kind) { throw new NotSupportedException("Command adapter is not implemented: " + kind); }
 
 }

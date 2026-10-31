@@ -386,14 +386,18 @@ public static class ProtocolCodec
         return new CommandResponse { RequestId = wire.RequestId, AuthorityFrameId = wire.AuthorityFrameId, Reason = wire.Reason };
     }
 
-    public static byte[] EncodeOperationBegin(OperationBeginPayload value) => Serialize(new Wire.OperationBegin
-        { OperationId = GuidBytes(value.OperationId), SeatId = GuidBytes(value.SeatId), RequestId = value.RequestId,
-          Round = value.Round, Command = ToWire(value.Command) });
+    public static byte[] EncodeOperationBegin(OperationBeginPayload value)
+    {
+        if (!CommandRules.MayBroadcast(value.Command.Kind)) throw new InvalidDataException("Request-only or retired command in authority log.");
+        return Serialize(new Wire.OperationBegin { OperationId = GuidBytes(value.OperationId), SeatId = GuidBytes(value.SeatId),
+            RequestId = value.RequestId, Round = value.Round, Command = ToWire(value.Command) });
+    }
 
     public static OperationBeginPayload DecodeOperationBegin(byte[] bytes)
     {
         var wire = Parse(Wire.OperationBegin.Parser, bytes);
         if (wire.Command is null) throw new InvalidDataException("Operation has no command.");
+        if (!CommandRules.MayBroadcast((CommandKind)wire.Command.Kind)) throw new InvalidDataException("Request-only or retired command in authority log.");
         return new OperationBeginPayload { OperationId = ReadGuid(wire.OperationId), SeatId = ReadGuid(wire.SeatId),
             RequestId = wire.RequestId, Round = wire.Round, Command = FromWire(wire.Command) };
     }
@@ -564,6 +568,9 @@ public static class ProtocolCodec
 
     private static Wire.GameCommandMessage ToWire(GameCommand value)
     {
+        if (!Enum.IsDefined(typeof(CommandKind), value.Kind)) throw new InvalidDataException("Unknown command kind.");
+        var resolvedError = CommandRules.ValidateResolvedActions(value);
+        if (resolvedError is not null) throw new InvalidDataException(resolvedError);
         if (value.UnitIds.Length > MaxUnits || value.UnitTargetXs.Length > MaxUnits || value.UnitTargetXs.Length != value.UnitTargetYs.Length)
             throw new InvalidDataException("Invalid command unit or target count.");
         var wire = new Wire.GameCommandMessage { Kind = (uint)value.Kind, TargetX = value.TargetX, TargetY = value.TargetY,
@@ -572,6 +579,12 @@ public static class ProtocolCodec
             DebugPlayerIndex = value.DebugPlayerIndex, DebugMetalDelta = value.DebugMetalDelta,
             DebugPowerDelta = value.DebugPowerDelta, AiActionType = value.AiActionType };
         wire.UnitIds.Add(value.UnitIds); wire.UnitTargetXs.Add(value.UnitTargetXs); wire.UnitTargetYs.Add(value.UnitTargetYs);
+        wire.ResolvedActions.Add(value.ResolvedActions.Select(action => new Wire.ResolvedUnitAction
+        {
+            UnitId = action.UnitId, ActionType = (int)action.Type, MoveX = action.MoveX, MoveY = action.MoveY,
+            TargetX = action.TargetX, TargetY = action.TargetY, ActionCategory = action.ActionCategory,
+            TemplateId = action.TemplateId, PassengerUnitId = action.PassengerUnitId, SkipAnimations = action.SkipAnimations
+        }));
         return wire;
     }
 
@@ -581,12 +594,22 @@ public static class ProtocolCodec
             throw new InvalidDataException("Invalid command unit or target count.");
         var kind = (CommandKind)wire.Kind;
         if (!Enum.IsDefined(typeof(CommandKind), kind)) throw new InvalidDataException("Unknown command kind.");
-        return new GameCommand { Kind = kind, UnitIds = wire.UnitIds.ToArray(), TargetX = wire.TargetX, TargetY = wire.TargetY,
+        if (wire.ResolvedActions.Count > CommandRules.MaxResolvedActions) throw new InvalidDataException("Invalid resolved action count.");
+        var command = new GameCommand { Kind = kind, UnitIds = wire.UnitIds.ToArray(), TargetX = wire.TargetX, TargetY = wire.TargetY,
             UnitTargetXs = wire.UnitTargetXs.ToArray(), UnitTargetYs = wire.UnitTargetYs.ToArray(),
             ActionCategory = wire.ActionCategory, ActionId = wire.ActionId, TemplateId = wire.TemplateId,
             PassengerUnitId = wire.PassengerUnitId, DesiredToggleState = wire.DesiredToggleState,
             DebugPlayerIndex = wire.DebugPlayerIndex, DebugMetalDelta = wire.DebugMetalDelta,
             DebugPowerDelta = wire.DebugPowerDelta, AiActionType = wire.AiActionType };
+        command.ResolvedActions.AddRange(wire.ResolvedActions.Select(action => new ResolvedUnitAction
+        {
+            UnitId = action.UnitId, Type = (ResolvedActionType)action.ActionType, MoveX = action.MoveX, MoveY = action.MoveY,
+            TargetX = action.TargetX, TargetY = action.TargetY, ActionCategory = action.ActionCategory,
+            TemplateId = action.TemplateId, PassengerUnitId = action.PassengerUnitId, SkipAnimations = action.SkipAnimations
+        }));
+        var resolvedError = CommandRules.ValidateResolvedActions(command);
+        if (resolvedError is not null) throw new InvalidDataException(resolvedError);
+        return command;
     }
 
     private static byte[] Serialize(IMessage value) => value.ToByteArray();

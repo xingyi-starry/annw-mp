@@ -296,6 +296,23 @@ public sealed class GameCommand
     public int DebugMetalDelta { get; set; }
     public int DebugPowerDelta { get; set; }
     public int AiActionType { get; set; }
+    public List<ResolvedUnitAction> ResolvedActions { get; } = new List<ResolvedUnitAction>();
+}
+
+public enum ResolvedActionType { Move = 0, Action = 1, Create = 2, Unload = 3 }
+
+public sealed class ResolvedUnitAction
+{
+    public long UnitId { get; set; }
+    public ResolvedActionType Type { get; set; }
+    public int MoveX { get; set; }
+    public int MoveY { get; set; }
+    public int TargetX { get; set; }
+    public int TargetY { get; set; }
+    public int ActionCategory { get; set; }
+    public string TemplateId { get; set; } = "";
+    public long PassengerUnitId { get; set; }
+    public bool SkipAnimations { get; set; }
 }
 
 public sealed class RandomRecord

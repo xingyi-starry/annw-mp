@@ -18,6 +18,13 @@ internal static class Program
     public static async Task<int> Main()
     {
         Test("command round trip", CommandRoundTrip);
+        Test("resolved native action batch round trip", AutoGuideProtocolTests.RoundTrip);
+        Test("auto-guide request and authority boundary", AutoGuideProtocolTests.AuthorityBoundary);
+        Test("resolved batch shape validation", AutoGuideProtocolTests.MalformedBatch);
+        Test("nested coroutine execution scopes", AutoGuideProtocolTests.CoroutineScopes);
+        Test("nested coroutine failure cleanup", AutoGuideProtocolTests.CoroutineFailures);
+        Test("operation queue reset", AutoGuideProtocolTests.QueueReset);
+        Test("native batch arrival order ignores animation completion order", AutoGuideProtocolTests.ArrivalOrder);
         Test("authority chain", AuthorityChain);
         Test("tamper detection", TamperDetection);
         Test("snapshot codec", SnapshotRoundTrip);
@@ -51,7 +58,7 @@ internal static class Program
             await TestAsync("C# to Go relay integration", () => RelayIntegration(relayEndpoint));
             await TestAsync("direct and relay host integration", () => MultiStackHostIntegration(relayEndpoint));
         }
-        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 28 : 30)}"); return 0;
+        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 35 : 37)}"); return 0;
     }
 
     private static void HostHandshakePassword()
@@ -306,7 +313,7 @@ internal static class Program
     private static void SessionMessagesRoundTrip()
     {
         Equal((ushort)34, (ushort)MessageType.ReleaseSeat); Equal((ushort)41, (ushort)MessageType.RelayResumeRoom);
-        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)50, (ushort)MessageType.SocialSyncComplete); Equal((ushort)18, ProtocolConstants.Version);
+        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)50, (ushort)MessageType.SocialSyncComplete); Equal((ushort)19, ProtocolConstants.Version);
         var room = Guid.NewGuid(); var match = Guid.NewGuid(); var client = Guid.NewGuid(); var seat = Guid.NewGuid();
         Equal(seat, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest { SeatId = seat })).SeatId);
         Equal(null, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest())).SeatId);
@@ -450,6 +457,17 @@ internal static class Program
         Equal(CommandKind.SelfDestruct, forwardedSelfDestruct.Command.Kind); Equal(17L, forwardedSelfDestruct.Command.UnitIds[0]);
 
         var matchId = Guid.NewGuid();
+        var batchFrame = new AuthorityHashChain(matchId).Append(AuthorityFrameType.OperationBegin,
+            ProtocolCodec.EncodeOperationBegin(new OperationBeginPayload { OperationId = Guid.NewGuid(), SeatId = Guid.NewGuid(),
+                Command = AutoGuideProtocolTests.MovementBatch() }));
+        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.AuthorityFrame, Delivery = Delivery.ToClient,
+            RoomId = roomId, ClientId = registered.ClientId, TargetClientId = clientId,
+            Payload = ProtocolCodec.EncodeAuthorityFrame(batchFrame) }, CancellationToken.None);
+        var forwardedBatchFrame = ProtocolCodec.DecodeAuthorityFrame((await ReadType(client, MessageType.AuthorityFrame)).Payload);
+        var forwardedBatch = ProtocolCodec.DecodeOperationBegin(forwardedBatchFrame.Payload).Command;
+        Equal(CommandKind.ResolvedUnitActions, forwardedBatch.Kind);
+        Equal(-7, forwardedBatch.ResolvedActions[0].MoveX); Equal(3L, forwardedBatch.ResolvedActions[1].UnitId);
+        True(forwardedBatch.ResolvedActions[1].SkipAnimations);
         await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RelayUpdateRoom, Delivery = Delivery.RelayControl,
             RoomId = roomId, ClientId = registered.ClientId,
             Payload = ProtocolCodec.EncodeRelayUpdateRoom(new RelayUpdateRoomRequest { RequestId = 104, RoomId = roomId,

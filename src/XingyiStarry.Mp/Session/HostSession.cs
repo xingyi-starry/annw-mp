@@ -448,6 +448,8 @@ internal sealed class HostSession : IDisposable
 
     public bool Authorize(CommandRequest request, int currentPlayerIndex, int currentRound, out string reason)
     {
+        if (!CommandRules.MayRequest(request.Command.Kind))
+        { reason = "${notice_command_not_allowed}"; return false; }
         if (request.Command.Kind == CommandKind.DebugAddResources || request.Command.Kind == CommandKind.DebugFillSkill)
         { reason = "Debug commands can only originate on the authority host."; return false; }
         if (!MatchId.HasValue || !Room.MatchStarted) { reason = "${notice_match_has_not_started}"; return false; }

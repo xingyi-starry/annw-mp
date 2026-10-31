@@ -54,8 +54,10 @@ internal static class EndTurnPatch
 [HarmonyPatch(typeof(UnitAI), nameof(UnitAI.ExecuteAction))]
 internal static class UnitAiPatch
 {
-    private static bool Prefix(UnitAI __instance, UtilityItem ut, bool skipping, ref IEnumerator __result)
+    private static bool Prefix(UnitAI __instance, UtilityItem ut, ref bool skipping, ref IEnumerator __result)
     {
+        if (InputGate.MultiplayerActive && AuthoritativeAutoGuide.TryGetSkipping(__instance.owner, out var resolvedSkipping))
+            skipping = resolvedSkipping;
         if (InputGate.ShouldRunOriginal) return true;
         var plugin = XingyiStarryMpPlugin.Instance;
         if (plugin?.ShouldCaptureHostAi == true && __instance.owner?.player == GS_Battle.self.cur_player)

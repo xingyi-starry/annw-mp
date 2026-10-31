@@ -61,6 +61,15 @@ internal static class GameCompatibility
             if (typeof(UI_POP_AITurn).GetField(name)?.FieldType != typeof(UI_TAB_BTN)) missing.Add("UI_POP_AITurn." + name);
         if (typeof(UI_POP_AITurn).GetField("btn_cancel")?.FieldType != typeof(UnityEngine.UI.Button))
             missing.Add("UI_POP_AITurn.btn_cancel");
+        foreach (var name in new[] { "proc_AutoCommand", "StartAutoGuideBatch", "proc_BatchActionSingle" })
+            if (typeof(AutoGuideController).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic) is null)
+                missing.Add("AutoGuideController." + name);
+        if (typeof(AutoGuideController).GetField("active_batch", BindingFlags.Instance | BindingFlags.NonPublic) is null ||
+            (int)UnitActionType.MOVE != (int)Protocol.ResolvedActionType.Move ||
+            (int)UnitActionType.ACTION_NORMAL != (int)Protocol.ResolvedActionType.Action ||
+            (int)UnitActionType.ACTION_CREATE != (int)Protocol.ResolvedActionType.Create ||
+            (int)UnitActionType.ACTION_UNLOAD != (int)Protocol.ResolvedActionType.Unload)
+            missing.Add("resolved native unit batch layout");
         return missing;
     }
 
