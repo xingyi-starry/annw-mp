@@ -31,6 +31,11 @@ internal static class NativeSkirmishLobby
     private static byte[]? cachedMapPreview;
     private static bool cachedUserMap;
     private static string previewError = "";
+    private static string? hostedMapData;
+    private static string? hostedMapPath;
+    private static string? hostedMapDisplayName;
+    private static ulong hostedWorkshopId;
+    private static bool restoringRoom;
 
     internal static bool Active { get; private set; }
     internal static UI_MENU_LevelSelect_InfoSkm? CurrentInfo => info;
@@ -58,7 +63,7 @@ internal static class NativeSkirmishLobby
 
     internal static void OnInfoRendered(UI_MENU_LevelSelect_InfoSkm value)
     {
-        if (!Active) return;
+        if (!Active || restoringRoom) return;
         cachedMapPreview = null; previewError = "";
         info = value;
         var plugin = XingyiStarryMpPlugin.Instance; var mapId = CurrentMapId();
@@ -142,7 +147,61 @@ internal static class NativeSkirmishLobby
 
     internal static void ShowMapError(string message) => previewError = message;
 
-    internal static void MarkStartingMatch() => CleanupUi();
+    internal static void MarkStartingMatch()
+    {
+        if (XingyiStarryMpPlugin.Instance?.IsHost == true && XingyiStarryMpPlugin.Instance.CurrentRoom?.SavedGame != true && info != null)
+        {
+            hostedMapData = (AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_ob").GetValue(info) as DynOb)?.ToString();
+            hostedMapPath = AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_map").GetValue(info) as string;
+            hostedMapDisplayName = AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_display_name").GetValue(info) as string;
+            hostedWorkshopId = (ulong)(AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_workshop_map_id").GetValue(info) ?? 0UL);
+        }
+        CleanupUi();
+    }
+
+    internal static void ForgetHostedMap()
+    { hostedMapData = null; hostedMapPath = null; hostedMapDisplayName = null; hostedWorkshopId = 0; }
+
+    internal static void ReturnToRoom(SS_ANNW_Menu menu, RoomSnapshot room)
+    {
+        CleanupUi(); Active = true; restoringRoom = true;
+        try
+        {
+            menu.screen_main.pop_skirmish.SetActive(false);
+            menu.screen_skirmish.ShowAsNormal();
+            Ensure(menu.screen_skirmish);
+            if (info == null) throw new InvalidOperationException("The room configuration screen is unavailable.");
+            info.gameObject.SetActive(true);
+            if (room.SavedGame)
+            {
+                info.group.gameObject.SetActive(false);
+                MpLocalizedText.Set(info.txt_info_title, room.MapTitle);
+            }
+            else if (XingyiStarryMpPlugin.Instance?.IsHost == true)
+            {
+                // Restore the original full map source, never the reduced network preview.
+                if (hostedMapData is not null)
+                {
+                    var map = DynOb.Parse(hostedMapData) as DynOb ?? throw new InvalidDataException("The hosted map could not be restored.");
+                    AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_ob").SetValue(info, map);
+                    AccessTools.Field(typeof(UI_MENU_LevelSelect_InfoSkm), "selected_ob_name").SetValue(info, room.MapId);
+                    AccessTools.Method(typeof(UI_MENU_LevelSelect_InfoSkm), "RenderForOb").Invoke(info, new object[] { map });
+                    AccessTools.Method(typeof(UI_MENU_LevelSelect_InfoSkm), "ReadLocks").Invoke(info, new object[] { map });
+                    AccessTools.Method(typeof(UI_MENU_LevelSelect_InfoSkm), "SetUpOptions").Invoke(info, Array.Empty<object>());
+                }
+                else if (!string.IsNullOrEmpty(hostedMapPath)) info.Render(hostedMapPath, hostedMapDisplayName, hostedWorkshopId);
+                else throw new InvalidOperationException("The hosted map source is unavailable.");
+                MpLocalizedText.Set(info.txt_info_title, room.MapTitle);
+                info.dd_fow.SetValueWithoutNotify(room.FowType); info.dd_condition.SetValueWithoutNotify(room.WinCondition);
+                info.dd_quickStart.SetValueWithoutNotify(room.QuickStart); ApplyDifficulty(info, room.Difficulty);
+                ApplySeatSettings(room);
+                lastDraftSignature = DraftSignature(info, CurrentMapId());
+            }
+            else ApplyGuestDraft(room);
+            nextRefresh = 0f;
+        }
+        finally { restoringRoom = false; }
+    }
 
     internal static void RestoreRowsForPoolReset()
     {
@@ -300,7 +359,7 @@ internal static class NativeSkirmishLobby
             Store(screen.btn_confirm); screen.btn_confirm.interactable = false;
             return;
         }
-        if (plugin.IsClient)
+        if (plugin.IsClient || room?.SavedGame == true)
         {
             Disable(info.dd_fow); Disable(info.dd_condition); Disable(info.dd_quickStart);
             if (info.btn_diffSel != null)
@@ -336,7 +395,7 @@ internal static class NativeSkirmishLobby
     {
         var items = Items();
         var selectableSeats = room?.Seats.Where(value => !value.Defeated && (room.SavedGame || room.MatchStarted || value.OriginallyHuman)).OrderBy(value => value.LobbySlotIndex).ToList() ?? new List<SeatInfo>();
-        if (selectableSeats.Any(value => value.LobbySlotIndex < 0 || value.LobbySlotIndex >= items.Count))
+        if (room?.SavedGame == true || selectableSeats.Any(value => value.LobbySlotIndex < 0 || value.LobbySlotIndex >= items.Count))
         {
             foreach (var item in rowAugmentations.Keys.ToArray()) RestoreRow(item);
             RebuildSyntheticRows(plugin, selectableSeats); return;

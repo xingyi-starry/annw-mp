@@ -32,6 +32,8 @@ internal static class Program
         Test("map commander survives room cloning and replacement", MapCommanderState);
         Test("snapshot assembly", SnapshotAssembly);
         Test("operation failure codec", OperationFailureRoundTrip);
+        Test("attack settlement protocol", AttackProtocolTests.Events);
+        Test("streamed random records preserve operation ordinals", AttackProtocolTests.StreamedRandom);
         Test("protobuf wire format", ProtobufWireFormat);
         Test("all protobuf messages", AllProtobufMessagesRoundTrip);
         Test("relay protobuf messages", RelayMessagesRoundTrip);
@@ -45,6 +47,10 @@ internal static class Program
         Test("local host port is required", LocalHostPortIsRequired);
         Test("seatless ready becomes spectator", SeatlessReadyBecomesSpectator);
         Test("mid-match player or spectator admission", MidMatchAdmission);
+        Test("room survives consecutive matches", LifecycleTests.ConsecutiveMatches);
+        Test("saved room restores original defeated seats", LifecycleTests.SavedRoomReset);
+        Test("client closes results independently and starts another match", LifecycleTests.ClientReturnsIndependently);
+        Test("accepted spectator keeps admission before snapshot", LifecycleTests.AcceptedSpectatorWaitsForSnapshot);
         Test("spectator social permissions", SpectatorSocialPermissions);
         Test("mixed move target alignment", MixedMoveFilter);
         Test("move ownership rejection", MoveOwnershipRejection);
@@ -58,7 +64,7 @@ internal static class Program
             await TestAsync("C# to Go relay integration", () => RelayIntegration(relayEndpoint));
             await TestAsync("direct and relay host integration", () => MultiStackHostIntegration(relayEndpoint));
         }
-        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 35 : 37)}"); return 0;
+        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 41 : 43)}"); return 0;
     }
 
     private static void HostHandshakePassword()
@@ -255,10 +261,10 @@ internal static class Program
         Equal(operationId, begin.OperationId); Equal(CommandKind.ToggleSleep, begin.Command.Kind);
         Equal(operationId, ProtocolCodec.DecodeOperationEnd(ProtocolCodec.EncodeOperationEnd(new OperationEndPayload { OperationId = operationId })).OperationId);
 
-        var resolutionSource = new ResolutionPayload { OperationId = operationId, StageId = 2, SettlementOrdinal = 4 };
+        var resolutionSource = new ResolutionPayload { OperationId = operationId };
         resolutionSource.RandomRecords.Add(new RandomRecord { CallSite = "hurt", Ordinal = 1, ValueKind = 2, IntegerValue = -5, FloatingValue = 0.25 });
         var resolution = ProtocolCodec.DecodeResolution(ProtocolCodec.EncodeResolution(resolutionSource));
-        Equal(2, resolution.StageId); Equal("hurt", resolution.RandomRecords[0].CallSite); Equal(-5L, resolution.RandomRecords[0].IntegerValue);
+        Equal(0, resolution.StageId); Equal("hurt", resolution.RandomRecords[0].CallSite); Equal(-5L, resolution.RandomRecords[0].IntegerValue);
 
         var chain = new AuthorityHashChain(matchId); var frameSource = chain.Append(AuthorityFrameType.Resolution, ProtocolCodec.EncodeResolution(resolutionSource));
         var frame = ProtocolCodec.DecodeAuthorityFrame(ProtocolCodec.EncodeAuthorityFrame(frameSource));
@@ -313,7 +319,7 @@ internal static class Program
     private static void SessionMessagesRoundTrip()
     {
         Equal((ushort)34, (ushort)MessageType.ReleaseSeat); Equal((ushort)41, (ushort)MessageType.RelayResumeRoom);
-        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)50, (ushort)MessageType.SocialSyncComplete); Equal((ushort)19, ProtocolConstants.Version);
+        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)50, (ushort)MessageType.SocialSyncComplete); Equal((ushort)20, ProtocolConstants.Version);
         var room = Guid.NewGuid(); var match = Guid.NewGuid(); var client = Guid.NewGuid(); var seat = Guid.NewGuid();
         Equal(seat, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest { SeatId = seat })).SeatId);
         Equal(null, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest())).SeatId);
@@ -468,6 +474,18 @@ internal static class Program
         Equal(CommandKind.ResolvedUnitActions, forwardedBatch.Kind);
         Equal(-7, forwardedBatch.ResolvedActions[0].MoveX); Equal(3L, forwardedBatch.ResolvedActions[1].UnitId);
         True(forwardedBatch.ResolvedActions[1].SkipAnimations);
+        var hitResolution = new ResolutionPayload { OperationId = Guid.NewGuid(), StageId = 1, SettlementOrdinal = 2,
+            AttackSettlement = new AttackSettlement { Kind = AttackSettlementKind.Cell, BatchId = 1, UnitId = 234,
+                ActionName = "HiveMissile", TargetX = -6, TargetY = 9, OriginX = 3, OriginY = -2 } };
+        hitResolution.RandomRecords.Add(new RandomRecord { CallSite = "UnitData.Hurt", Ordinal = 3, ValueKind = 1, FloatingValue = 0.125 });
+        var hitFrame = new AuthorityHashChain(matchId).Append(AuthorityFrameType.Resolution, ProtocolCodec.EncodeResolution(hitResolution));
+        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.AuthorityFrame, Delivery = Delivery.ToClient,
+            RoomId = roomId, ClientId = registered.ClientId, TargetClientId = clientId,
+            Payload = ProtocolCodec.EncodeAuthorityFrame(hitFrame) }, CancellationToken.None);
+        var forwardedHitFrame = ProtocolCodec.DecodeAuthorityFrame((await ReadType(client, MessageType.AuthorityFrame)).Payload);
+        True(AuthorityHashChain.FixedEquals(hitFrame.Payload, forwardedHitFrame.Payload));
+        var forwardedHit = ProtocolCodec.DecodeResolution(forwardedHitFrame.Payload);
+        Equal(-6, forwardedHit.AttackSettlement!.TargetX); Equal(0.125, forwardedHit.RandomRecords[0].FloatingValue);
         await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RelayUpdateRoom, Delivery = Delivery.RelayControl,
             RoomId = roomId, ClientId = registered.ClientId,
             Payload = ProtocolCodec.EncodeRelayUpdateRoom(new RelayUpdateRoomRequest { RequestId = 104, RoomId = roomId,
@@ -488,6 +506,18 @@ internal static class Program
             RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeResumeSession(resumeSession) }, CancellationToken.None);
         var forwardedResume = ProtocolCodec.DecodeResumeSession((await ReadType(host, MessageType.ResumeSession)).Payload);
         Equal(7L, forwardedResume.AppliedFrameId); Equal(9L, forwardedResume.VerifiedFrameId);
+        // Return to the same room without replacing either connection, then start a new match.
+        foreach (var next in new[] { RelayRoomStatus.Waiting, RelayRoomStatus.Playing })
+        {
+            await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RelayUpdateRoom, Delivery = Delivery.RelayControl,
+                RoomId = roomId, ClientId = registered.ClientId,
+                Payload = ProtocolCodec.EncodeRelayUpdateRoom(new RelayUpdateRoomRequest { RequestId = 107, RoomId = roomId,
+                    Status = next, MatchId = next == RelayRoomStatus.Playing ? Guid.NewGuid() : null }) }, CancellationToken.None);
+            True(ProtocolCodec.DecodeRelayControlResponse((await ReadType(host, MessageType.RelayControlResponse)).Payload).Success);
+        }
+        await PacketFraming.WriteAsync(resumed.GetStream(), new Envelope { Type = MessageType.SetReady, Delivery = Delivery.ToHost,
+            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeInt64(1) }, CancellationToken.None);
+        Equal(clientId, (await ReadType(host, MessageType.SetReady)).ClientId);
     }
 
     private static async Task MultiStackHostIntegration(string endpoint)

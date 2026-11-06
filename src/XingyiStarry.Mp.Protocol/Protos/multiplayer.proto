@@ -384,6 +384,27 @@ message Resolution {
   int32                        stage_id           = 2;
   int32                        settlement_ordinal = 3;
   repeated RandomRecordMessage random_records     = 4;
+  AttackSettlement             attack_settlement  = 5;
+}
+
+// Runtime events, not predicted damage. Native animations do not authorize settlement.
+message AttackSettlement {
+  enum Kind {
+    UNSPECIFIED = 0;
+    BATCH_STARTED = 1;
+    CELL = 2;
+    DEATH = 3;
+    BATCH_ENDED = 4;
+  }
+  Kind   kind            = 1;
+  int32  batch_id        = 2;
+  int64  unit_id         = 3;
+  string action_name     = 4;
+  sint32 target_x        = 5;
+  sint32 target_y        = 6;
+  sint32 origin_x        = 7;
+  sint32 origin_y        = 8;
+  float  data            = 9;
 }
 
 message OperationBegin {
@@ -392,6 +413,7 @@ message OperationBegin {
   uint64             request_id   = 3;
   int32              round        = 4;
   GameCommandMessage command      = 5;
+  bool               live_settlements = 6;
 }
 
 message OperationEnd {

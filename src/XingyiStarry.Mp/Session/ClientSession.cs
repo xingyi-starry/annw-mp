@@ -44,8 +44,9 @@ internal sealed class ClientSession : IDisposable
     public bool JoinedMatch { get; private set; }
     public bool IsSpectator { get; private set; }
     public bool MatchStarting { get; private set; }
+    public bool MatchEnded { get; private set; }
     public bool RequiresJoinSelection => welcomeMode == WelcomeMode.JoinSelection && !JoinedMatch;
-    public bool CanFastReconnect => !TerminalSessionEnded && ClientId.HasValue && matchId.HasValue && JoinedMatch;
+    public bool CanFastReconnect => !TerminalSessionEnded && !MatchEnded && ClientId.HasValue && matchId.HasValue && JoinedMatch;
     public int ReconnectAcceptedGeneration { get; private set; }
     public IReadOnlyCollection<ChatEvent> ChatHistory => chatHistory.Values;
 
@@ -81,6 +82,9 @@ internal sealed class ClientSession : IDisposable
                     case MessageType.JoinMatchAccepted:
                         var admission = ProtocolCodec.DecodeJoinMatchAccepted(envelope.Payload);
                         JoinedMatch = true; IsSpectator = admission.Spectator; welcomeMode = WelcomeMode.ActiveMatch; IsCaughtUp = false;
+                        // The host sends the snapshot immediately after accepting admission. A room
+                        // broadcast can arrive first; it must not put a seatless spectator back in selection.
+                        snapshotRequested = true;
                         _ = RequestSocialSyncAsync();
                         break;
                     case MessageType.ResumeSessionAccepted:
@@ -94,6 +98,7 @@ internal sealed class ClientSession : IDisposable
                         break;
                     case MessageType.AuthorityFrame:
                         var frame = ProtocolCodec.DecodeAuthorityFrame(envelope.Payload);
+                        if (!JoinedMatch || MatchEnded) break;
                         if (!hasSnapshotAnchor) { if (!matchId.HasValue) matchId = frame.MatchId; break; }
                         AcceptFrame(frame, frameReceived); break;
                     case MessageType.RoomState:
@@ -102,7 +107,7 @@ internal sealed class ClientSession : IDisposable
                         Room = room;
                         var ownsSeat = ClientId.HasValue && room.Seats.Exists(value => value.Connected && value.ClientId == ClientId.Value);
                         if (newlyStarted && welcomeMode == WelcomeMode.Lobby)
-                        { matchId = room.MatchId; JoinedMatch = true; IsSpectator = !ownsSeat; snapshotRequested = true; _ = RequestSnapshotAsync(); }
+                        { matchId = room.MatchId; JoinedMatch = true; MatchEnded = false; IsSpectator = !ownsSeat; snapshotRequested = true; _ = RequestSnapshotAsync(); }
                         else if (newlyStarted && welcomeMode != WelcomeMode.JoinSelection && ownsSeat)
                         { matchId = room.MatchId; JoinedMatch = true; IsSpectator = false; snapshotRequested = true; _ = RequestSnapshotAsync(); }
                         else if (newlyStarted && !ownsSeat)
@@ -117,13 +122,17 @@ internal sealed class ClientSession : IDisposable
                         log(SessionLogLevel.Info, $"History complete latest={latestFrameId} verified={VerifiedFrameId} applied={AppliedFrameId} caughtUp={IsCaughtUp}.");
                         break;
                     case MessageType.SnapshotManifest:
-                        snapshotManifest = ProtocolCodec.DecodeSnapshotManifest(envelope.Payload); snapshotAssembler = new SnapshotAssembler(snapshotManifest);
+                        var manifest = ProtocolCodec.DecodeSnapshotManifest(envelope.Payload);
+                        if (!JoinedMatch || MatchEnded || manifest.MatchId != matchId) break;
+                        snapshotManifest = manifest; snapshotAssembler = new SnapshotAssembler(snapshotManifest);
                         log(SessionLogLevel.Info, $"Snapshot manifest id={snapshotManifest.SnapshotId:N} frame={snapshotManifest.FrameId} chunks={snapshotManifest.ChunkCount} compressed={snapshotManifest.CompressedLength}.");
                         break;
                     case MessageType.SnapshotChunk:
+                        if (!JoinedMatch || MatchEnded) break;
                         if (snapshotAssembler is null) throw new InvalidDataException("Snapshot chunk arrived before its manifest.");
                         snapshotAssembler.Add(ProtocolCodec.DecodeSnapshotChunk(envelope.Payload)); break;
                     case MessageType.SnapshotComplete:
+                        if (!JoinedMatch || MatchEnded) break;
                         if (snapshotManifest is null || snapshotAssembler is null || ProtocolCodec.DecodeGuid(envelope.Payload) != snapshotManifest.SnapshotId) throw new InvalidDataException("Snapshot completion identity mismatch.");
                         var compressed = snapshotAssembler.Finish(); var snapshot = SnapshotCodec.Decompress(compressed, ProtocolConstants.MaxSnapshotBytes);
                         log(SessionLogLevel.Info, $"Snapshot transfer complete id={snapshotManifest.SnapshotId:N} frame={snapshotManifest.FrameId} bytes={snapshot.Length}.");
@@ -231,7 +240,16 @@ internal sealed class ClientSession : IDisposable
 
     public Task LeaveAsync() => network.IsConnected ? network.SendAsync(MessageType.LeaveSession, Array.Empty<byte>()) : Task.CompletedTask;
 
-    public void MarkMatchEnded() => TerminalSessionEnded = true;
+    public void MarkMatchEnded() { MatchEnded = true; MatchStarting = false; IsCaughtUp = false; }
+
+    public void ReturnToLobby()
+    {
+        if (!MatchEnded || Room?.MatchStarted != false) throw new InvalidOperationException("The finished match has not returned to the lobby.");
+        matchId = null; JoinedMatch = false; IsSpectator = false; MatchStarting = false; IsCaughtUp = false;
+        welcomeMode = WelcomeMode.Lobby; hasSnapshotAnchor = false; snapshotRequested = false;
+        VerifiedFrameId = 0; AppliedFrameId = 0; verifiedHash = new byte[AuthorityHashChain.HashLength];
+        received.Clear(); pendingVerification.Clear(); snapshotManifest = null; snapshotAssembler = null;
+    }
 
     public void AcceptSnapshotAnchor(SnapshotManifest manifest)
     {

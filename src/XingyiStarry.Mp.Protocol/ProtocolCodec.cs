@@ -390,7 +390,7 @@ public static class ProtocolCodec
     {
         if (!CommandRules.MayBroadcast(value.Command.Kind)) throw new InvalidDataException("Request-only or retired command in authority log.");
         return Serialize(new Wire.OperationBegin { OperationId = GuidBytes(value.OperationId), SeatId = GuidBytes(value.SeatId),
-            RequestId = value.RequestId, Round = value.Round, Command = ToWire(value.Command) });
+            RequestId = value.RequestId, Round = value.Round, Command = ToWire(value.Command), LiveSettlements = value.LiveSettlements });
     }
 
     public static OperationBeginPayload DecodeOperationBegin(byte[] bytes)
@@ -399,7 +399,7 @@ public static class ProtocolCodec
         if (wire.Command is null) throw new InvalidDataException("Operation has no command.");
         if (!CommandRules.MayBroadcast((CommandKind)wire.Command.Kind)) throw new InvalidDataException("Request-only or retired command in authority log.");
         return new OperationBeginPayload { OperationId = ReadGuid(wire.OperationId), SeatId = ReadGuid(wire.SeatId),
-            RequestId = wire.RequestId, Round = wire.Round, Command = FromWire(wire.Command) };
+            RequestId = wire.RequestId, Round = wire.Round, Command = FromWire(wire.Command), LiveSettlements = wire.LiveSettlements };
     }
 
     public static byte[] EncodeOperationEnd(OperationEndPayload value) => Serialize(new Wire.OperationEnd { OperationId = GuidBytes(value.OperationId) });
@@ -418,6 +418,14 @@ public static class ProtocolCodec
         var wire = new Wire.Resolution { OperationId = GuidBytes(value.OperationId), StageId = value.StageId, SettlementOrdinal = value.SettlementOrdinal };
         wire.RandomRecords.Add(value.RandomRecords.Select(x => new Wire.RandomRecordMessage { CallSite = x.CallSite,
             Ordinal = x.Ordinal, ValueKind = x.ValueKind, IntegerValue = x.IntegerValue, FloatingValue = x.FloatingValue }));
+        if (value.AttackSettlement is { } hit)
+        {
+            ValidateAttackSettlement(value.StageId, value.SettlementOrdinal, hit);
+            wire.AttackSettlement = new Wire.AttackSettlement { Kind = (Wire.AttackSettlement.Types.Kind)hit.Kind,
+                BatchId = hit.BatchId, UnitId = hit.UnitId, ActionName = hit.ActionName,
+                TargetX = hit.TargetX, TargetY = hit.TargetY, OriginX = hit.OriginX, OriginY = hit.OriginY, Data = hit.Data };
+        }
+        else if (value.StageId != 0 || value.SettlementOrdinal != 0) throw new InvalidDataException("Unknown resolution stage.");
         return Serialize(wire);
     }
 
@@ -428,7 +436,22 @@ public static class ProtocolCodec
         var value = new ResolutionPayload { OperationId = ReadGuid(wire.OperationId), StageId = wire.StageId, SettlementOrdinal = wire.SettlementOrdinal };
         value.RandomRecords.AddRange(wire.RandomRecords.Select(x => new RandomRecord { CallSite = x.CallSite,
             Ordinal = x.Ordinal, ValueKind = CheckedByte(x.ValueKind), IntegerValue = x.IntegerValue, FloatingValue = x.FloatingValue }));
+        if (wire.AttackSettlement is { } hit)
+        {
+            value.AttackSettlement = new AttackSettlement { Kind = (AttackSettlementKind)hit.Kind, BatchId = hit.BatchId,
+                UnitId = hit.UnitId, ActionName = hit.ActionName, TargetX = hit.TargetX, TargetY = hit.TargetY,
+                OriginX = hit.OriginX, OriginY = hit.OriginY, Data = hit.Data };
+            ValidateAttackSettlement(value.StageId, value.SettlementOrdinal, value.AttackSettlement);
+        }
+        else if (value.StageId != 0 || value.SettlementOrdinal != 0) throw new InvalidDataException("Unknown resolution stage.");
         return value;
+    }
+
+    private static void ValidateAttackSettlement(int stage, int ordinal, AttackSettlement hit)
+    {
+        if (stage != 1 || ordinal <= 0 || hit.BatchId <= 0 || !Enum.IsDefined(typeof(AttackSettlementKind), hit.Kind) ||
+            hit.UnitId <= 0 || hit.ActionName.Length > 256 || float.IsNaN(hit.Data) || float.IsInfinity(hit.Data))
+            throw new InvalidDataException("Invalid attack settlement.");
     }
 
     public static byte[] EncodeAuthorityFrame(AuthorityFrame value) => Serialize(new Wire.AuthorityFrameMessage

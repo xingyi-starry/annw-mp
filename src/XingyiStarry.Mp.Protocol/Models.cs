@@ -330,6 +330,22 @@ public sealed class ResolutionPayload
     public int StageId { get; set; }
     public int SettlementOrdinal { get; set; }
     public List<RandomRecord> RandomRecords { get; } = new List<RandomRecord>();
+    public AttackSettlement? AttackSettlement { get; set; }
+}
+
+public enum AttackSettlementKind { BatchStarted = 1, Cell = 2, Death = 3, BatchEnded = 4 }
+
+public sealed class AttackSettlement
+{
+    public AttackSettlementKind Kind { get; set; }
+    public int BatchId { get; set; }
+    public long UnitId { get; set; }
+    public string ActionName { get; set; } = "";
+    public int TargetX { get; set; }
+    public int TargetY { get; set; }
+    public int OriginX { get; set; }
+    public int OriginY { get; set; }
+    public float Data { get; set; }
 }
 
 public sealed class AuthorityFrame

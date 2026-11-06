@@ -26,6 +26,7 @@ internal sealed class RoomState
     public bool UserMap { get; private set; }
     public byte[] MapPreview { get; private set; } = Array.Empty<byte>();
     private string draftFingerprint = "";
+    private readonly Dictionary<Guid, bool> initialDefeated = new Dictionary<Guid, bool>();
 
     public RoomState(Guid? roomId = null, int maxParticipants = 4)
     {
@@ -147,16 +148,35 @@ internal sealed class RoomState
         ParticipantRevision++;
     }
 
-    public bool CanStart => participants.Count != 0 && participants.Where(value => value.Connected).All(value => value.Ready) && (SavedGame
+    public bool CanStart => !MatchStarted && participants.Count != 0 && participants.Where(value => value.Connected).All(value => value.Ready) && (SavedGame
         ? !string.IsNullOrEmpty(MapId) && seats.Any(s => s.Connected && !s.Defeated)
         : !string.IsNullOrEmpty(MapId) && seats.Any(s => s.OriginallyHuman) && seats.Where(s => s.OriginallyHuman).All(s => s.Connected));
     public void Start()
     {
         if (!CanStart) throw new InvalidOperationException("Not all participants and human seats are ready.");
         MatchStarted = true;
+        initialDefeated.Clear();
+        foreach (var seat in seats) initialDefeated[seat.SeatId] = seat.Defeated;
         foreach (var participant in participants)
             participant.Admission = participant.SeatId.HasValue ? ParticipantAdmission.Player : ParticipantAdmission.Spectator;
         ParticipantRevision++;
+    }
+    public void ReturnToLobby()
+    {
+        if (!MatchStarted) return;
+        MatchStarted = false;
+        foreach (var participant in participants)
+            participant.Admission = ParticipantAdmission.Lobby;
+        foreach (var seat in seats)
+        {
+            seat.Defeated = initialDefeated.TryGetValue(seat.SeatId, out var defeated) && defeated;
+            seat.PendingActivation = false;
+            seat.AiControlled = !seat.Connected;
+            // A human who took an AI seat mid-match keeps it for the next game.
+            if (!SavedGame && seat.Connected) { seat.OriginallyHuman = true; seat.Controller = 0; }
+        }
+        ClearReady();
+        DraftRevision++;
     }
     public void ClearReady()
     {

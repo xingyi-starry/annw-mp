@@ -78,9 +78,13 @@ Publishing requires a GitHub token with `write:packages` permission. The referen
 .\install.ps1 -GameRoot 'D:\Games\Tactical Annihilation'
 ```
 
+Development installation sets the relay endpoint to `127.0.0.1:24555`; run a local relay first. New configurations use direct-host port `24556` to avoid a conflict, while existing direct-host ports are preserved. Pass `-RelayEndpoint 'host:port'` to use another relay. Release packages retain the public relay default.
+
 ### Protocol and relay
 
 The sole protobuf definition is `src\XingyiStarry.Mp.Protocol\Protos\multiplayer.proto`. After changing the protocol, run `generate.ps1` in the adjacent relay repository, commit the regenerated Go code, and complete the C#, Go, and cross-language tests.
+
+For the connection, handshake, match entry, reconnection, and shutdown flows, see [Session and protocol lifecycle (Chinese)](docs/session-lifecycle.md).
 
 ## License
 

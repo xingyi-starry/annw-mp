@@ -1,7 +1,8 @@
 param(
     [string]$GameRoot = 'D:\code\annw-lan\Tactical Annihilation',
     [string]$BepInExSource = (Join-Path $PSScriptRoot '.deps\BepInEx_win_x64_5.4.23.5'),
-    [string]$ArtifactsPath = ''
+    [string]$ArtifactsPath = '',
+    [string]$RelayEndpoint = '127.0.0.1:24555'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,10 +28,19 @@ if (-not (Test-Path -LiteralPath $doorstopTarget)) { Copy-Item -LiteralPath (Joi
 Copy-Item -Force -Path (Join-Path $PSScriptRoot 'dist\BepInEx\plugins\XingyiStarry.Mp\*') -Destination $pluginTarget
 $relayConfigTarget = Join-Path $configTarget 'xingyistarry.mp.cfg'
 if (-not (Test-Path -LiteralPath $relayConfigTarget)) {
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'config\relay-default.cfg') -Destination $relayConfigTarget
-} elseif (-not (Select-String -LiteralPath $relayConfigTarget -Pattern '^\s*\[Relay\]\s*$' -Quiet)) {
-    Add-Content -LiteralPath $relayConfigTarget -Value "`r`n[Relay]`r`nEndpoint = 60.205.147.182:24555"
+    # Development hosting and the local relay must listen on different ports.
+    [IO.File]::WriteAllText($relayConfigTarget, "[Network]`r`nPort = 24556`r`n", [Text.UTF8Encoding]::new($false))
 }
+$relayConfigText = [IO.File]::ReadAllText($relayConfigTarget)
+$relaySection = [regex]::Match($relayConfigText, '(?ms)^\[Relay\][^\r\n]*\r?\n.*?(?=^\[|\z)')
+if ($relaySection.Success) {
+    $sectionText = $relaySection.Value
+    if ($sectionText -match '(?m)^\s*Endpoint\s*=') {
+        $sectionText = [regex]::Replace($sectionText, '(?m)^\s*Endpoint\s*=[^\r\n]*', [System.Text.RegularExpressions.MatchEvaluator]{ param($match) "Endpoint = $RelayEndpoint" })
+    } else { $sectionText += "`r`nEndpoint = $RelayEndpoint`r`n" }
+    $relayConfigText = $relayConfigText.Remove($relaySection.Index, $relaySection.Length).Insert($relaySection.Index, $sectionText)
+} else { $relayConfigText += "`r`n[Relay]`r`nEndpoint = $RelayEndpoint`r`n" }
+[IO.File]::WriteAllText($relayConfigTarget, $relayConfigText, [Text.UTF8Encoding]::new($false))
 if ([string]::IsNullOrWhiteSpace($ArtifactsPath)) {
     $debugToolsSource = Join-Path $PSScriptRoot 'src\XingyiStarry.Mp.DebugTools\bin\Release\netstandard2.1\XingyiStarry.Mp.DebugTools.dll'
 } else {
@@ -39,3 +49,4 @@ if ([string]::IsNullOrWhiteSpace($ArtifactsPath)) {
 Copy-Item -Force -LiteralPath $debugToolsSource -Destination $debugToolsTarget
 Write-Host "Installed XingyiStarry MP to $pluginTarget"
 Write-Host "Installed development DebugTools to $debugToolsTarget"
+Write-Host "Development relay endpoint: $RelayEndpoint"

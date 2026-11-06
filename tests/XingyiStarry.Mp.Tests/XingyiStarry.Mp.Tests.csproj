@@ -10,9 +10,12 @@
     <Compile Include="..\..\src\XingyiStarry.Mp\MpText.cs" Link="MpText.cs" />
     <Compile Include="..\..\src\XingyiStarry.Mp\MpText.Catalog.cs" Link="MpText.Catalog.cs" />
     <Compile Include="..\..\src\XingyiStarry.Mp\Session\RoomState.cs" Link="Session\RoomState.cs" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Session\ClientSession.cs" Link="Session\ClientSession.cs" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Session\SessionLogLevel.cs" Link="Session\SessionLogLevel.cs" />
     <Compile Include="..\..\src\XingyiStarry.Mp\Session\CoroutineStack.cs" Link="Session\CoroutineStack.cs" />
     <Compile Include="..\..\src\XingyiStarry.Mp\Session\ExecutionContext.cs" Link="Session\ExecutionContext.cs" />
     <Compile Include="..\..\src\XingyiStarry.Mp\Session\OperationQueue.cs" Link="Session\OperationQueue.cs" />
+    <Compile Include="..\..\src\XingyiStarry.Mp\Session\RandomTape.cs" Link="Session\RandomTape.cs" />
     <Compile Include="..\..\src\XingyiStarry.Mp\Session\OrderedActionBatch.cs" Link="Session\OrderedActionBatch.cs" />
     <Compile Include="..\..\src\XingyiStarry.Mp\Session\RuntimePlayerIndexResolver.cs" Link="Session\RuntimePlayerIndexResolver.cs" />
     <Compile Include="..\..\src\XingyiStarry.Mp\Session\SocialState.cs" Link="Session\SocialState.cs" />

@@ -70,6 +70,11 @@ internal static class GameCompatibility
             (int)UnitActionType.ACTION_CREATE != (int)Protocol.ResolvedActionType.Create ||
             (int)UnitActionType.ACTION_UNLOAD != (int)Protocol.ResolvedActionType.Unload)
             missing.Add("resolved native unit batch layout");
+        foreach (var name in new[] { "DoAction_MultiTarget", "DoAction_Parallel", "proc_DoActionCell" })
+            if (typeof(ActionData).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)?.ReturnType != typeof(System.Collections.IEnumerator))
+                missing.Add("ActionData." + name);
+        if (typeof(GameAPI).GetMethod("proc_UnitDeathAnimation", BindingFlags.Instance | BindingFlags.NonPublic)?.ReturnType != typeof(System.Collections.IEnumerator))
+            missing.Add("GameAPI.proc_UnitDeathAnimation");
         return missing;
     }
 

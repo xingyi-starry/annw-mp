@@ -9,8 +9,9 @@ namespace XingyiStarry.Mp.Game;
 internal sealed class GameCommandExecutor
 {
     public bool IsBusy { get; private set; }
+    private int generation;
 
-    public void Reset() { IsBusy = false; ExecutionContext.SuppressAiDecision = false; AuthoritativeAutoGuide.Reset(); }
+    public void Reset() { generation++; IsBusy = false; ExecutionContext.SuppressAiDecision = false; AuthoritativeAutoGuide.Reset(); AttackSettlements.Reset(); }
 
     public string? Validate(GameCommand command)
     {
@@ -144,6 +145,7 @@ internal sealed class GameCommandExecutor
 
     private IEnumerator Run(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
     {
+        var executionGeneration = generation;
         IEnumerator inner;
         var tracksClientUnits = origin == ExecutionOrigin.ClientReplay;
         if (tracksClientUnits) MultiplayerUnitStates.BeginAuthorityExecution(command);
@@ -151,12 +153,16 @@ internal sealed class GameCommandExecutor
         using var stack = new CoroutineStack(inner);
         while (true)
         {
+            if (executionGeneration != generation) yield break;
             bool more; object? current = null;
             try
             {
                 using (ExecutionContext.Enter(origin))
                 {
+                    AttackSettlements.Current?.ThrowIfFailed();
                     more = stack.MoveNext();
+                    AttackSettlements.Current?.ThrowIfFailed();
+                    if (!more) AttackSettlements.Current?.CheckComplete();
                     if (more) current = stack.Current;
                 }
             }
@@ -175,17 +181,22 @@ internal sealed class GameCommandExecutor
 
     private IEnumerator RunInner(GameCommand command, IEnumerator inner, ExecutionOrigin origin, Action completed, Action<Exception> failed)
     {
+        var executionGeneration = generation;
         var tracksClientUnits = origin == ExecutionOrigin.ClientReplay;
         if (tracksClientUnits) MultiplayerUnitStates.BeginAuthorityExecution(command);
         using var stack = new CoroutineStack(inner);
         while (true)
         {
+            if (executionGeneration != generation) yield break;
             bool more; object? current = null;
             try
             {
                 using (ExecutionContext.Enter(origin))
                 {
+                    AttackSettlements.Current?.ThrowIfFailed();
                     more = stack.MoveNext();
+                    AttackSettlements.Current?.ThrowIfFailed();
+                    if (!more) AttackSettlements.Current?.CheckComplete();
                     if (more) current = stack.Current;
                 }
             }

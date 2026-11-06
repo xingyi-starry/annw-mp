@@ -78,9 +78,13 @@ dotnet .\tests\XingyiStarry.Mp.Tests\bin\Release\net8.0\XingyiStarry.Mp.Tests.dl
 .\install.ps1 -GameRoot 'D:\Games\Tactical Annihilation'
 ```
 
+开发安装默认将 Relay 配置为 `127.0.0.1:24555`，需要先在本机运行 Relay。新配置的游戏直连监听端口为 `24556`，避免与本地 Relay 冲突；已有直连端口保留。需要临时连接其他 Relay 时传入 `-RelayEndpoint '地址:端口'`。正式发布包仍默认连接公共线上 Relay。
+
 ### 协议与 Relay
 
 唯一 protobuf 定义位于 `src\XingyiStarry.Mp.Protocol\Protos\multiplayer.proto`。修改协议后还需要在相邻 Relay 仓库运行 `generate.ps1`，提交重新生成的 Go 代码，并完成 C#、Go 和跨语言测试。
+
+握手、进入战场、重连和结束流程见[联机游戏与协议生命周期](docs/session-lifecycle.md)。
 
 ## 许可证
 

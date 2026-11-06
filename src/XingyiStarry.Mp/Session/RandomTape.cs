@@ -17,6 +17,17 @@ internal sealed class RandomTape
 
     public void BeginRecording() { Reset(); IsRecording = true; }
     public void BeginReplay(IEnumerable<RandomRecord> records) { Reset(); replayRecords = new Queue<RandomRecord>(records); }
+    public void AppendReplay(IEnumerable<RandomRecord> records)
+    {
+        if (replayRecords is null) throw new InvalidOperationException("Random tape is not replaying.");
+        foreach (var record in records) replayRecords.Enqueue(record);
+    }
+
+    public IReadOnlyList<RandomRecord> DrainRecording()
+    {
+        if (!IsRecording) throw new InvalidOperationException("Random tape is not recording.");
+        var records = hostRecords.ToArray(); hostRecords.Clear(); return records;
+    }
 
     public float Float(string callSite, Func<float> original)
     {

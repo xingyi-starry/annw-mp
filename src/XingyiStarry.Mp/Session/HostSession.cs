@@ -251,12 +251,27 @@ internal sealed class HostSession : IDisposable
 
     public void StartMatch(string journalPath)
     {
+        journal?.Dispose();
         Room.Start(); MatchId = Guid.NewGuid(); journal = new AuthorityJournal(MatchId.Value, journalPath);
+        latestSnapshotManifest = null; latestCompressedSnapshot = null;
         foreach (var client in clientsById.Values)
         {
             var participant = Room.FindParticipant(client.ClientId);
             client.JoinedMatch = participant?.Admission == ParticipantAdmission.Player || participant?.Admission == ParticipantAdmission.Spectator;
         }
+    }
+
+    public void ReturnToLobby()
+    {
+        foreach (var record in clientsById.Values.ToArray())
+            if (record.Reconnecting || record.Peer?.IsConnected != true)
+                FinalizeClient(record, "${notice_left}", _ => { }, _ => { });
+        pendingSeatChanges.Clear();
+        MatchId = null;
+        Room.ReturnToLobby();
+        // Keep the finished journal/snapshot until the next start: a slower client may
+        // still be loading its snapshot or requesting the history containing MatchEnded.
+        BroadcastRoom();
     }
 
     public Guid? LocalHostSeatId => Room.Seats.FirstOrDefault(value => value.ClientId == LocalHostClientId)?.SeatId;
