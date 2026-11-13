@@ -26,19 +26,6 @@ internal static class AuthoritativeAutoGuide
         while (movementOrder is not null && !movementOrder.MayFinish(unit.unit_id)) yield return 0f;
     }
 
-    internal static IEnumerator Plan(GameCommand request)
-    {
-        var units = new List<UnitData>();
-        foreach (var id in request.UnitIds)
-        {
-            var unit = GS_Battle.self.all_unit.GetUnitByID((int)id);
-            if (!unit.actioned && !unit.in_animation && !unit.overlapped && unit.unit_ai is not null) units.Add(unit);
-        }
-        UnitSpatialSorter.SortUnitListWithHAC(units);
-        return (IEnumerator)AccessTools.Method(typeof(AutoGuideController), "proc_AutoCommand").Invoke(
-            SingletonMono<SS_ANNW_Game>.self.auto_guide, new object[] { units, false });
-    }
-
     internal static GameCommand ResolveBatch(List<UT_UnitAction> batch)
     {
         var command = new GameCommand { Kind = CommandKind.ResolvedUnitActions, UnitIds = new long[batch.Count] };
@@ -52,7 +39,7 @@ internal static class AuthoritativeAutoGuide
                 MoveX = action.move_pos.x, MoveY = action.move_pos.y, TargetX = action.action_pos.x, TargetY = action.action_pos.y,
                 ActionCategory = action.action is null ? (int)ActionCate.NONE : (int)action.action.sd_action.cate,
                 TemplateId = action.create_tp?.sd_unit?.name ?? "", PassengerUnitId = action.unload_unit?.unit_id ?? 0,
-                SkipAnimations = GS_Battle.self.auto_guide_skip_animations || GS_Battle.ShouldSkipActionAnimation(action)
+                SkipAnimations = false
             });
         }
         return command;
@@ -131,17 +118,6 @@ internal static class ResolvedBatchMovementOrderPatch
     }
 }
 
-[HarmonyPatch(typeof(AutoGuideController), "proc_AutoCommand")]
-internal static class HostOnlyAutoGuidePlannerPatch
-{
-    private static bool Prefix(ref IEnumerator __result)
-    {
-        if (!InputGate.MultiplayerActive || XingyiStarryMpPlugin.Instance?.HostAutoGuidePlanning == true) return true;
-        __result = Empty(); return false;
-    }
-    private static IEnumerator Empty() { yield break; }
-}
-
 [HarmonyPatch(typeof(AutoGuideController), "StartAutoGuideBatch")]
 internal static class ResolveAutoGuideBatchPatch
 {
@@ -149,7 +125,7 @@ internal static class ResolveAutoGuideBatchPatch
     {
         var plugin = XingyiStarryMpPlugin.Instance;
         if (!InputGate.MultiplayerActive || ExecutionContext.IsAuthoritativeExecution) return true;
-        if (plugin?.HostAutoGuidePlanning == true) __result = plugin.RunHostAutoGuideBatch(batch);
+        if (plugin?.LocalAutoGuidePlanning == true) __result = plugin.SubmitLocalAutoGuideBatch(batch);
         else __result = Empty();
         return false;
     }

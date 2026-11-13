@@ -2,7 +2,7 @@ namespace XingyiStarry.Mp.Protocol;
 
 public static class ProtocolConstants
 {
-    public const ushort Version = 21;
+    public const ushort Version = 22;
     // Keep a room update well below the relay's default 8 MiB per-peer write queue.
     public const int MaxMapPreviewBytes = 4 * 1024 * 1024;
     public const int MaxExpandedMapPreviewBytes = 32 * 1024 * 1024;
@@ -127,7 +127,7 @@ public enum CommandKind : ushort
     Skill = 6,
     UndoMove = 7,
     EndTurn = 8,
-    AutoGuideStart = 9, // Request to the host only; never an authoritative operation.
+    AutoGuideStart = 9, // Retired; local native planning submits ResolvedUnitActions.
     // 10 was AutoGuideCancel. Retired; do not reuse.
     DebugAddResources = 11,
     DebugFillSkill = 12,
@@ -137,7 +137,7 @@ public enum CommandKind : ushort
     Surrender = 16,
     ToggleStandby = 17,
     ToggleSleep = 18,
-    Stay = 19,
+    Stay = 19, // Retired; reversible same-cell setup is local native input.
     SelfDestruct = 20,
     ResolvedUnitActions = 21
 }

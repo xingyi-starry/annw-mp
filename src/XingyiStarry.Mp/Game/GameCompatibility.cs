@@ -13,7 +13,9 @@ internal static class GameCompatibility
         "UX_Manager.proc_UnitsDoMove", "UX_Manager.proc_UnitsDoAction", "UX_Manager.proc_SkillDoAction",
         "Player.DoWipeOut", "Player.proc_DoWipeOut", "UnitData.AddExp_BasePercent", "UnitData.Hurt", "UnitData.Die",
         "GameAPI.CreateUnit", "GameAPI.DescendUnit", "UnitData.TriggerDieEvent", "ActionData.DoActionCell",
-        "UnitAI.ExecuteAction", "UndoMoveData.UndoLastMove", "GS_Battle.Save_General"
+        "UnitAI.ExecuteAction", "UndoMoveData.UndoLastMove", "GS_Battle.Save_General",
+        "UnitData.SaveOb", "UnitData.SetMoveGoal", "UnitData.ClearMoveGoal", "UnitData.GetMoveZone",
+        "ActionData.GetSelectZone", "AutoGuideController.TryAutoCommandSelectedUnits", "AutoGuideController.TryAutoCommandUnactedUnits"
     };
 
     public static IReadOnlyList<string> Probe()
@@ -72,8 +74,8 @@ internal static class GameCompatibility
             (int)UnitActionType.ACTION_CREATE != (int)Protocol.ResolvedActionType.Create ||
             (int)UnitActionType.ACTION_UNLOAD != (int)Protocol.ResolvedActionType.Unload)
             missing.Add("resolved native unit batch layout");
-        foreach (var name in new[] { "DoAction_MultiTarget", "DoAction_Parallel", "proc_DoActionCell" })
-            if (typeof(ActionData).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)?.ReturnType != typeof(System.Collections.IEnumerator))
+        foreach (var name in new[] { "DoAction_Normal", "DoAction_MultiTarget", "DoAction_Parallel", "DoAction_Field", "DoAction_Skill", "proc_DoActionCell", "DoActionAni" })
+            if (typeof(ActionData).GetMethod(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.ReturnType != typeof(System.Collections.IEnumerator))
                 missing.Add("ActionData." + name);
         if (typeof(GameAPI).GetMethod("proc_UnitDeathAnimation", BindingFlags.Instance | BindingFlags.NonPublic)?.ReturnType != typeof(System.Collections.IEnumerator))
             missing.Add("GameAPI.proc_UnitDeathAnimation");

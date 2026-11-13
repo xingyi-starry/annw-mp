@@ -35,7 +35,9 @@ internal static class EquipmentMoveCapturePatch
         { XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits(); __result = EquipmentActionCapturePatch.Empty(); return false; }
         var command = EquipmentActionCapturePatch.Command(new List<UnitData> { unit }, CommandKind.EquipmentMoveAction, lt);
         var op = unit.eq.GetMoveOpAt(lt.pos);
-        if (op?.move_pos is Inctor2 move)
+        if (op?.action is null || op.move_pos is not Inctor2)
+        { XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits(); __result = EquipmentActionCapturePatch.Empty(); return false; }
+        if (op.move_pos is Inctor2 move)
         {
             command.UnitTargetXs = new[] { move.x };
             command.UnitTargetYs = new[] { move.y };
@@ -55,7 +57,10 @@ internal static class BuildWithMoveCapturePatch
         if (InputGate.ShouldRunOriginal) return true;
         if (!LocalCommandUnits.CanMove(unit) || unit.actioned)
         { XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits(); __result = EquipmentActionCapturePatch.Empty(); return false; }
+        if (op?.move_pos is not Inctor2)
+        { XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits(); __result = EquipmentActionCapturePatch.Empty(); return false; }
         var command = EquipmentActionCapturePatch.Command(new List<UnitData> { unit }, CommandKind.BuildWithMove, lt);
+        command.ActionCategory = (int)ActionCate.BUILD;
         if (op.move_pos is Inctor2 move)
         {
             command.UnitTargetXs = new[] { move.x };

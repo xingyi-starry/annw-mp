@@ -19,6 +19,7 @@ internal static class Program
     public static async Task<int> Main()
     {
         Test("command round trip", CommandRoundTrip);
+        Test("composite movement survives proposal and authority", MoveActionProtocolTests.Run);
         Test("resolved native action batch round trip", AutoGuideProtocolTests.RoundTrip);
         Test("auto-guide request and authority boundary", AutoGuideProtocolTests.AuthorityBoundary);
         Test("resolved batch shape validation", AutoGuideProtocolTests.MalformedBatch);
@@ -66,7 +67,7 @@ internal static class Program
             await TestAsync("C# to Go relay integration", () => RelayIntegration(relayEndpoint));
             await TestAsync("direct and relay host integration", () => MultiStackHostIntegration(relayEndpoint));
         }
-        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 42 : 44)}"); return 0;
+        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 43 : 45)}"); return 0;
     }
 
     private static void HostHandshakePassword()
@@ -218,7 +219,7 @@ internal static class Program
     {
         var command=new GameCommand {Kind=CommandKind.Move,UnitIds=new long[]{17},TargetX=-3,TargetY=8};
         var wireCommand=ProtocolCodec.EncodeCommand(command);
-        Equal(Wire.GameCommandMessage.BodyOneofCase.Move,wireCommand.BodyCase);Equal(17L,wireCommand.Move.UnitIds[0]);Equal(-3,wireCommand.Move.TargetX);
+        Equal(Wire.GameCommandMessage.BodyOneofCase.Move,wireCommand.BodyCase);Equal(17L,wireCommand.Move.UnitIds[0]);Equal(0,ProtocolCodec.DecodeCommand(wireCommand).TargetX);
         var room=Guid.NewGuid();var client=Guid.NewGuid();var target=Guid.NewGuid();
         var bytes=ProtocolCodec.EncodeEnvelope(new Envelope {Message=Messages.CommandRequest(ProtocolCodec.EncodeCommandRequest(new CommandRequest {SeatId=Guid.NewGuid(),Command=command})),RoomId=room,ClientId=client,TargetClientId=target,Delivery=Delivery.ToHost});
         var wire=Wire.WireEnvelope.Parser.ParseFrom(bytes);
@@ -310,7 +311,7 @@ internal static class Program
     private static void SessionMessagesRoundTrip()
     {
         Equal((ushort)34, (ushort)MessageType.ReleaseSeat); Equal((ushort)41, (ushort)MessageType.RelayResumeRoom);
-        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)50, (ushort)MessageType.SocialSyncComplete); Equal((ushort)21, ProtocolConstants.Version);
+        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)50, (ushort)MessageType.SocialSyncComplete); Equal((ushort)22, ProtocolConstants.Version);
         var room = Guid.NewGuid(); var match = Guid.NewGuid(); var client = Guid.NewGuid(); var seat = Guid.NewGuid();
         Equal(seat, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest { SeatId = seat })).SeatId);
         Equal(null, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest())).SeatId);

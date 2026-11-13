@@ -15,10 +15,14 @@ internal sealed class GameCommandExecutor
 
     public string? Validate(GameCommand command)
     {
+        using var localFlags = LocalUnitIntent.CanonicalFlags();
         if (GS_Battle.self is null || !GS_Battle.self.game_running) return "Battle is not running.";
         var resolvedError = CommandRules.ValidateResolvedActions(command);
         if (resolvedError is not null) return resolvedError;
         if (IsBusy || GS_Battle.self.unit_busy && command.Kind != CommandKind.ResolvedUnitActions) return "${notice_another_operation_is_running}";
+        // The planning endpoint already ran the native planner. Execute its concrete
+        // batch without re-querying action eligibility, movement, targets or costs.
+        if (command.Kind == CommandKind.ResolvedUnitActions) return null;
         if (command.Kind == CommandKind.DebugAddResources || command.Kind == CommandKind.DebugFillSkill)
         {
             if (command.DebugPlayerIndex < -1 || command.DebugPlayerIndex >= GS_Battle.self.all_player.players.Count)
@@ -42,15 +46,13 @@ internal sealed class GameCommandExecutor
         }
         if (command.Kind == CommandKind.EndTurn || command.Kind == CommandKind.TurnAdvance || command.Kind == CommandKind.UndoMove || command.Kind == CommandKind.Skill) return null;
         if (command.UnitIds.Length == 0) return "Command contains no units.";
-        if (command.Kind == CommandKind.AutoGuideStart && new System.Collections.Generic.HashSet<long>(command.UnitIds).Count != command.UnitIds.Length)
-            return "Auto-guide request contains duplicate units.";
         foreach (var id in command.UnitIds)
         {
             if (id < int.MinValue || id > int.MaxValue) return "Unit id is outside the game range.";
             var unit = GS_Battle.self.all_unit.GetUnitByID((int)id);
             if (unit is null) return "${ui_unit_does_not_exist}" + id;
             if (unit.player != GS_Battle.self.cur_player) return "${ui_unit_is_not_owned_by_the_current_player}" + id;
-            if ((command.Kind == CommandKind.Move || command.Kind == CommandKind.Stay) && unit.moved)
+            if (command.Kind == CommandKind.Move && unit.moved)
                 return "${ui_unit_cannot_move_again_this_turn}" + id;
         }
         if (command.Kind == CommandKind.Move && (command.UnitTargetXs.Length != command.UnitIds.Length || command.UnitTargetYs.Length != command.UnitIds.Length)) return "Move target count mismatch.";
@@ -66,21 +68,6 @@ internal sealed class GameCommandExecutor
             if (command.UnitIds.Length != 1 || command.UnitTargetXs.Length != 1 || command.UnitTargetYs.Length != 1) return "AI action shape is invalid.";
             if (command.AiActionType < (int)UnitActionType.MOVE || command.AiActionType > (int)UnitActionType.ACTION_UNLOAD) return "AI action type is invalid.";
             if (GameTileData.Get(new Inctor2(command.TargetX, command.TargetY)) is null) return "AI action target is invalid.";
-        }
-        if (command.Kind == CommandKind.ResolvedUnitActions)
-        {
-            foreach (var step in command.ResolvedActions)
-            {
-                var unit = GS_Battle.self.all_unit.GetUnitByID((int)step.UnitId);
-                if (unit.actioned || unit.in_animation || unit.building) return "Resolved unit is not available.";
-                if (GameTileData.Get(new Inctor2(step.MoveX, step.MoveY)) is null) return "Resolved movement target is invalid.";
-                if (step.Type != ResolvedActionType.Move &&
-                    (GameTileData.Get(new Inctor2(step.TargetX, step.TargetY)) is null || unit.GetAction((ActionCate)step.ActionCategory) is null))
-                    return "Resolved action target or category is invalid.";
-                if (step.Type == ResolvedActionType.Unload &&
-                    (step.PassengerUnitId < int.MinValue || step.PassengerUnitId > int.MaxValue ||
-                     GS_Battle.self.all_unit.GetUnitByID((int)step.PassengerUnitId) is null)) return "Resolved passenger is invalid.";
-            }
         }
         if (command.Kind == CommandKind.Action)
         {
@@ -103,12 +90,14 @@ internal sealed class GameCommandExecutor
             if (command.UnitIds.Length != 1) return "Equipment move action must contain exactly one unit.";
             var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
             if (unit.actioned || unit.moved) return "${ui_unit_cannot_perform_another_move_action_this_turn}" + command.UnitIds[0];
+            if (ExplicitMoveAction.Resolve(command) is null) return "${notice_original_action_validation_rejected_the_command}";
         }
         if (command.Kind == CommandKind.BuildWithMove)
         {
             if (command.UnitIds.Length != 1) return "Build-with-move must contain exactly one unit.";
             var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
             if (unit.actioned || unit.moved) return "${ui_unit_cannot_build_after_moving_or_acting_this}" + command.UnitIds[0];
+            if (ExplicitMoveAction.Resolve(command) is null) return "${notice_original_action_validation_rejected_the_command}";
         }
         return null;
     }
@@ -117,6 +106,7 @@ internal sealed class GameCommandExecutor
     {
         var validation = Validate(command);
         if (validation is not null) { failed(new InvalidOperationException(validation)); return; }
+        LocalUnitIntent.BeginAuthority();
         IsBusy = true;
         GameController.self.StartCoroutine(Run(command, origin, completed, failed), "XingyiStarryMpOperation");
     }
@@ -179,7 +169,6 @@ internal sealed class GameCommandExecutor
             case CommandKind.Surrender: return ExecuteSurrender(command);
             case CommandKind.ToggleStandby: return ExecuteToggleState(command, sleep: false);
             case CommandKind.ToggleSleep: return ExecuteToggleState(command, sleep: true);
-            case CommandKind.Stay: return ExecuteStay(command);
             case CommandKind.SelfDestruct: return ExecuteSelfDestruct(command);
             default: return Unsupported(command.Kind);
         }
@@ -370,24 +359,21 @@ internal sealed class GameCommandExecutor
 
     private static IEnumerator ExecuteMove(GameCommand command)
     {
-        GS_Battle.self.selected_units.Clear(); UXM_MovePath.ClearMovePathInfos();
+        UXM_MovePath.ClearMovePathInfos();
         var ordered = UXM_MovePath.GetSortedMoveUnits(); var infos = UXM_MovePath.GetMovePathInfos();
         for (var i = 0; i < command.UnitIds.Length; i++)
         {
             var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[i]);
             var target = new Inctor2(command.UnitTargetXs[i], command.UnitTargetYs[i]);
-            var goal = new Inctor2(command.TargetX, command.TargetY);
-            var goalField = new GoalDistField(goal, unit.template.sd_unit.chassis);
-            var forcedStay = command.DesiredToggleState &&
-                (bool)(HarmonyLib.AccessTools.Method(typeof(UnitData), "IsStayAttack")?.Invoke(unit, null) ?? false);
+            var goal = target;
             var info = new MovePathInfo
             {
                 unit = unit, from = HexLogic.OffsetToQubic(unit.pos), to = HexLogic.OffsetToQubic(target), cost_remain = unit.move.value,
-                goal = goal, goal_clipped = target != goal, goal_reachable = goalField.IsReachable(unit.pos), forced_stay = forcedStay
+                goal = goal, goal_clipped = false, goal_reachable = true, forced_stay = false
             };
             var getMovePath = HarmonyLib.AccessTools.Method(typeof(UnitData), "GetMovePath");
             info.path_ipos = (System.Collections.Generic.List<Inctor2>)getMovePath.Invoke(unit, new object?[] { target, null, info, false });
-            GS_Battle.self.selected_units.Add(unit); ordered.Add(unit); infos.Add(unit, info);
+            ordered.Add(unit); infos.Add(unit, info);
         }
         yield return UX_Manager.self.proc_UnitsDoMove();
     }
@@ -415,16 +401,6 @@ internal sealed class GameCommandExecutor
         yield break;
     }
 
-    private static IEnumerator ExecuteStay(GameCommand command)
-    {
-        var units = ResolveUnits(command);
-        foreach (var unit in units) unit.DoMove(unit.pos);
-        while (units.Exists(unit => unit.in_animation)) yield return 0f;
-        UXM_MovePath.ClearMovePathInfos();
-        BattleEventBus.self.TriggerUnitMovedAll();
-        UX_Manager.self.CheckUnitsAndSetUXState();
-    }
-
     private static IEnumerator ExecuteEquipmentAction(GameCommand command)
     {
         var units = ResolveUnits(command); var target = GameTileData.Get(new Inctor2(command.TargetX, command.TargetY));
@@ -434,16 +410,13 @@ internal sealed class GameCommandExecutor
 
     private static IEnumerator ExecuteEquipmentMoveAction(GameCommand command)
     {
-        var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
-        yield return UX_Manager.self.proc_UnitsDoEqMoveOp(GameTileData.Get(new Inctor2(command.TargetX, command.TargetY)), unit);
+        yield return ExplicitMoveAction.ExecuteEquipment(command);
     }
 
     private static IEnumerator ExecuteBuildWithMove(GameCommand command)
     {
         var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]); var target = GameTileData.Get(new Inctor2(command.TargetX, command.TargetY));
-        var op = new OpData();
-        if (command.UnitTargetXs.Length == 1 && command.UnitTargetYs.Length == 1)
-            op.move_pos = new Inctor2(command.UnitTargetXs[0], command.UnitTargetYs[0]);
+        var op = ExplicitMoveAction.Resolve(command) ?? throw new InvalidOperationException("Explicit build move is no longer valid.");
         GS_Battle.self.ux_unit_template = UnitTemplate.Acquire(command.TemplateId);
         yield return UX_Manager.self.proc_BuildWithMove(target, unit, op);
     }

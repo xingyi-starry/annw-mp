@@ -19,7 +19,7 @@ internal static class ImmediateActionCapturePatch
         if (InputGate.ShouldRunOriginal) return true;
         if (__instance.cate == ActionCate.AUTO_GUIDE)
         {
-            AutoGuideCapturePatches.SubmitSelected(); return false;
+            SingletonMono<SS_ANNW_Game>.self.auto_guide.TryAutoCommandSelectedUnits(); return false;
         }
         if (!Immediate.Contains(__instance.cate)) return true;
         var units = LocalCommandUnits.Filter(GS_Battle.self.sel_group_units); var ids = new long[units.Count]; var xs = new int[units.Count]; var ys = new int[units.Count];

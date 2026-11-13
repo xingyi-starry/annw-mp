@@ -38,18 +38,36 @@ internal static class UnitsDoMoveCapturePatch
             XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits();
             __result = Empty(); return false;
         }
-        var ids = new long[units.Count]; var xs = new int[units.Count]; var ys = new int[units.Count];
-        for (var i = 0; i < units.Count; i++)
+        if (!InputGate.MaySubmit) { __result = Empty(); return false; }
+        var moving = new List<UnitData>();
+        var plans = new List<MovePathInfo>();
+        var staying = new List<UnitData>();
+        foreach (var unit in units)
         {
-            var info = UXM_MovePath.AcquireMovePathInfo(units[i]); var target = HexLogic.QubicToOffset(info.to);
-            ids[i] = units[i].unit_id; xs[i] = target.x; ys[i] = target.y;
+            var info = UXM_MovePath.AcquireMovePathInfo(unit);
+            var target = HexLogic.QubicToOffset(info.to);
+            if (target == unit.pos) staying.Add(unit);
+            else { moving.Add(unit); plans.Add(info); }
         }
-        var firstInfo = units.Count > 0 ? UXM_MovePath.AcquireMovePathInfo(units[0]) : null;
+        if (moving.Count == 0) return true; // Entire original same-cell setup chain.
+        foreach (var unit in units)
+        {
+            var info = UXM_MovePath.AcquireMovePathInfo(unit);
+            // Preserve native goal semantics at the input owner. Goals never enter the wire.
+            if (info.goal_clipped && info.goal_reachable && !info.forced_stay)
+                AccessTools.Method(typeof(UnitData), "SetMoveGoal").Invoke(unit, new object[] { info.goal });
+            else AccessTools.Method(typeof(UnitData), "ClearMoveGoal").Invoke(unit, new object[] { false });
+        }
+        foreach (var unit in staying) unit.DoMove(unit.pos);
+        var ids = new long[moving.Count]; var xs = new int[moving.Count]; var ys = new int[moving.Count];
+        for (var i = 0; i < moving.Count; i++)
+        {
+            var target = HexLogic.QubicToOffset(plans[i].to);
+            ids[i] = moving[i].unit_id; xs[i] = target.x; ys[i] = target.y;
+        }
         XingyiStarryMpPlugin.Instance?.SubmitCommand(new GameCommand
         {
-            Kind = CommandKind.Move, UnitIds = ids, UnitTargetXs = xs, UnitTargetYs = ys,
-            TargetX = firstInfo?.goal.x ?? 0, TargetY = firstInfo?.goal.y ?? 0,
-            DesiredToggleState = units.Exists(unit => UXM_MovePath.AcquireMovePathInfo(unit).forced_stay)
+            Kind = CommandKind.Move, UnitIds = ids, UnitTargetXs = xs, UnitTargetYs = ys
         });
         __result = Empty(); return false;
     }

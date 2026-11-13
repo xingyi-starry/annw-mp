@@ -60,7 +60,7 @@ def csval(f,expr):
  if t==11:return f'Write(writer, {expr});'
  if t==14:return f'writer.Write((uint){expr});'
  return f'writer.Write({expr});'
-cs='''// Explicit v21 field encoding. Generated from the canonical schema; no protobuf serialization/reflection at runtime.
+cs='''// Explicit authority field encoding. Generated from the canonical schema; no protobuf serialization/reflection at runtime.
 using System;
 using System.IO;
 using System.Text;

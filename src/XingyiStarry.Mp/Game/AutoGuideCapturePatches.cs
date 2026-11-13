@@ -1,40 +1,35 @@
-using System.Collections.Generic;
 using HarmonyLib;
-using XingyiStarry.Mp.Protocol;
+using System.Collections;
+using System.Collections.Generic;
+using System.Reflection.Emit;
 
 namespace XingyiStarry.Mp.Game;
 
-[HarmonyPatch(typeof(AutoGuideController), nameof(AutoGuideController.TryAutoCommandSelectedUnits))]
+[HarmonyPatch]
 internal static class AutoGuideCapturePatches
 {
-    private static bool Prefix()
+    private static System.Collections.Generic.IEnumerable<System.Reflection.MethodBase> TargetMethods()
     {
-        if (InputGate.ShouldRunOriginal) return true;
-        SubmitSelected();
-        return false;
+        yield return AccessTools.Method(typeof(AutoGuideController), nameof(AutoGuideController.TryAutoCommandSelectedUnits));
+        yield return AccessTools.Method(typeof(AutoGuideController), nameof(AutoGuideController.TryAutoCommandUnactedUnits));
     }
-
-    internal static void SubmitSelected() => Submit(GS_Battle.self?.selected_units);
-
-    internal static void Submit(IEnumerable<UnitData>? units)
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
-        if (units is null) return;
-        var ids = new List<long>();
-        foreach (var unit in units)
-            if (unit is not null && unit.player == GS_Battle.self.cur_player && !unit.actioned && !unit.in_animation && unit.unit_ai is not null)
-                ids.Add(unit.unit_id);
-        if (ids.Count != 0)
-            XingyiStarryMpPlugin.Instance?.SubmitCommand(new GameCommand { Kind = CommandKind.AutoGuideStart, UnitIds = ids.ToArray() });
+        var factory = AccessTools.Method(typeof(AutoGuideController), "proc_AutoCommand");
+        foreach (var instruction in instructions)
+        {
+            if (instruction.Calls(factory))
+            {
+                instruction.opcode = OpCodes.Call;
+                instruction.operand = AccessTools.Method(typeof(AutoGuideCapturePatches), nameof(StartPlanner));
+            }
+            yield return instruction;
+        }
     }
-}
-
-[HarmonyPatch(typeof(AutoGuideController), nameof(AutoGuideController.TryAutoCommandUnactedUnits))]
-internal static class AutoGuideUnactedCapturePatch
-{
-    private static bool Prefix()
+    private static IEnumerator StartPlanner(AutoGuideController controller, List<UnitData> units, bool forSelection)
     {
-        if (InputGate.ShouldRunOriginal) return true;
-        AutoGuideCapturePatches.Submit(GS_Battle.self?.cur_player?.unactioned_units);
-        return false;
+        var native = (IEnumerator)AccessTools.Method(typeof(AutoGuideController), "proc_AutoCommand").Invoke(controller, new object[] { units, forSelection });
+        return InputGate.MultiplayerActive && XingyiStarryMpPlugin.Instance is { } plugin ? plugin.BeginLocalAutoGuide(native) : native;
     }
+    private static bool Prefix() => !InputGate.MultiplayerActive || InputGate.MaySubmit;
 }

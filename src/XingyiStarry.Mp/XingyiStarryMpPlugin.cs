@@ -26,7 +26,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 {
     public const string PluginId = "xingyistarry.mp";
     public const string PluginName = "XingyiStarry MP";
-    public const string PluginVersion = "0.11.1";
+    public const string PluginVersion = "0.11.2";
 
     private Harmony? harmony;
     private HostSession? host;
@@ -68,7 +68,10 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     private bool applyingAuthorityMatchEnd;
     private bool turnAdvanceRunning;
     private bool authorityAiOperationActive;
-    internal bool HostAutoGuidePlanning { get; private set; }
+    internal bool LocalAutoGuidePlanning { get; private set; }
+    private int plannerGeneration;
+    private ulong? localAutoGuideRequest;
+    private bool? localAutoGuideResult;
     private bool fastReconnectRunning;
     private bool fastReconnectCancelRequested;
     private int fastReconnectAttempt;
@@ -101,7 +104,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         InputGate.MultiplayerActive && GS_Battle.self?.game_running == true;
     internal bool CanMultiplayerSave => InputGate.MultiplayerActive && GS_Battle.self?.game_running == true && GS_Battle.self.turns >= 1 &&
         !GS_Battle.self.functions.Querry(GAME_FUNCTION.NoSave) && !fastReconnectRunning &&
-        loadingSnapshot is null && !executor.IsBusy && !authorityAiOperationActive && !turnAdvanceRunning && !HostAutoGuidePlanning &&
+        loadingSnapshot is null && !executor.IsBusy && !authorityAiOperationActive && !turnAdvanceRunning && !LocalAutoGuidePlanning &&
         !forcedDisconnectedEndTurnPending && !forcedDisconnectedEndTurnRunning && !pendingMatchEnd.HasValue &&
         (host?.MatchId.HasValue == true || client?.IsCaughtUp == true && client.AppliedFrameId == client.VerifiedFrameId && pendingAuthorityFrames.Count == 0 && !replayOperationId.HasValue);
     internal bool ShouldCaptureHostAi => host?.MatchId.HasValue == true && GS_Battle.self?.game_running == true && GS_Battle.self.cur_player?.is_ai == true;
@@ -245,7 +248,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         {
             host.RefreshRuntimeSeats(GS_Battle.self.all_player.players);
             var localSeat = host.Room.Seats.FirstOrDefault(value => value.ClientId == host.LocalHostClientId);
-            InputGate.LocalSeatMayAct = !HostAutoGuidePlanning && localSeat is not null && localSeat.PlayerIndex == GS_Battle.self.current_co_index && !localSeat.AiControlled;
+            InputGate.LocalSeatMayAct = !LocalAutoGuidePlanning && localSeat is not null && localSeat.PlayerIndex == GS_Battle.self.current_co_index && !localSeat.AiControlled;
             if (!executor.IsBusy) ApplyRoomSeatModes(host.Room.Snapshot());
         }
         ApplyLocalPerspectiveAndControl();
@@ -266,6 +269,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     private IEnumerator RunFastReconnect()
     {
         if (client is null) yield break;
+        CancelLocalAutoGuide();
         fastReconnectRunning = true; fastReconnectCancelRequested = false; fastReconnectAttempt = 0; fastReconnectStartedAt = Time.realtimeSinceStartup;
         InputGate.LocalSeatMayAct = false;
         var acceptedGeneration = client.ReconnectAcceptedGeneration;
@@ -462,7 +466,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     private void PumpHostSeatChanges()
     {
         if (host is null) return;
-        if (host.MatchId.HasValue && (executor.IsBusy || authorityAiOperationActive || turnAdvanceRunning || HostAutoGuidePlanning)) return;
+        if (host.MatchId.HasValue && (executor.IsBusy || authorityAiOperationActive || turnAdvanceRunning || LocalAutoGuidePlanning)) return;
         while (host.TryDequeueSeatChange(out var change) && change is not null)
         {
             if (host.MatchId.HasValue)
@@ -879,18 +883,25 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             Status = "It is not your turn";
             return;
         }
+        SubmitCommandCore(command);
+    }
+
+    private ulong? SubmitCommandCore(GameCommand command)
+    {
         if (host is not null)
         {
-            if (host.LocalHostSeatId is not Guid localSeatId) { Status = "Spectators cannot submit game commands"; return; }
-            operations.Enqueue(new CommandRequest { ClientId = host.LocalHostClientId, RequestId = ++nextRequestId, SeatId = localSeatId, Round = GS_Battle.self?.turns ?? 0, AppliedFrameId = host.MatchId.HasValue ? 0 : -1, Command = command });
-            return;
+            if (host.LocalHostSeatId is not Guid localSeatId) { Status = "Spectators cannot submit game commands"; return null; }
+            var hostRequestId = ++nextRequestId;
+            operations.Enqueue(new CommandRequest { ClientId = host.LocalHostClientId, RequestId = hostRequestId, SeatId = localSeatId, Round = GS_Battle.self?.turns ?? 0, AppliedFrameId = host.MatchId.HasValue ? 0 : -1, Command = command });
+            return hostRequestId;
         }
-        if (client?.ClientId is not Guid clientId) { Status = "Not connected to the authority host"; return; }
-        if (!MultiplayerUnitStates.TryEnterAwaitingAuthority(command, out var token)) { Status = "${ui_this_unit_is_waiting_for_the_host}"; ShowBattleMessage(Status); return; }
+        if (client?.ClientId is not Guid clientId) { Status = "Not connected to the authority host"; return null; }
+        if (!MultiplayerUnitStates.TryEnterAwaitingAuthority(command, out var token)) { Status = "${ui_this_unit_is_waiting_for_the_host}"; ShowBattleMessage(Status); return null; }
         var seatId = client.Room?.Seats.Find(s => s.ClientId == clientId)?.SeatId ?? Guid.Empty;
         var requestId = ++nextRequestId;
         pendingClientCommands[requestId] = (command, token);
         _ = client.SendCommandAsync(new CommandRequest { ClientId = clientId, RequestId = requestId, SeatId = seatId, Round = GS_Battle.self?.turns ?? 0, AppliedFrameId = client.AppliedFrameId, Command = command });
+        return requestId;
     }
 
 
@@ -912,11 +923,9 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         pendingClientCommands.Remove(response.RequestId);
         if (accepted)
         {
-            // This is an upstream intent, not a replay operation that will complete these units.
-            if (pending.Command.Kind == CommandKind.AutoGuideStart)
-                MultiplayerUnitStates.RejectAwaitingAuthority(pending.Command, pending.Token);
             return;
         }
+        CompleteLocalAutoGuideBatch(response.RequestId, false);
         MultiplayerUnitStates.RejectAwaitingAuthority(pending.Command, pending.Token);
         var notice = "${ui_action_not_performed}" + response.Reason;
         Logger.LogWarning($"Command rejected source=remote request={response.RequestId} kind={pending.Command.Kind} round={GS_Battle.self?.turns ?? 0} target={pending.Command.TargetX},{pending.Command.TargetY} reason={response.Reason}");
@@ -986,6 +995,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             var frame = pendingAuthorityFrames.Peek();
             if (frame.FrameType == AuthorityFrameType.OperationBegin && replayOperationId.HasValue) return;
             if (frame.FrameType == AuthorityFrameType.MatchEnded && replayOperationId.HasValue) return;
+            if (frame.FrameType == AuthorityFrameType.Resolution && !NativeActionPlayback.MayApply(ProtocolCodec.DecodeResolution(frame.Payload).Event!)) return;
             pendingAuthorityFrames.Dequeue();
             try { ApplyAuthorityFrame(frame); }
             catch (Exception ex) { AbortReplay("Authority frame execution failed: " + ex.Message); return; }
@@ -1015,6 +1025,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             var end = ProtocolCodec.DecodeOperationEnd(frame.Payload);
             if (replayBegin is null || end.OperationId != replayBegin.OperationId)
                 throw new InvalidDataException("Operation end does not match the active replay.");
+            NativeActionPlayback.CompleteOperation();
             replayEnd = end; replayFrameIds.Add(frame.FrameId); TryCommitReplay();
         }
         else if (frame.FrameType == AuthorityFrameType.OperationFailed)
@@ -1027,6 +1038,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             pendingMatchEnd = null;
             foreach (var frameId in replayFrameIds) client.MarkApplied(frameId);
             if (GS_Battle.self is not null) GS_Battle.self.unit_busy = false;
+            CancelLocalAutoGuide();
             executor.Reset();
             ResetReplayState();
         }
@@ -1061,7 +1073,11 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     {
         if (host is null || !host.MatchId.HasValue || executor.IsBusy || authorityAiOperationActive || !operations.TryBegin(out var request) || request is null) return;
         if (request.Command.Kind == CommandKind.Move) NormalizeQueuedMove(request.Command);
-        var validation = executor.Validate(request.Command);
+        var authorized = request.Command.Kind == CommandKind.DebugAddResources || request.Command.Kind == CommandKind.DebugFillSkill;
+        string? validation;
+        if (!authorized && !host.Authorize(request, GS_Battle.self.current_co_index, GS_Battle.self.turns, out var authorizationError))
+            validation = authorizationError;
+        else validation = executor.Validate(request.Command);
         if (validation is not null)
         {
             var source = request.ClientId == host.LocalHostClientId ? "local" : "remote";
@@ -1076,19 +1092,8 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
                 var notice = "${ui_action_not_performed}" + validation;
                 if (!ShowBattleMessage(notice)) Status = notice;
             }
+            if (request.ClientId == host.LocalHostClientId) CompleteLocalAutoGuideBatch(request.RequestId, false);
             operations.Complete(); return;
-        }
-        if (request.Command.Kind == CommandKind.AutoGuideStart)
-        {
-            if (!host.Authorize(request, GS_Battle.self.current_co_index, GS_Battle.self.turns, out var reason))
-            {
-                if (requestPeers.TryGetValue(RequestKey(request), out var rejected)) host.Reject(rejected, request.RequestId, reason);
-                requestPeers.Remove(RequestKey(request)); operations.Complete(); return;
-            }
-            if (requestPeers.TryGetValue(RequestKey(request), out var requester)) host.Accept(requester, request.RequestId, 0);
-            requestPeers.Remove(RequestKey(request));
-            GameController.self.StartCoroutine(RunHostAutoGuide(request), "XingyiStarryMpHostAutoGuide");
-            return;
         }
         var operationId = Guid.NewGuid();
         Logger.LogDebug($"Authority operation begin source={(request.ClientId == host.LocalHostClientId ? "local" : "remote")} request={request.RequestId} kind={request.Command.Kind} op={operationId:N} round={request.Round} target={request.Command.TargetX},{request.Command.TargetY}");
@@ -1103,6 +1108,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
                 host.SetLatestSnapshot(GameStateSerializer.CaptureSnapshot(), endFrame);
                 Logger.LogDebug($"Authority operation end kind={request.Command.Kind} op={operationId:N} frame={endFrame.FrameId}");
                 operations.Complete();
+                if (request.ClientId == host.LocalHostClientId) CompleteLocalAutoGuideBatch(request.RequestId, true);
                 if (FlushPendingMatchEnd()) return;
                 if (request.Command.Kind == CommandKind.EndTurn ||
                     request.Command.Kind == CommandKind.Surrender && request.Command.TargetX == GS_Battle.self.current_co_index)
@@ -1117,18 +1123,23 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
                     BattleEventBus.self?.TriggerUnitBusyChanged(isBusy: false);
                 }
                 host.AppendAndBroadcast(AuthorityMessages.OperationFailed(ProtocolCodec.EncodeOperationFailed(new OperationFailedPayload { OperationId = operationId, Reason = ex.Message })));
+                if (request.ClientId == host.LocalHostClientId) CompleteLocalAutoGuideBatch(request.RequestId, false);
                 operations.Complete();
             });
     }
 
     private static void NormalizeQueuedMove(GameCommand command)
     {
+        using var localFlags = LocalUnitIntent.CanonicalFlags();
         if (GS_Battle.self?.all_unit is null) return;
         MoveCommandFilter.TryFilter(command, id =>
         {
             if (id < int.MinValue || id > int.MaxValue) return MoveUnitDecision.Reject;
             var unit = GS_Battle.self.all_unit.GetUnitByID((int)id);
             if (unit is null || unit.player != GS_Battle.self.cur_player) return MoveUnitDecision.Reject;
+            var index = Array.IndexOf(command.UnitIds, id);
+            if (command.UnitTargetXs.Length == command.UnitIds.Length && command.UnitTargetYs.Length == command.UnitIds.Length &&
+                unit.pos == new Inctor2(command.UnitTargetXs[index], command.UnitTargetYs[index])) return MoveUnitDecision.Skip;
             return unit.moved || unit.in_animation || unit.building ? MoveUnitDecision.Skip : MoveUnitDecision.Include;
         });
     }
@@ -1187,46 +1198,66 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         }
     }
 
-    private IEnumerator RunHostAutoGuide(CommandRequest request)
+    internal IEnumerator BeginLocalAutoGuide(IEnumerator native)
     {
-        var generation = connectionGeneration;
-        HostAutoGuidePlanning = true;
+        LocalAutoGuidePlanning = true;
+        return RunLocalAutoGuide(native, ++plannerGeneration, GS_Battle.self);
+    }
+
+    private IEnumerator RunLocalAutoGuide(IEnumerator native, int generation, GS_Battle battle)
+    {
+        using var stack = new CoroutineStack(native);
         try
         {
-            using var stack = new CoroutineStack(AuthoritativeAutoGuide.Plan(request.Command));
-            while (host?.MatchId.HasValue == true && generation == connectionGeneration && GS_Battle.self?.game_running == true)
+            while (LocalAutoGuidePlanning && generation == plannerGeneration && battle == GS_Battle.self &&
+                battle.game_running && GetLocalDisplayPlayer() == battle.cur_player && !fastReconnectRunning && loadingSnapshot is null)
             {
                 bool more;
                 try { more = stack.MoveNext(); }
-                catch (Exception ex) { Logger.LogError("Host auto-guide planning failed: " + ex); yield break; }
+                catch (Exception ex) { Logger.LogError("Local auto-guide planning failed: " + ex); yield break; }
                 if (!more) break;
                 yield return stack.Current;
             }
         }
         finally
         {
-            if (generation == connectionGeneration)
+            if (generation == plannerGeneration) { LocalAutoGuidePlanning = false; localAutoGuideRequest = null; localAutoGuideResult = null; }
+            if (battle == GS_Battle.self)
             {
-                HostAutoGuidePlanning = false;
-                var game = SingletonMono<SS_ANNW_Game>.self;
-                if (game != null) game.auto_guide?.Cleanup();
-                if (GS_Battle.self is not null)
-                {
-                    GS_Battle.self.is_auto_guiding = false; GS_Battle.self.unit_busy = false;
-                    BattleEventBus.self?.TriggerUnitBusyChanged(false);
-                }
-                if (operations.IsExecuting) operations.Complete();
+                SingletonMono<SS_ANNW_Game>.self?.auto_guide?.Cleanup();
+                battle.is_auto_guiding = false; battle.unit_busy = executor.IsBusy;
+                BattleEventBus.self?.TriggerUnitBusyChanged(battle.unit_busy);
             }
         }
     }
 
-    internal IEnumerator RunHostAutoGuideBatch(List<UT_UnitAction> batch)
+    internal IEnumerator SubmitLocalAutoGuideBatch(List<UT_UnitAction> batch)
     {
-        var generation = connectionGeneration;
-        var command = AuthoritativeAutoGuide.ResolveBatch(batch);
-        yield return RunHostAiCommand(command, _ => GS_Battle.self.auto_guide_canceled = true);
-        if (generation != connectionGeneration || host?.MatchId.HasValue != true || GS_Battle.self?.game_running != true)
-            if (GS_Battle.self is not null) GS_Battle.self.auto_guide_canceled = true;
+        var generation = plannerGeneration;
+        var battle = GS_Battle.self;
+        battle.cur_player.ClearTempMove();
+        if (!LocalAutoGuidePlanning || GetLocalDisplayPlayer() != battle.cur_player ||
+            (client is not null && (client.IsCaughtUp != true || client.AppliedFrameId != client.VerifiedFrameId)))
+        { battle.auto_guide_canceled = true; yield break; }
+        localAutoGuideResult = null;
+        localAutoGuideRequest = SubmitCommandCore(AuthoritativeAutoGuide.ResolveBatch(batch));
+        if (!localAutoGuideRequest.HasValue) { battle.auto_guide_canceled = true; yield break; }
+        while (generation == plannerGeneration && LocalAutoGuidePlanning && !localAutoGuideResult.HasValue)
+            yield return 0f;
+        if (generation != plannerGeneration || localAutoGuideResult != true) battle.auto_guide_canceled = true;
+        if (generation == plannerGeneration) { localAutoGuideRequest = null; localAutoGuideResult = null; }
+    }
+
+    private void CompleteLocalAutoGuideBatch(ulong requestId, bool success)
+    {
+        if (localAutoGuideRequest == requestId) localAutoGuideResult = success;
+    }
+
+    private void CancelLocalAutoGuide()
+    {
+        plannerGeneration++; LocalAutoGuidePlanning = false;
+        localAutoGuideRequest = null; localAutoGuideResult = null;
+        if (GS_Battle.self is not null) GS_Battle.self.auto_guide_canceled = true;
     }
 
     internal IEnumerator RunHostAiEndTurn()
@@ -1320,6 +1351,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     {
         if (SingletonMono<SS_ANNW_Game>.self is null) return;
         matchEndedNormally = true;
+        CancelLocalAutoGuide(); LocalUnitIntent.BeginAuthority();
         InputGate.LocalSeatMayAct = false;
         applyingAuthorityMatchEnd = true;
         try { AccessTools.Method(typeof(SS_ANNW_Game), "EndGame")?.Invoke(SingletonMono<SS_ANNW_Game>.self, new object[] { victory }); }
@@ -1364,6 +1396,8 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         Logger.LogDebug($"Client replay committed operation {replayOperationId.Value:N}.");
         if (client is not null)
             foreach (var frameId in replayFrameIds) client.MarkApplied(frameId);
+        if (replayBegin is not null && replayBegin.SeatId == client?.Room?.Seats.Find(value => value.ClientId == client.ClientId)?.SeatId)
+            CompleteLocalAutoGuideBatch(replayBegin.RequestId, true);
         ResetReplayState();
     }
 
@@ -1373,6 +1407,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         Status = "${notice_replay_resynchronizing}";
         pendingMatchEnd = null;
         InputGate.LocalSeatMayAct = false;
+        CancelLocalAutoGuide();
         pendingAuthorityFrames.Clear(); executor.Reset(); ResetReplayState();
         _ = client?.RequestSnapshotAsync();
     }
@@ -1384,6 +1419,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
             Status = client?.SnapshotRequested == true ? "Full synchronization is already in progress" : "Cannot resynchronize right now";
             return;
         }
+        CancelLocalAutoGuide();
         Logger.LogWarning($"Manual full synchronization requested at verified={client!.VerifiedFrameId} applied={client.AppliedFrameId} replay={replayOperationId?.ToString("N") ?? "none"} executorBusy={executor.IsBusy}.");
         Status = "Full synchronization requested. Waiting for the host snapshot";
         InputGate.LocalSeatMayAct = false;
@@ -1410,6 +1446,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         try
         {
             Logger.LogInfo($"Applying snapshot id={manifest.SnapshotId:N} frame={manifest.FrameId}; abandoning old executorBusy={executor.IsBusy} replay={replayOperationId?.ToString("N") ?? "none"}.");
+            CancelLocalAutoGuide(); LocalUnitIntent.Reset();
             ResetReplayState(); pendingAuthorityFrames.Clear(); pendingClientCommands.Clear(); executor.Reset();
             client?.AcceptSnapshotAnchor(manifest); loadingSnapshot = manifest;
             snapshotPreviousBattle = GS_Battle.self;
@@ -1452,7 +1489,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
     {
         if (!InputGate.MultiplayerActive || GS_Battle.self is null) return;
         var localPlayer = GetLocalDisplayPlayer();
-        var mayAct = InputGate.LocalSeatMayAct && localPlayer is not null;
+        var mayAct = InputGate.LocalSeatMayAct && !LocalAutoGuidePlanning && localPlayer is not null;
         var localTurnOwned = localPlayer is not null && GS_Battle.self.cur_player == localPlayer &&
             CurrentRoom?.Seats.Find(value => value.PlayerIndex == localPlayer.index)?.AiControlled != true;
         if (!localTurnOwned && GS_Battle.self.selected_units.Count != 0 && UX_Manager.self is not null)
@@ -1489,8 +1526,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
         ConnectionFailed = false;
         connectionGeneration++;
         pendingNativeNotice = ""; nativeNoticeEarliest = 0f;
-        if (HostAutoGuidePlanning) GameController.self?.StopCoroutine("XingyiStarryMpHostAutoGuide");
-        HostAutoGuidePlanning = false; operations.Reset(); requestPeers.Clear();
+        CancelLocalAutoGuide(); operations.Reset(); requestPeers.Clear();
         host?.Dispose(); host = null; client?.Dispose(); client = null;
         ResetBattleState();
         matchEndedNormally = false; lobbyReturnPending = false;
@@ -1502,7 +1538,7 @@ public sealed class XingyiStarryMpPlugin : BaseUnityPlugin
 
     private void ResetBattleState()
     {
-        HostAutoGuidePlanning = false;
+        CancelLocalAutoGuide(); LocalUnitIntent.Reset();
         operations.Reset(); requestPeers.Clear();
         pendingAuthorityFrames.Clear(); pendingClientCommands.Clear(); ResetReplayState(); executor.Reset();
         loadingSnapshot = null; snapshotPreviousBattle = null;

@@ -36,8 +36,8 @@
   },
   {
     "Name": "command/move",
-    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIG/NLINOrkfRerZDzUzqY0DhCWIMvNhhw2CcJadq\u002BZr7qgZFChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoJqgYGGA4gDlgB",
-    "Hash": "6fcd2c834eae47d17ab643cd4cea6340e109620cbcd861c3609c25a76af99afb"
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIFuJ8A0hRB3pb4WkEGnNLLnTFvePC/9fHLfST6nlCQpvqgY/ChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoDqgYA",
+    "Hash": "5b89f00d21441de96f85a41069cd2cb9d316f78f0bff5f1cb7d24fa9e5090a6f"
   },
   {
     "Name": "command/action",
@@ -51,13 +51,13 @@
   },
   {
     "Name": "command/equipment_move_action",
-    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIOR7HEYTh6qQ5EqOjFfjYNj/ZG9eOT9DM3spCVdbVX\u002BDqgZhChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASolwgYiGA4gDjgHQgzlrZfmrrUvZmllbGRKDOWtl\u002BautS9maWVsZA==",
-    "Hash": "e47b1c461387aa90e44a8e8c57e360d8ff646f5e393f43337b2909575b557f83"
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyILfcb3vgbJU9kiuNQizopdt1PJhFnhIO275p6HhpWeMqqgZoChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoswgYpGA4gDjgHQgzlrZfmrrUvZmllbGRKDOWtl\u002BautS9maWVsZKIGBAgOEA4=",
+    "Hash": "b7dc6f7be06c953d922b8d422ce8a5db753c98459e120edbbe69e8786959e32a"
   },
   {
     "Name": "command/build_with_move",
-    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIKxt\u002Bslpip/y/PmyAdoJxpKvOkJUCmd6Xzn\u002BAvA\u002BX2FtqgZTChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoXygYUGA4gDjgHSgzlrZfmrrUvZmllbGQ=",
-    "Hash": "ac6dfac9698a9ff2fcf9b201da09c692af3a42540a677a5f39fe02f03e5f616d"
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyILiToBGNP/iOmLujeVw0q4BCo14Tt0Bq\u002BmuF8RIiroBnqgZaChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoeygYbGA4gDjgHSgzlrZfmrrUvZmllbGSiBgQIDhAO",
+    "Hash": "b893a0118d3ff88e98bba3795c34ab8042a35e13b7406afa6b85f11222ae8067"
   },
   {
     "Name": "command/skill",
@@ -73,11 +73,6 @@
     "Name": "command/end_turn",
     "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIGXqhzdrgUZSwuKJ1/L3xpzZbMx39sUJsW\u002BXuRvQIKbUqgY/ChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoD4gYA",
     "Hash": "65ea87376b814652c2e289d7f2f7c69cd96ccc77f6c509b16f97b91bd020a6d4"
-  },
-  {
-    "Name": "command/auto_guide_start",
-    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIPrzJ6MXYeuJvcAB7p9a2qX12KXcLWF7KCbbZQdshjoXqgY/ChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoD6gYA",
-    "Hash": "faf327a31761eb89bdc001ee9f5adaa5f5d8a5dc2d617b2826db65076c863a17"
   },
   {
     "Name": "command/debug_add_resources",
@@ -120,11 +115,6 @@
     "Hash": "fb09e057c05f3e70726b5900942e2e39de9d9cc5c911026be24f48d0b36e9709"
   },
   {
-    "Name": "command/stay",
-    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyILRx\u002BiAkSyffnF4RZQbqibNeBzy4JubWpnLmzu4oG/4rqgY/ChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoDugcA",
-    "Hash": "b471fa20244b27df9c5e116506ea89b35e073cb826e6d6a672e6ceee281bfe2b"
-  },
-  {
     "Name": "command/self_destruct",
     "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIMyg1A4VLNZYG8Wo6c9N036TCPPHTqJL5lvs\u002BpJR3dWKqgY/ChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoDwgcA",
     "Hash": "cca0d40e152cd6581bc5a8e9cf4dd37e9308f3c74ea24be65becfa9251ddd58a"
@@ -136,13 +126,13 @@
   },
   {
     "Name": "settlement/attack_started",
-    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyINhZpSpRRwSOmYM5zZLxPct2j3nPEHXVu20WnNDe4\u002BYDsgZ8ChADAAAAAAAAAAAAAAAAAAAAogZnCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KASqBhQKDOWtl\u002BautS9maWVsZBAOGA4gAQ==",
-    "Hash": "d859a52a5147048e998339cd92f13dcb768f79cf1075d5bb6d169cd0dee3e603"
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIKp1PKpsnME5QVtJoVlgDWcHehOaXAlq6MEendswy5lWsgZ6ChADAAAAAAAAAAAAAAAAAAAAogZlCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KASqBhIKDOWtl\u002BautS9maWVsZBAOGA4=",
+    "Hash": "aa753caa6c9cc139415b49a159600d67077a139a5c096ae8c11e9ddb30cb9956"
   },
   {
     "Name": "settlement/attack_cell",
-    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIBb6ImOhtuC5cCOD6EC8Ejwq/JHBkZvUWoUStIScOxMtsgaKAQoQAwAAAAAAAAAAAAAAAAAAAKIGdQj//////////38Qexo0ChgKDVVuaXREYXRhLkh1cnQ5AAAAAAAAAIASGAoNVW5pdERhdGEuSHVydDkAAAAAAADAPyIKEAn6BgUNAADAPygEsgYiCgzlrZfmrrUvZmllbGQQDhgOOgzlrZfmrrUvZmllbGRABw==",
-    "Hash": "16fa2263a1b6e0b9702383e840bc123c2afc91c1919bd45a8512b4849c3b132d"
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIA2PYAuCxHsTEe9IUSnUNAOfehHosxmaKfowFFu9PpLZsgaKAQoQAwAAAAAAAAAAAAAAAAAAAKIGdQj//////////38Qexo0ChgKDVVuaXREYXRhLkh1cnQ5AAAAAAAAAIASGAoNVW5pdERhdGEuSHVydDkAAAAAAADAPyIKEAn6BgUNAADAPygEsgYiCgzlrZfmrrUvZmllbGQQDhgOOgzlrZfmrrUvZmllbGRABw==",
+    "Hash": "0d8f600b82c47b1311ef485129d434039f7a11e8b3199a29fa30145bbd3e92d9"
   },
   {
     "Name": "settlement/attack_finished",
@@ -235,6 +225,16 @@
     "Hash": "09a67430552025c6e6ae247942f8b9eb8b7759a932a30312e3cedbdb392dfb40"
   },
   {
+    "Name": "settlement/action_preparation",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIByq50JmuhViOjUb/obKKp/lkInSaTspW8hzN7ulaSZmsgZ6ChADAAAAAAAAAAAAAAAAAAAAogZlCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KATSBxIKDOWtl\u002BautS9maWVsZBAOGA4=",
+    "Hash": "1caae74266ba15623a351bfe86ca2a9fe59089d2693b295bc87337bba5692666"
+  },
+  {
+    "Name": "settlement/action_callbacks",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIEBixgwiC8CNRRhaWfr9X83gM1q/VwLVeBB6NE8x0vZrsgZ2ChADAAAAAAAAAAAAAAAAAAAAogZhCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KATaBw4KDOWtl\u002BautS9maWVsZA==",
+    "Hash": "4062c60c220bc08d45185a59fafd5fcde0335abf5702d578107a344f31d2f66b"
+  },
+  {
     "Name": "presence/absent",
     "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIBe54NHImJsP8y0qJZPkp6jEkqZcRCw8ogtUlEvuQXC0sgYYChADAAAAAAAAAAAAAAAAAAAAogYDwgYA",
     "Hash": "17b9e0d1c8989b0ff32d2a2593e4a7a8c492a65c442c3ca20b54944bee4170b4"
@@ -263,5 +263,25 @@
     "Name": "random/wrappers",
     "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyILi1/f0bGTK\u002Bw0TEC1VOWjADSyMQPyJKEbjc2T8\u002BnajfsgblAQoQAwAAAAAAAAAAAAAAAAAAAKIGzwEaxAEaFwoMVW5pdERhdGEuRGllOZqZmZmZmfE/IisIARAEGiUKIwoYR2FtZVRpbGVEYXRhLkNyZWF0ZVdyZWNrOc3MzMzMzOw/Kh4IKhIaChgKFFBsYXllci5BdXRvU2V0Q21kUG9zMAAyXAgqElgKKQolVW5pdEVmZmVjdF9TaGFyZUV4cC5QcmVBZGRFeHAvU2h1ZmZsZTADCisKJVVuaXRFZmZlY3RfU2hhcmVFeHAuUHJlQWRkRXhwL1NodWZmbGUQATAAwgYFDQAAAIA=",
     "Hash": "b8b5fdfd1b1932bec344c40b554e5a30034b23103f224a11b8dcd93f3e9da8df"
+  },
+  {
+    "Name": "targets/unit-and-shield",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIHTMbZgHKjo4i5umE4BXgXt4PlXlNLvGXFPkR7X\u002BVgi/sgZHChADAAAAAAAAAAAAAAAAAAAAogYysgYvCgZhdHRhY2s1AAAAAKIGEAoECA0QBBUAAAAAqgYCCCqiBgwKABUAAEhBsgYCCEc=",
+    "Hash": "74cc6d98072a3a388b9ba6138057817b783e55e534bbc65c53e447b5fe5608bf"
+  },
+  {
+    "Name": "targets/recipient",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIBoTcT1NVvhC6\u002B14rA9TD93U2I2O3ezud6pt4Hfek6U7sgZHChADAAAAAAAAAAAAAAAAAAAAogYysgYvCgZhdHRhY2s1AAAAAKIGEAoECA0QBBUAAAAAqgYCCCuiBgwKABUAAEhBsgYCCEc=",
+    "Hash": "1a13713d4d56f842ebed78ac0f530fddd4d88d8eddecee77aa6de077de93a53b"
+  },
+  {
+    "Name": "targets/negative-zero",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIBuZYI8Bkn8FdMLPGpwsa5xapRSu0gCzzegMIpaHnXnbsgZHChADAAAAAAAAAAAAAAAAAAAAogYysgYvCgZhdHRhY2s1AAAAAKIGEAoECA0QBBUAAACAqgYCCCuiBgwKABUAAEhBsgYCCEc=",
+    "Hash": "1b99608f01927f0574c2cf1a9c2c6b9c5aa514aed200b3cde80c2296879d79db"
+  },
+  {
+    "Name": "targets/order",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIAMAdATb9R/AL0QtKz9Wbp0NGYIc2vSe/AfqYRZrDDBhsgZHChADAAAAAAAAAAAAAAAAAAAAogYysgYvCgZhdHRhY2s1AAAAAKIGDAoAFQAASEGyBgIIR6IGEAoECA0QBBUAAACAqgYCCCs=",
+    "Hash": "03007404dbf51fc02f442d2b3f566e9d0d19821cdaf49efc07ea61166b0c3061"
   }
 ]

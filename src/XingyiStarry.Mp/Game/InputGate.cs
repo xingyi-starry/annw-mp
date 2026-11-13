@@ -10,5 +10,6 @@ internal static class InputGate
     public static bool TextInputCaptured => ChatWindow.IsTyping;
     public static bool PointerOverChat => ChatWindow.IsPointerOverNow;
     public static bool ShouldRunOriginal => !MultiplayerActive || ExecutionContext.IsAuthoritativeExecution;
-    public static bool MaySubmit => MultiplayerActive && LocalSeatMayAct && !ExecutionContext.IsAuthoritativeExecution;
+    public static bool MaySubmit => MultiplayerActive && LocalSeatMayAct &&
+        XingyiStarryMpPlugin.Instance?.LocalAutoGuidePlanning != true && !ExecutionContext.IsAuthoritativeExecution;
 }

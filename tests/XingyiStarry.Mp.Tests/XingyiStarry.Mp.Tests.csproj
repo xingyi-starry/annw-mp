@@ -6,7 +6,7 @@
     <RootNamespace>XingyiStarry.Mp.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="hash-v21.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="hash-v22.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\..\src\XingyiStarry.Mp.Protocol\XingyiStarry.Mp.Protocol.csproj" />
     <Compile Include="..\..\src\XingyiStarry.Mp\MpText.cs" Link="MpText.cs" />
     <Compile Include="..\..\src\XingyiStarry.Mp\MpText.Catalog.cs" Link="MpText.Catalog.cs" />

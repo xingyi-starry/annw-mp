@@ -39,24 +39,35 @@ internal static class AutoGuideProtocolTests
 
     internal static void AuthorityBoundary()
     {
-        Require(CommandRules.MayRequest(CommandKind.AutoGuideStart));
-        var request = ProtocolCodec.DecodeCommand(ProtocolCodec.EncodeCommand(new GameCommand { Kind = CommandKind.AutoGuideStart, UnitIds = new long[] { 3 } }));
-        Require(request.Kind == CommandKind.AutoGuideStart);
-        Require(CommandRules.MayBroadcast(CommandKind.ResolvedUnitActions) && !CommandRules.MayRequest(CommandKind.ResolvedUnitActions));
+        Require(!CommandRules.MayRequest(CommandKind.AutoGuideStart) && !CommandRules.MayRequest(CommandKind.Stay));
+        Throws<InvalidDataException>(() => ProtocolCodec.EncodeCommand(new GameCommand { Kind = CommandKind.AutoGuideStart, UnitIds = new long[] { 3 } }));
+        Throws<InvalidDataException>(() => ProtocolCodec.EncodeCommand(new GameCommand { Kind = CommandKind.Stay, UnitIds = new long[] { 3 } }));
+        Require(CommandRules.MayBroadcast(CommandKind.ResolvedUnitActions) && CommandRules.MayRequest(CommandKind.ResolvedUnitActions));
         foreach (var kind in new[] { CommandKind.AiUnitAction, CommandKind.AiSkill, CommandKind.TurnAdvance, CommandKind.DebugAddResources })
             Require(!CommandRules.MayRequest(kind));
-        foreach (var kind in new[] { CommandKind.AutoGuideStart, (CommandKind)10 })
+        foreach (var kind in new[] { CommandKind.AutoGuideStart, CommandKind.Stay, (CommandKind)10 })
         {
             Require(!CommandRules.MayBroadcast(kind));
             Throws<InvalidDataException>(() => ProtocolCodec.EncodeOperationBegin(new OperationBeginPayload { Command = new GameCommand { Kind = kind } }));
             var forged = new Wire.OperationBegin { OperationId = ByteString.CopyFrom(Guid.NewGuid().ToByteArray()),
-                SeatId = ByteString.CopyFrom(Guid.NewGuid().ToByteArray()), Command = kind == CommandKind.AutoGuideStart ? new Wire.GameCommandMessage { AutoGuideStart=new Wire.AutoGuideStartCommand() } : new Wire.GameCommandMessage() };
+                SeatId = ByteString.CopyFrom(Guid.NewGuid().ToByteArray()), Command = new Wire.GameCommandMessage() };
             Throws<InvalidDataException>(() => ProtocolCodec.DecodeOperationBegin(forged));
         }
         Throws<InvalidDataException>(() => ProtocolCodec.DecodeCommand(new Wire.GameCommandMessage()));
         Require(!CommandRules.MayRequest((CommandKind)10));
+        Require(!HandshakeValidator.TryValidate(new HelloMessage { ProtocolVersion = 21, PluginVersion = "p", GameFingerprint = "g",
+            ContentFingerprint = "c", DisplayName = "old" }, "p", "g", "c", "", out _, out _));
         Require(!HandshakeValidator.TryValidate(new HelloMessage { ProtocolVersion = 18, PluginVersion = "p", GameFingerprint = "g",
             ContentFingerprint = "c", DisplayName = "old" }, "p", "g", "c", "", out _, out _));
+        var move = new GameCommand { Kind = CommandKind.Move, UnitIds = new long[] { 3 },
+            UnitTargetXs = new[] { 4 }, UnitTargetYs = new[] { 5 }, TargetX = 100, TargetY = 200, DesiredToggleState = true };
+        var wire = ProtocolCodec.EncodeCommand(move);
+        var moveBody = ((Wire.GameCommandMessage)wire).Move;
+        var legacy = new byte[] { 24, 2, 32, 4, 88, 1 }; // retired goal_x/goal_y/forced_stay
+        moveBody.MergeFrom(legacy);
+        var decodedMove = ProtocolCodec.DecodeCommand(wire);
+        Require(decodedMove.TargetX == 0 && decodedMove.TargetY == 0 && !decodedMove.DesiredToggleState && decodedMove.UnitTargetXs[0] == 4);
+        Require(ProtocolCodec.EncodeCommand(decodedMove).ToByteArray().Length < wire.ToByteArray().Length);
     }
 
     internal static void MalformedBatch()

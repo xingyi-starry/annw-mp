@@ -557,11 +557,8 @@ public static class ProtocolCodec
             {
                 var args = new Wire.MoveCommand();
                 args.UnitIds.Add(value.UnitIds);
-                args.TargetX = value.TargetX;
-                args.TargetY = value.TargetY;
                 args.UnitTargetXs.Add(value.UnitTargetXs);
                 args.UnitTargetYs.Add(value.UnitTargetYs);
-                args.DesiredToggleState = value.DesiredToggleState;
                 wire.Move = args; break;
             }
             case CommandKind.Action:
@@ -593,6 +590,7 @@ public static class ProtocolCodec
             {
                 var args = new Wire.EquipmentMoveActionCommand();
                 args.UnitIds.Add(value.UnitIds);
+                args.MovePosition = new Wire.ActionMovePosition { X = value.UnitTargetXs[0], Y = value.UnitTargetYs[0] };
                 args.TargetX = value.TargetX;
                 args.TargetY = value.TargetY;
                 args.ActionCategory = value.ActionCategory;
@@ -604,6 +602,7 @@ public static class ProtocolCodec
             {
                 var args = new Wire.BuildWithMoveCommand();
                 args.UnitIds.Add(value.UnitIds);
+                args.MovePosition = new Wire.ActionMovePosition { X = value.UnitTargetXs[0], Y = value.UnitTargetYs[0] };
                 args.TargetX = value.TargetX;
                 args.TargetY = value.TargetY;
                 args.ActionCategory = value.ActionCategory;
@@ -626,12 +625,6 @@ public static class ProtocolCodec
             {
                 var args = new Wire.EndTurnCommand();
                 wire.EndTurn = args; break;
-            }
-            case CommandKind.AutoGuideStart:
-            {
-                var args = new Wire.AutoGuideStartCommand();
-                args.UnitIds.Add(value.UnitIds);
-                wire.AutoGuideStart = args; break;
             }
             case CommandKind.DebugAddResources:
             {
@@ -695,12 +688,6 @@ public static class ProtocolCodec
                 args.DesiredToggleState = value.DesiredToggleState;
                 wire.ToggleSleep = args; break;
             }
-            case CommandKind.Stay:
-            {
-                var args = new Wire.StayCommand();
-                args.UnitIds.Add(value.UnitIds);
-                wire.Stay = args; break;
-            }
             case CommandKind.SelfDestruct:
             {
                 var args = new Wire.SelfDestructCommand();
@@ -727,11 +714,8 @@ public static class ProtocolCodec
             {
                 var args = wire.Move;
                 value.UnitIds = args.UnitIds.ToArray();
-                value.TargetX = args.TargetX;
-                value.TargetY = args.TargetY;
                 value.UnitTargetXs = args.UnitTargetXs.ToArray();
                 value.UnitTargetYs = args.UnitTargetYs.ToArray();
-                value.DesiredToggleState = args.DesiredToggleState;
                 break;
             }
             case Wire.GameCommandMessage.BodyOneofCase.Action:
@@ -762,6 +746,9 @@ public static class ProtocolCodec
             case Wire.GameCommandMessage.BodyOneofCase.EquipmentMoveAction:
             {
                 var args = wire.EquipmentMoveAction;
+                if (args.MovePosition is null) throw new InvalidDataException("Move action has no movement position.");
+                value.UnitTargetXs = new[] { args.MovePosition.X };
+                value.UnitTargetYs = new[] { args.MovePosition.Y };
                 value.UnitIds = args.UnitIds.ToArray();
                 value.TargetX = args.TargetX;
                 value.TargetY = args.TargetY;
@@ -773,6 +760,9 @@ public static class ProtocolCodec
             case Wire.GameCommandMessage.BodyOneofCase.BuildWithMove:
             {
                 var args = wire.BuildWithMove;
+                if (args.MovePosition is null) throw new InvalidDataException("Move action has no movement position.");
+                value.UnitTargetXs = new[] { args.MovePosition.X };
+                value.UnitTargetYs = new[] { args.MovePosition.Y };
                 value.UnitIds = args.UnitIds.ToArray();
                 value.TargetX = args.TargetX;
                 value.TargetY = args.TargetY;
@@ -795,12 +785,6 @@ public static class ProtocolCodec
             case Wire.GameCommandMessage.BodyOneofCase.EndTurn:
             {
                 var args = wire.EndTurn;
-                break;
-            }
-            case Wire.GameCommandMessage.BodyOneofCase.AutoGuideStart:
-            {
-                var args = wire.AutoGuideStart;
-                value.UnitIds = args.UnitIds.ToArray();
                 break;
             }
             case Wire.GameCommandMessage.BodyOneofCase.DebugAddResources:
@@ -863,12 +847,6 @@ public static class ProtocolCodec
                 var args = wire.ToggleSleep;
                 value.UnitIds = args.UnitIds.ToArray();
                 value.DesiredToggleState = args.DesiredToggleState;
-                break;
-            }
-            case Wire.GameCommandMessage.BodyOneofCase.Stay:
-            {
-                var args = wire.Stay;
-                value.UnitIds = args.UnitIds.ToArray();
                 break;
             }
             case Wire.GameCommandMessage.BodyOneofCase.SelfDestruct:

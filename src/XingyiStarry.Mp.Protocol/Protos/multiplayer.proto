@@ -208,7 +208,7 @@ message GameCommandMessage {
     SkillCommand skill = 106;
     UndoMoveCommand undo_move = 107;
     EndTurnCommand end_turn = 108;
-    AutoGuideStartCommand auto_guide_start = 109;
+    AutoGuideStartCommand auto_guide_start = 109 [deprecated = true];
     DebugAddResourcesCommand debug_add_resources = 111;
     DebugFillSkillCommand debug_fill_skill = 112;
     AiUnitActionCommand ai_unit_action = 113;
@@ -217,7 +217,7 @@ message GameCommandMessage {
     SurrenderCommand surrender = 116;
     ToggleStandbyCommand toggle_standby = 117;
     ToggleSleepCommand toggle_sleep = 118;
-    StayCommand stay = 119;
+    StayCommand stay = 119 [deprecated = true];
     SelfDestructCommand self_destruct = 120;
     ResolvedUnitActionsCommand resolved_unit_actions = 121;
   }
@@ -558,11 +558,11 @@ message SnapshotChunkMessage {
 
 message MoveCommand {
   repeated int64 unit_ids = 2;
-  sint32 target_x = 3;
-  sint32 target_y = 4;
+  sint32 target_x = 3 [deprecated = true];
+  sint32 target_y = 4 [deprecated = true];
   repeated sint32 unit_target_xs = 5;
   repeated sint32 unit_target_ys = 6;
-  bool desired_toggle_state = 11;
+  bool desired_toggle_state = 11 [deprecated = true];
 }
 
 message ActionCommand {
@@ -593,6 +593,7 @@ message EquipmentMoveActionCommand {
   int32 action_category = 7;
   string action_id = 8;
   string template_id = 9;
+  ActionMovePosition move_position = 100;
 }
 
 message BuildWithMoveCommand {
@@ -601,6 +602,7 @@ message BuildWithMoveCommand {
   sint32 target_y = 4;
   int32 action_category = 7;
   string template_id = 9;
+  ActionMovePosition move_position = 100;
 }
 
 message SkillCommand {
@@ -717,10 +719,12 @@ message SettlementEvent {
     EffectMutationEvent effect_mutation = 119;
     ExperienceEvent experience = 120;
     SkillFinishedEvent skill_finished = 121;
+    ActionPreparationEvent action_preparation = 122;
+    ActionCallbacksEvent action_callbacks = 123;
   }
 }
-message AttackStartedEvent { string action_name = 1; sint32 target_x = 2; sint32 target_y = 3; bool global_phase = 4; }
-message AttackCellEvent { string action_name = 1; sint32 target_x = 2; sint32 target_y = 3; optional sint32 origin_x = 4; optional sint32 origin_y = 5; optional float data = 6; string action_type = 7; int32 skill_index = 8; }
+message AttackStartedEvent { string action_name = 1; sint32 target_x = 2; sint32 target_y = 3; bool global_phase = 4 [deprecated = true]; }
+message AttackCellEvent { string action_name = 1; sint32 target_x = 2; sint32 target_y = 3; optional sint32 origin_x = 4; optional sint32 origin_y = 5; optional float data = 6; string action_type = 7; int32 skill_index = 8; repeated AttackTargetResult targets = 100; }
 message AttackFinishedEvent { string action_name = 1; bool check_after_action = 2; }
 message DamageEvent { optional float damage = 1; string action_name = 2; optional sint32 center_x = 3; optional sint32 center_y = 4; bool use_predamage = 5; bool do_random = 6; bool no_kill = 7; }
 message DeathStartedEvent { int32 reason = 1; optional float damage = 2; string action_name = 3; bool generate_wreck = 4; optional sint32 center_x = 5; optional sint32 center_y = 6; }
@@ -750,3 +754,15 @@ message ResolvedUnload { sint32 move_x = 1; sint32 move_y = 2; sint32 target_x =
 
 message AuthorityTurnPhase { int32 phase = 1; }
 message AuthorityMatchEnded { bool local_victory = 1; }
+
+message ActionMovePosition { sint32 x = 1; sint32 y = 2; }
+
+message ActionPreparationEvent { string action_name = 1; sint32 target_x = 2; sint32 target_y = 3; }
+message ActionCallbacksEvent { string action_name = 1; }
+message AttackTargetResult {
+  ActionMovePosition position = 1;
+  optional float damage = 2;
+  oneof recipient { AttackUnitRecipient unit = 101; AttackShieldRecipient shield = 102; }
+}
+message AttackUnitRecipient { int64 unit_id = 1; }
+message AttackShieldRecipient { int64 caster_unit_id = 1; }

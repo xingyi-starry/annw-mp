@@ -13,7 +13,7 @@ The project is still in development and currently targets game version 1.0.12. T
 - Joining ongoing matches, automatic reconnection after an unexpected disconnect, and AI takeover of disconnected seats.
 - Built-in and custom maps; clients do not need to install the host's custom map.
 - Hosting rooms from skirmish saves and saving multiplayer matches.
-- Auto-command support, with every peer executing the concrete unit actions selected by the host.
+- Auto-command support: the controlling peer uses the native planner, and the host broadcasts concrete unit actions for native execution on every peer.
 
 Maps with scripts can be hosted, but their behavior has not yet been systematically verified for multiplayer determinism.
 

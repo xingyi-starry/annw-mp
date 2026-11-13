@@ -1,4 +1,4 @@
-// Explicit v21 field encoding. Generated from the canonical schema; no protobuf serialization/reflection at runtime.
+// Explicit authority field encoding. Generated from the canonical schema; no protobuf serialization/reflection at runtime.
 using System;
 using System.IO;
 using System.Text;
@@ -43,7 +43,6 @@ internal static class AuthorityFieldEncoding
             case Wire.GameCommandMessage.BodyOneofCase.Skill: Write(writer, value.Skill); break;
             case Wire.GameCommandMessage.BodyOneofCase.UndoMove: Write(writer, value.UndoMove); break;
             case Wire.GameCommandMessage.BodyOneofCase.EndTurn: Write(writer, value.EndTurn); break;
-            case Wire.GameCommandMessage.BodyOneofCase.AutoGuideStart: Write(writer, value.AutoGuideStart); break;
             case Wire.GameCommandMessage.BodyOneofCase.DebugAddResources: Write(writer, value.DebugAddResources); break;
             case Wire.GameCommandMessage.BodyOneofCase.DebugFillSkill: Write(writer, value.DebugFillSkill); break;
             case Wire.GameCommandMessage.BodyOneofCase.AiUnitAction: Write(writer, value.AiUnitAction); break;
@@ -52,7 +51,6 @@ internal static class AuthorityFieldEncoding
             case Wire.GameCommandMessage.BodyOneofCase.Surrender: Write(writer, value.Surrender); break;
             case Wire.GameCommandMessage.BodyOneofCase.ToggleStandby: Write(writer, value.ToggleStandby); break;
             case Wire.GameCommandMessage.BodyOneofCase.ToggleSleep: Write(writer, value.ToggleSleep); break;
-            case Wire.GameCommandMessage.BodyOneofCase.Stay: Write(writer, value.Stay); break;
             case Wire.GameCommandMessage.BodyOneofCase.SelfDestruct: Write(writer, value.SelfDestruct); break;
             case Wire.GameCommandMessage.BodyOneofCase.ResolvedUnitActions: Write(writer, value.ResolvedUnitActions); break;
             default: throw new InvalidDataException("Missing oneof value.");
@@ -138,13 +136,10 @@ internal static class AuthorityFieldEncoding
     {
         writer.Write((uint)value.UnitIds.Count);
         foreach (var item in value.UnitIds) { writer.Write(item); }
-        writer.Write(value.TargetX);
-        writer.Write(value.TargetY);
         writer.Write((uint)value.UnitTargetXs.Count);
         foreach (var item in value.UnitTargetXs) { writer.Write(item); }
         writer.Write((uint)value.UnitTargetYs.Count);
         foreach (var item in value.UnitTargetYs) { writer.Write(item); }
-        writer.Write(value.DesiredToggleState);
     }
     private static void Write(BinaryWriter writer, Wire.ActionCommand value)
     {
@@ -180,6 +175,8 @@ internal static class AuthorityFieldEncoding
         writer.Write(value.ActionCategory);
         Text(writer, value.ActionId);
         Text(writer, value.TemplateId);
+        writer.Write(value.MovePosition is not null);
+        if (value.MovePosition is not null) { Write(writer, value.MovePosition); }
     }
     private static void Write(BinaryWriter writer, Wire.BuildWithMoveCommand value)
     {
@@ -189,6 +186,8 @@ internal static class AuthorityFieldEncoding
         writer.Write(value.TargetY);
         writer.Write(value.ActionCategory);
         Text(writer, value.TemplateId);
+        writer.Write(value.MovePosition is not null);
+        if (value.MovePosition is not null) { Write(writer, value.MovePosition); }
     }
     private static void Write(BinaryWriter writer, Wire.SkillCommand value)
     {
@@ -200,11 +199,6 @@ internal static class AuthorityFieldEncoding
     }
     private static void Write(BinaryWriter writer, Wire.EndTurnCommand value)
     {
-    }
-    private static void Write(BinaryWriter writer, Wire.AutoGuideStartCommand value)
-    {
-        writer.Write((uint)value.UnitIds.Count);
-        foreach (var item in value.UnitIds) { writer.Write(item); }
     }
     private static void Write(BinaryWriter writer, Wire.DebugAddResourcesCommand value)
     {
@@ -256,11 +250,6 @@ internal static class AuthorityFieldEncoding
         writer.Write((uint)value.UnitIds.Count);
         foreach (var item in value.UnitIds) { writer.Write(item); }
         writer.Write(value.DesiredToggleState);
-    }
-    private static void Write(BinaryWriter writer, Wire.StayCommand value)
-    {
-        writer.Write((uint)value.UnitIds.Count);
-        foreach (var item in value.UnitIds) { writer.Write(item); }
     }
     private static void Write(BinaryWriter writer, Wire.SelfDestructCommand value)
     {
@@ -339,6 +328,8 @@ internal static class AuthorityFieldEncoding
             case Wire.SettlementEvent.BodyOneofCase.EffectMutation: Write(writer, value.EffectMutation); break;
             case Wire.SettlementEvent.BodyOneofCase.Experience: Write(writer, value.Experience); break;
             case Wire.SettlementEvent.BodyOneofCase.SkillFinished: Write(writer, value.SkillFinished); break;
+            case Wire.SettlementEvent.BodyOneofCase.ActionPreparation: Write(writer, value.ActionPreparation); break;
+            case Wire.SettlementEvent.BodyOneofCase.ActionCallbacks: Write(writer, value.ActionCallbacks); break;
             default: throw new InvalidDataException("Missing oneof value.");
         }
     }
@@ -347,7 +338,6 @@ internal static class AuthorityFieldEncoding
         Text(writer, value.ActionName);
         writer.Write(value.TargetX);
         writer.Write(value.TargetY);
-        writer.Write(value.GlobalPhase);
     }
     private static void Write(BinaryWriter writer, Wire.AttackCellEvent value)
     {
@@ -362,6 +352,8 @@ internal static class AuthorityFieldEncoding
         if (value.HasData) { writer.Write(value.Data); }
         Text(writer, value.ActionType);
         writer.Write(value.SkillIndex);
+        writer.Write((uint)value.Targets.Count);
+        foreach (var item in value.Targets) { Write(writer, item); }
     }
     private static void Write(BinaryWriter writer, Wire.AttackFinishedEvent value)
     {
@@ -535,5 +527,42 @@ internal static class AuthorityFieldEncoding
     private static void Write(BinaryWriter writer, Wire.AuthorityMatchEnded value)
     {
         writer.Write(value.LocalVictory);
+    }
+    private static void Write(BinaryWriter writer, Wire.ActionMovePosition value)
+    {
+        writer.Write(value.X);
+        writer.Write(value.Y);
+    }
+    private static void Write(BinaryWriter writer, Wire.ActionPreparationEvent value)
+    {
+        Text(writer, value.ActionName);
+        writer.Write(value.TargetX);
+        writer.Write(value.TargetY);
+    }
+    private static void Write(BinaryWriter writer, Wire.ActionCallbacksEvent value)
+    {
+        Text(writer, value.ActionName);
+    }
+    private static void Write(BinaryWriter writer, Wire.AttackTargetResult value)
+    {
+        writer.Write(value.Position is not null);
+        if (value.Position is not null) { Write(writer, value.Position); }
+        writer.Write(value.HasDamage);
+        if (value.HasDamage) { writer.Write(value.Damage); }
+        writer.Write((uint)value.RecipientCase);
+        switch (value.RecipientCase)
+        {
+            case Wire.AttackTargetResult.RecipientOneofCase.Unit: Write(writer, value.Unit); break;
+            case Wire.AttackTargetResult.RecipientOneofCase.Shield: Write(writer, value.Shield); break;
+            default: throw new InvalidDataException("Missing oneof value.");
+        }
+    }
+    private static void Write(BinaryWriter writer, Wire.AttackUnitRecipient value)
+    {
+        writer.Write(value.UnitId);
+    }
+    private static void Write(BinaryWriter writer, Wire.AttackShieldRecipient value)
+    {
+        writer.Write(value.CasterUnitId);
     }
 }

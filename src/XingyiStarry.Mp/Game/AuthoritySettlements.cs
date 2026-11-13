@@ -27,10 +27,13 @@ internal sealed class AttackSettlements
     internal bool SuppressDeathTail { get; private set; }
     internal bool HasPending => pending != 0;
     internal Call? ActiveCall => call;
+    internal bool ApplyingExplicitEvent => invoking is not null;
+    internal bool SelectingDerivedSteps => call?.Value.Pulse is not null || call?.Value.Effect?.EffectType is
+        nameof(UnitEffect_ShockChain) or nameof(UnitEffect_CounterAtk) or nameof(UnitEffect_ExpOnSuicide) or nameof(UnitEffect_GenUnitOnDie);
     private AttackSettlements(Action<Event>? publish) => this.publish = publish;
     internal static void BeginRecording(Action<Event> publish) { Reset(); Current = new AttackSettlements(publish); }
     internal static void BeginReplay() { Reset(); Current = new AttackSettlements(null); }
-    internal static void Reset() { if (Current is not null) Current.canceled = true; Current = null; }
+    internal static void Reset() { if (Current is not null) Current.canceled = true; Current = null; NativeActionPlayback.Reset(); }
     internal void ThrowIfFailed() { if (failure is not null) throw new InvalidOperationException("Native settlement failed.", failure); }
     internal void CheckComplete() { ThrowIfFailed(); if (call is not null || pending != 0) throw new InvalidOperationException("Native settlements remain unfinished."); }
 
@@ -92,6 +95,11 @@ internal sealed class AttackSettlements
                 value.Wreck?.X ?? value.AttackCell?.TargetX ?? 0, value.Wreck?.Y ?? value.AttackCell?.TargetY ?? 0);
         }
         internal void Children() { while (Next < Value.Children.Count) Owner.Apply(Value.Children[Next++]); }
+        internal void ApplyTargetFilters()
+        {
+            while (Next < Value.Children.Count && Value.Children[Next].Effect?.Callback is "PreAttack" or "PreDamage")
+                Owner.EvaluateEffect(Value.Children[Next++]);
+        }
         internal float DamageFilters(float damage)
         {
             if (damageFiltersApplied) return damage;
@@ -163,7 +171,10 @@ internal sealed class AttackSettlements
         {
             case Event.BodyOneofCase.AttackCell:
                 var c = e.AttackCell;
-                ResolveAction(e, c.ActionName).DoActionCell(GameTileData.Get(new Inctor2(c.TargetX, c.TargetY)), c.HasOriginX ? new Inctor2(c.OriginX, c.OriginY) : (Inctor2?)null, c.Data); break;
+                NativeActionSteps.Cell(ResolveAction(e, c.ActionName), GameTileData.Get(new Inctor2(c.TargetX, c.TargetY)), c.HasOriginX ? new Inctor2(c.OriginX, c.OriginY) : (Inctor2?)null, c.Data); break;
+            case Event.BodyOneofCase.ActionPreparation:
+                var preparation = e.ActionPreparation;
+                NativeActionSteps.Prepare(ResolveAction(e, preparation.ActionName), GameTileData.Get(new Inctor2(preparation.TargetX, preparation.TargetY))); break;
             case Event.BodyOneofCase.Damage:
                 var d = e.Damage;
                 Invoke(target!, "Hurt", d.Damage, source, d.ActionName.Length == 0 ? null : ResolveAction(e, d.ActionName), d.HasCenterX ? new Inctor2(d.CenterX, d.CenterY) : (Inctor2?)null, d.UsePredamage, d.DoRandom, d.NoKill); break;
@@ -195,18 +206,29 @@ internal sealed class AttackSettlements
             case Event.BodyOneofCase.Experience:
                 if (e.Experience.BasePercent) target!.AddExp_BasePercent(e.Experience.Amount); else target!.AddExp(e.Experience.Amount, e.Experience.UseFilter); break;
             case Event.BodyOneofCase.AttackStarted:
-                Simple(e, () =>
-                {
-                    var action = ResolveAction(e, e.AttackStarted.ActionName); var tile = GameTileData.Get(new Inctor2(e.AttackStarted.TargetX, e.AttackStarted.TargetY));
-                    if (e.AttackStarted.GlobalPhase) { Visual(action.sd_action.vfx_global, tile.pos, false); return; }
-                    if (source is not null && Observable(source.pos)) { source.Event_SetAiming?.Invoke(tile.pos); source.Event_DoActionAni?.Invoke(tile, action, 0); }
-                    if (action.sd_action.cate == ActionCate.SKILL) Visual(action.sd_action.vfx_pre, tile.pos, false);
-                }); break;
+                Simple(e, () => NativeActionPlayback.Started(ResolveAction(e, e.AttackStarted.ActionName))); break;
+            case Event.BodyOneofCase.ActionCallbacks:
+                var callbackAction = ResolveAction(e, e.ActionCallbacks.ActionName);
+                NativeActionSteps.ActionEnd(source!.Event_ActionEnd, callbackAction);
+                BattleEventBus.self.TriggerUnitActioned(source, callbackAction.sd_action.cate);
+                NativeActionPlayback.Finished(callbackAction);
+                break;
             case Event.BodyOneofCase.AttackFinished:
                 var finish = e.AttackFinished; var actionFinished = ResolveAction(e, finish.ActionName);
-                if (finish.CheckAfterAction) source!.CheckAfterAction(actionFinished); else actionFinished.OnUnitActionEnd(); break;
+                if (finish.CheckAfterAction) source!.CheckAfterAction(actionFinished);
+                else
+                {
+                    actionFinished.OnUnitActionEnd();
+                    if (source is null) NativeActionPlayback.Finished(actionFinished);
+                }
+                break;
             case Event.BodyOneofCase.SkillFinished: Invoke(PlayerAt(e.SkillFinished.PlayerIndex).co_data, "AfterSkillCast"); break;
-            case Event.BodyOneofCase.ForcedAttack: Simple(e, () => { }); break;
+            case Event.BodyOneofCase.ForcedAttack:
+                Simple(e, () => { });
+                var forced = e.ForcedAttack;
+                var action = source!.GetAction((ActionCate)forced.ActionCategory);
+                GameController.self.StartCoroutine(Track(source!.DoActionWithAni(GameTileData.Get(new Inctor2(forced.TargetX, forced.TargetY)), action, false), waitForReplay: true));
+                break;
             default: throw new InvalidDataException("Unknown settlement body: " + e.BodyCase);
         }
     }
@@ -247,9 +269,16 @@ internal sealed class AttackSettlements
         if (p.ParameterType == typeof(Inctor2)) return new Inctor2(f.X, f.Y);
         throw new InvalidDataException("Unsupported effect argument: " + p);
     }
-    internal IEnumerator Track(IEnumerator original, Action? completed = null, bool deathAnimation = false)
-    { if (!Replaying) pending++; return TrackInner(original, completed, deathAnimation); }
-    private IEnumerator TrackInner(IEnumerator original, Action? completed, bool deathAnimation)
+    internal IEnumerator Track(IEnumerator original, Action? completed = null, bool deathAnimation = false, bool waitForReplay = false)
+    {
+        // Forced actions own native execution flags after DoActionAni returns.
+        // Keep their replay scope alive through that tail; visual death work
+        // continues to follow host death-commit events independently.
+        var tracked = !Replaying || waitForReplay;
+        if (tracked) pending++;
+        return TrackInner(original, completed, deathAnimation, tracked);
+    }
+    private IEnumerator TrackInner(IEnumerator original, Action? completed, bool deathAnimation, bool tracked)
     {
         using var stack = new CoroutineStack(original);
         try
@@ -268,7 +297,7 @@ internal sealed class AttackSettlements
                 yield return stack.Current;
             }
         }
-        finally { if (!Replaying) pending--; }
+        finally { if (tracked) pending--; }
     }
     internal void Emit(Event e) { if (!Enter(e, out var scope)) return; scope!.Dispose(); }
 }

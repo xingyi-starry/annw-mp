@@ -38,6 +38,11 @@ internal static class KeyBindingCommandCapturePatch
             if (!InputGate.MaySubmit) __result = false;
             return;
         }
+        if (action == InputAction.SetUnitToStay)
+        {
+            if (!InputGate.MaySubmit) __result = false;
+            return; // Native ProcUnitsStay and native selection undo are local.
+        }
         if (action != InputAction.StandByAndNext && action != InputAction.ToggleStandby &&
             action != InputAction.ToggleSleep && action != InputAction.SetUnitToStay) return;
 
@@ -47,12 +52,6 @@ internal static class KeyBindingCommandCapturePatch
         if (units.Count == 0) { XingyiStarryMpPlugin.Instance?.NotifyNoEligibleUnits(); return; }
         var ids = new long[units.Count];
         for (var i = 0; i < units.Count; i++) ids[i] = units[i].unit_id;
-
-        if (action == InputAction.SetUnitToStay)
-        {
-            XingyiStarryMpPlugin.Instance?.SubmitCommand(new GameCommand { Kind = CommandKind.Stay, UnitIds = ids });
-            return;
-        }
 
         var sleep = action == InputAction.ToggleSleep;
         var uniform = true;

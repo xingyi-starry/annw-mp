@@ -82,23 +82,20 @@ internal static class NativeSettlementPatch
             AccessTools.Method(typeof(GameTileData),"CreateWreck"), AccessTools.Method(typeof(WP_Shield),"AbsorbDam"),
             AccessTools.Method(typeof(EffectHost),"Remove"), AccessTools.Method(typeof(ActionData),"OnUnitActionEnd"),
             AccessTools.Method(typeof(CO_Data),"AfterSkillCast") }) if (method is not null) yield return method;
-        foreach (var type in typeof(UnitData).Assembly.GetTypes())
-        {
-            if (typeof(ActionData).IsAssignableFrom(type) && type != typeof(ActionData))
-            {
-                var cell = type.GetMethod("DoActionCell", BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-                if (cell is not null && !cell.IsAbstract) yield return cell;
-            }
-            if (!typeof(UnitEffect).IsAssignableFrom(type) || type == typeof(UnitEffect)) continue;
-            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly))
-            {
-                if (method.IsAbstract || method.IsStatic) continue;
-                if (!(method.Name.StartsWith("On") && method.Name != "OnEffectStart" && method.Name != "OnEffectRestore" && method.Name != "OnRefresh" && method.Name != "OnSave" && method.Name != "OnLoad" ||
-                    method.Name == "PreDamage" || method.Name == "PreAttack" || method.Name == "PreAddExp")) continue;
-                if (method.ReturnType != typeof(void) && method.ReturnType != typeof(float)) continue;
-                if (method.GetParameters().All(p => p.ParameterType == typeof(UnitData) || p.ParameterType == typeof(float) || p.ParameterType == typeof(bool) || p.ParameterType == typeof(DieReason) || p.ParameterType == typeof(Inctor2))) yield return method;
-            }
-        }
+        // Explicit native decision/filter boundaries. New game classes are not
+        // automatically intercepted just because a method happens to be On*.
+        foreach (var entry in new[] {
+            (typeof(UnitEffect_ShockAura), "OnEvent"), (typeof(UnitEffect_ShockChain), "OnEvent"),
+            (typeof(UnitEffect_CounterAtk), "OnEvent"), (typeof(UnitEffect_ExpOnSuicide), "OnEvent"),
+            (typeof(UnitEffect_GenUnitOnDie), "OnEvent"), (typeof(UnitEffect_DieAfterAtk), "OnActionEnd"),
+            (typeof(UnitEffect_OverHeat), "OnRepair"), (typeof(UnitEffect_OverHeat), "OnEvent"),
+            (typeof(UnitEffect_AtkCostHP), "OnEvent"), (typeof(UnitEffect_AtkCostRes), "OnAtkEnd"),
+            (typeof(UnitEffect_AtkCostRes), "PreAttack"), (typeof(UnitEffect_PushBack), "PreAttack"),
+            (typeof(UnitEffect_PushBack), "OnEvent"), (typeof(UnitEffect_ReactiveRepair), "PreDamage"),
+            (typeof(UnitEffect_ReactiveRepair), "OnEvent"), (typeof(UnitEffect_Block), "PreDamage"),
+            (typeof(UnitEffect_PhaseShield), "PreDamage"), (typeof(UnitEffect_LethalSave), "PreDamage"),
+            (typeof(UnitEffect_ShareExp), "PreAddExp") })
+            yield return AccessTools.Method(entry.Item1, entry.Item2);
     }
 
     private static bool Prefix(object __instance, MethodBase __originalMethod, object[] __args, out AttackSettlements.Call? __state)
@@ -106,24 +103,21 @@ internal static class NativeSettlementPatch
         __state = null;
         var operation = AttackSettlements.Current;
         if (operation is null || !ExecutionContext.IsAuthoritativeExecution) return true;
+        if (operation.Replaying && NativeActionPlayback.IsPresenting) return false;
+        // These deterministic native writes belong to their enclosing action/rule.
+        // Record them only when a host-only selector must send concrete child steps.
+        if (__originalMethod.Name is "Heal" or "AddUnitEffect" or "CreateUnit" or "AddMetalPower" or "AbsorbDam" or "Remove")
+        {
+            if (operation.ActiveCall is not null && !operation.SelectingDerivedSteps && !operation.ApplyingExplicitEvent) return true;
+        }
         var parameters = __originalMethod.GetParameters();
         if (parameters.Select((p, i) => p.Name == "preview" && __args[i] is true).Any(x => x)) return true;
         if (operation.Replaying && operation.SuppressDeathTail && (__originalMethod.Name == "DescendUnit" || __originalMethod.Name == "TriggerDieEvent")) return false;
-        // An override calling its base cell is one native invocation, not another event.
-        if (__instance is ActionData nested && __originalMethod.Name == "DoActionCell" && operation.ActiveCall?.Value.AttackCell?.ActionName == nested.sd_action.name) return true;
         var value = Describe(__instance, __originalMethod, __args);
         if (operation.ReplayCallbacks(value)) return false;
         if (!operation.Enter(value, out __state)) return false;
         if (!operation.Replaying) return true;
         value = __state!.Value;
-        if (value.AttackCell is not null && __instance is Action_Attack)
-        {
-            __state.Children();
-            var action = (ActionData)__instance;
-            if (!string.IsNullOrEmpty(action.sd_action.vfx_hit) && (bool)AccessTools.Method(typeof(GS_Battle), "CanObserve").Invoke(GS_Battle.self, new object[] { new Inctor2(value.AttackCell.TargetX, value.AttackCell.TargetY) }))
-                SingletonMonoAuto<VFX>.self.CreateVFX(action.sd_action.vfx_hit, (UnityEngine.Vector3)AccessTools.Method(typeof(SS_ANNW_Game), "GetWPUnit").Invoke(null, new object[] { new Inctor2(value.AttackCell.TargetX, value.AttackCell.TargetY) }));
-            return false;
-        }
         if (value.Pulse is not null || value.Effect is not null && (__instance is UnitEffect_ShockChain || __instance is UnitEffect_CounterAtk || __instance is UnitEffect_ExpOnSuicide || __instance is UnitEffect_GenUnitOnDie))
         { __state.Children(); AttackSettlements.EffectVisual(value); return false; }
         if (value.PlayerDefeated is not null)
@@ -175,10 +169,7 @@ internal static class NativeSettlementPatch
         {
             e.SourceUnitId = action.owner?.unit_id ?? 0; e.PlayerIndex = action.player.index;
             if (name == "OnUnitActionEnd") { e.AttackFinished = new AttackFinishedEvent { ActionName = action.sd_action.name }; return e; }
-            var tile = (GameTileData)args[0];
-            var cell = new AttackCellEvent { ActionName = action.sd_action.name, TargetX = tile.pos.x, TargetY = tile.pos.y, Data = (float)args[2], ActionType = action.GetType().Name };
-            if (args[1] is Inctor2 origin) { cell.OriginX = origin.x; cell.OriginY = origin.y; }
-            e.AttackCell = cell; return e;
+            throw new InvalidOperationException("No native action boundary for " + method);
         }
         if (instance is UnitEffect effect)
         {
@@ -310,6 +301,7 @@ internal static class SettlementMovementLifetimePatch
     private static void Postfix(ref IEnumerator __result)
     {
         var operation = AttackSettlements.Current;
+        if (operation?.Replaying == true) __result = NativeActionPlayback.Movement(__result);
         if (operation is not null) __result = operation.Track(__result);
     }
 }
@@ -319,8 +311,8 @@ internal static class SettlementDetachedCellPatch
 {
     private static void Postfix(ActionData __instance, GameTileData gtd, ref IEnumerator __result)
     {
-        var operation = AttackSettlements.Current; if (operation is null || operation.Replaying) return;
-        SettlementActionDriverPatch.Launch(__instance, gtd);
+        var operation = AttackSettlements.Current; if (operation is null) return;
+        if (operation.Replaying) __result = NativeActionPlayback.Presentation(__result);
         __result = operation.Track(__result);
     }
 }
@@ -328,14 +320,11 @@ internal static class SettlementDetachedCellPatch
 [HarmonyPatch(typeof(ActionData), nameof(ActionData.DoActionAni))]
 internal static class SettlementActionDriverPatch
 {
-    private static bool Prefix(ref IEnumerator __result)
-    { if (AttackSettlements.Current?.Replaying != true) return true; __result = Empty(); return false; }
     private static void Postfix(ActionData __instance, GameTileData gtd, ref IEnumerator __result)
     {
-        if (AttackSettlements.Current is not { Replaying: false }) return;
-        if (__instance.sd_action.cate == ActionCate.SKILL && !string.IsNullOrEmpty(__instance.sd_action.vfx_global))
-            AttackSettlements.Current.Emit(new Event { PlayerIndex = __instance.player.index, AttackStarted = new AttackStartedEvent { ActionName = __instance.sd_action.name, TargetX = gtd.pos.x, TargetY = gtd.pos.y, GlobalPhase = true } });
-        if (__instance.sd_action.mul_tar == 0 && __instance.sd_action.traj != TrajShape.PARREL && gtd is not null) Launch(__instance, gtd);
+        if (AttackSettlements.Current is not { } operation) return;
+        if (operation.Replaying) __result = NativeActionPlayback.Play(__instance, __result);
+        else if (gtd is not null) Launch(__instance, gtd);
     }
     internal static void Launch(ActionData action, GameTileData target)
     {
@@ -346,7 +335,6 @@ internal static class SettlementActionDriverPatch
             AttackStarted = new AttackStartedEvent { ActionName = action.sd_action.name, TargetX = target.pos.x, TargetY = target.pos.y }
         });
     }
-    private static IEnumerator Empty() { yield break; }
 }
 
 [HarmonyPatch(typeof(UnitData), "AutoAction")]

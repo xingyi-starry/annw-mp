@@ -24,7 +24,7 @@ internal static class ProtocolHashTests
         var vectors = new List<Vector>();
         foreach (var field in Wire.AuthorityFrameMessage.Descriptor.Oneofs.First().Fields)
             Add(vectors, "frame/" + field.Name, (AuthorityFrameType)(field.FieldNumber - 100), Minimal(field.MessageType));
-        foreach (var field in Wire.GameCommandMessage.Descriptor.Oneofs.First().Fields)
+        foreach (var field in Wire.GameCommandMessage.Descriptor.Oneofs.First().Fields.Where(f => f.GetOptions()?.Deprecated != true))
         {
             var command = new Wire.GameCommandMessage(); field.Accessor.SetValue(command, Minimal(field.MessageType));
             Add(vectors, "command/" + field.Name, AuthorityFrameType.OperationBegin, new Wire.OperationBegin { OperationId = GuidBytes(1), SeatId = GuidBytes(2), Command = command, RequestId = ulong.MaxValue, Round = -1 });
@@ -62,11 +62,24 @@ internal static class ProtocolHashTests
         zeroNode.RandomResult = random;
         Add(vectors, "random/wrappers", AuthorityFrameType.Resolution, new Wire.Resolution { OperationId = GuidBytes(3), Event = zeroNode });
         if (vectors.TakeLast(5).Select(v => v.Hash).Distinct().Count() != 5) throw new Exception("Presence or nested values omitted from hash.");
+        var targets = new Wire.AttackCellEvent { ActionName = "attack", Data = 0f };
+        targets.Targets.Add(new Wire.AttackTargetResult { Position = new Wire.ActionMovePosition { X = -7, Y = 2 }, Damage = 0f, Unit = new Wire.AttackUnitRecipient { UnitId = 42 } });
+        targets.Targets.Add(new Wire.AttackTargetResult { Position = new Wire.ActionMovePosition(), Damage = 12.5f, Shield = new Wire.AttackShieldRecipient { CasterUnitId = 71 } });
+        void TargetVector(string name) => Add(vectors, "targets/" + name, AuthorityFrameType.Resolution,
+            new Wire.Resolution { OperationId = GuidBytes(3), Event = new Wire.SettlementEvent { AttackCell = targets.Clone() } });
+        TargetVector("unit-and-shield");
+        targets.Targets[0].Unit.UnitId++;
+        TargetVector("recipient");
+        targets.Targets[0].Damage = BitConverter.Int32BitsToSingle(unchecked((int)0x80000000));
+        TargetVector("negative-zero");
+        var firstTarget = targets.Targets[0]; targets.Targets.RemoveAt(0); targets.Targets.Add(firstTarget);
+        TargetVector("order");
+        if (vectors.TakeLast(4).Select(v => v.Hash).Distinct().Count() != 4) throw new Exception("Native attack targets omitted from hash.");
         var path = Environment.GetEnvironmentVariable("XINGYI_GENERATE_HASH_VECTORS");
         if (!string.IsNullOrEmpty(path)) File.WriteAllText(path, JsonSerializer.Serialize(vectors, new JsonSerializerOptions { WriteIndented = true }));
         else
         {
-            var expected = JsonSerializer.Deserialize<List<Vector>>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "hash-v21.json")))!;
+            var expected = JsonSerializer.Deserialize<List<Vector>>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "hash-v22.json")))!;
             if (expected.Count != vectors.Count) throw new Exception("Hash vector count changed; review field encoding.");
             for (var i = 0; i < vectors.Count; i++) if (expected[i].Name != vectors[i].Name || expected[i].Hash != vectors[i].Hash) throw new Exception("Hash vector changed: " + vectors[i].Name);
         }
@@ -117,6 +130,8 @@ internal static class ProtocolHashTests
         }
         foreach (var field in descriptor.Fields.InFieldNumberOrder())
         {
+            if (field.FieldType == FieldType.Message && field.MessageType.Name == "ActionMovePosition")
+            { field.Accessor.SetValue(message, Minimal(field.MessageType, depth + 1)); continue; }
             if (field.GetOptions()?.Deprecated == true || field.IsRepeated || field.ContainingOneof is not null || field.FieldType == FieldType.Message) continue;
             field.Accessor.SetValue(message, Value(field));
         }
