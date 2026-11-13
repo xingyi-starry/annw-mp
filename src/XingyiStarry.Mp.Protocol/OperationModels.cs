@@ -4,7 +4,6 @@ namespace XingyiStarry.Mp.Protocol;
 
 public sealed class OperationBeginPayload
 {
-    public bool LiveSettlements { get; set; }
     public Guid OperationId { get; set; }
     public Guid SeatId { get; set; }
     public ulong RequestId { get; set; }

@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using System;
 using System.Collections.Generic;
 
@@ -5,8 +6,9 @@ namespace XingyiStarry.Mp.Protocol;
 
 public sealed class Envelope
 {
-    public MessageType Type { get; set; }
-    public byte[] Payload { get; set; } = Array.Empty<byte>();
+    public NetworkMessage Message { get; set; } = Messages.Heartbeat(new Wire.Int64Value());
+    public MessageType Type => Message.Type;
+    public IMessage Payload => Message.Payload;
     public Guid? RoomId { get; set; }
     public Guid? ClientId { get; set; }
     public Guid? TargetClientId { get; set; }
@@ -315,37 +317,10 @@ public sealed class ResolvedUnitAction
     public bool SkipAnimations { get; set; }
 }
 
-public sealed class RandomRecord
-{
-    public string CallSite { get; set; } = "";
-    public int Ordinal { get; set; }
-    public byte ValueKind { get; set; }
-    public long IntegerValue { get; set; }
-    public double FloatingValue { get; set; }
-}
-
 public sealed class ResolutionPayload
 {
     public Guid OperationId { get; set; }
-    public int StageId { get; set; }
-    public int SettlementOrdinal { get; set; }
-    public List<RandomRecord> RandomRecords { get; } = new List<RandomRecord>();
-    public AttackSettlement? AttackSettlement { get; set; }
-}
-
-public enum AttackSettlementKind { BatchStarted = 1, Cell = 2, Death = 3, BatchEnded = 4 }
-
-public sealed class AttackSettlement
-{
-    public AttackSettlementKind Kind { get; set; }
-    public int BatchId { get; set; }
-    public long UnitId { get; set; }
-    public string ActionName { get; set; } = "";
-    public int TargetX { get; set; }
-    public int TargetY { get; set; }
-    public int OriginX { get; set; }
-    public int OriginY { get; set; }
-    public float Data { get; set; }
+    public Wire.SettlementEvent? Event { get; set; }
 }
 
 public sealed class AuthorityFrame
@@ -353,8 +328,9 @@ public sealed class AuthorityFrame
     public Guid MatchId { get; set; }
     public long FrameId { get; set; }
     public byte[] PrevHash { get; set; } = Array.Empty<byte>();
-    public AuthorityFrameType FrameType { get; set; }
-    public byte[] Payload { get; set; } = Array.Empty<byte>();
+    public AuthorityMessage Message { get; set; } = AuthorityMessages.TurnPhase(new Wire.AuthorityTurnPhase());
+    public AuthorityFrameType FrameType => Message.Type;
+    public IMessage Payload => Message.Payload;
     public byte[] Hash { get; set; } = Array.Empty<byte>();
 }
 

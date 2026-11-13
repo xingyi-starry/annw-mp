@@ -15,8 +15,8 @@ namespace XingyiStarry.Mp.Tests
             var relay = new FakeHostTransport();
             var directPeer = new FakePeer();
             var relayPeer = new FakePeer();
-            direct.Enqueue(directPeer, MessageType.Hello);
-            relay.Enqueue(relayPeer, MessageType.Heartbeat);
+            direct.Enqueue(directPeer);
+            relay.Enqueue(relayPeer);
 
             using var composite = new CompositeHostTransport(direct, relay);
             composite.Start();
@@ -24,17 +24,17 @@ namespace XingyiStarry.Mp.Tests
             Require(composite.TryDequeue(out var first) && first?.Peer == directPeer, "direct inbox should be visible");
             Require(composite.TryDequeue(out var second) && second?.Peer == relayPeer, "relay inbox should be visible");
 
-            await composite.SendAsync(relayPeer, MessageType.Welcome, new byte[] { 1 });
+            await composite.SendAsync(relayPeer, Messages.Welcome(new XingyiStarry.Mp.Protocol.Wire.Welcome()));
             Require(relayPeer.SendCount == 1 && directPeer.SendCount == 0, "single-peer send should stay on its peer");
 
-            await composite.BroadcastAsync(MessageType.RoomState, new byte[] { 2 });
+            await composite.BroadcastAsync(Messages.RoomState(new XingyiStarry.Mp.Protocol.Wire.Room()));
             Require(direct.BroadcastCount == 1 && relay.BroadcastCount == 1, "broadcast should reach all transports");
 
             await composite.UpdateRoomAsync(new RelayUpdateRoomRequest { RoomId = Guid.NewGuid(), MaxParticipants = 4 });
             Require(direct.UpdateCount == 1 && relay.UpdateCount == 1, "directory updates should reach all publishers");
 
             relay.FailBroadcast = true;
-            await composite.BroadcastAsync(MessageType.SessionEnded, Array.Empty<byte>());
+            await composite.BroadcastAsync(Messages.SessionEnded(new XingyiStarry.Mp.Protocol.Wire.StringValue()));
             Require(direct.BroadcastCount == 2, "one failed transport must not block another transport");
             Require(composite.TryDequeueError(out var error) && error?.Message.Contains(nameof(FakeHostTransport), StringComparison.Ordinal) == true,
                 "isolated transport failure should be observable");
@@ -53,12 +53,12 @@ namespace XingyiStarry.Mp.Tests
             public int UpdateCount { get; private set; }
             public bool FailBroadcast { get; set; }
 
-            public void Enqueue(IRemotePeer peer, MessageType type) => inbox.Enqueue(new InboundEnvelope(peer, new Envelope { Type = type }));
+            public void Enqueue(IRemotePeer peer) => inbox.Enqueue(new InboundEnvelope(peer, new Envelope { Message = Messages.Hello(new XingyiStarry.Mp.Protocol.Wire.Hello()) }));
             public void Start() => StartCount++;
             public bool TryDequeue(out InboundEnvelope? envelope) => inbox.TryDequeue(out envelope);
             public bool TryDequeueError(out Exception? exception) { exception = null; return false; }
-            public Task SendAsync(IRemotePeer peer, MessageType type, byte[] payload) => peer.SendAsync(new Envelope { Type = type, Payload = payload });
-            public Task BroadcastAsync(MessageType type, byte[] payload)
+            public Task SendAsync(IRemotePeer peer, NetworkMessage message) => peer.SendAsync(new Envelope { Message = message });
+            public Task BroadcastAsync(NetworkMessage message)
             {
                 BroadcastCount++;
                 return FailBroadcast ? Task.FromException(new InvalidOperationException("synthetic failure")) : Task.CompletedTask;

@@ -40,6 +40,8 @@ internal static partial class MpText
         ["notice_the_selected_units_cannot_perform_this_action_right"] = ("所选单位当前无法执行该操作。", "The selected units cannot perform this action right now."),
         ["ui_action_not_performed"] = ("操作未执行：", "Action not performed: "),
         ["ui_snapshot_loading_failed"] = ("快照加载失败：", "Snapshot loading failed: "),
+        ["notice_authority_operation_failed"] = ("主机未能完成该操作，详情已记录到日志。", "The host could not complete this action; details were logged."),
+        ["notice_replay_resynchronizing"] = ("战局回放中断，正在重新同步。", "Battle replay interrupted; resynchronizing."),
         ["ui_resynchronize"] = ("重新同步", "Resynchronize"),
         ["ui_map_ping"] = ("地图标点", "Map ping"),
         ["ui_mark_a_map_location_for_teammates"] = ("向同队玩家标记地图位置", "Mark a map location for teammates"),

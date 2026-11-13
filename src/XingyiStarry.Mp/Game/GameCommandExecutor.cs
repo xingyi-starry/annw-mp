@@ -121,28 +121,6 @@ internal sealed class GameCommandExecutor
         GameController.self.StartCoroutine(Run(command, origin, completed, failed), "XingyiStarryMpOperation");
     }
 
-    public void StartEquipmentMovePrelude(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
-    {
-        var validation = Validate(command);
-        if (validation is not null) { failed(new InvalidOperationException(validation)); return; }
-        IsBusy = true;
-        GameController.self.StartCoroutine(RunInner(command, ExecuteEquipmentMovePrelude(command), origin, completed, failed), "XingyiStarryMpMovePrelude");
-    }
-
-    public void StartEquipmentMoveResolution(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
-    {
-        if (IsBusy) { failed(new InvalidOperationException("${notice_another_operation_is_running}")); return; }
-        IsBusy = true;
-        GameController.self.StartCoroutine(RunInner(command, ExecuteEquipmentMoveResolution(command), origin, completed, failed), "XingyiStarryMpMoveResolution");
-    }
-
-    public void StartBuildMoveResolution(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
-    {
-        if (IsBusy) { failed(new InvalidOperationException("${notice_another_operation_is_running}")); return; }
-        IsBusy = true;
-        GameController.self.StartCoroutine(RunInner(command, ExecuteBuildMoveResolution(command), origin, completed, failed), "XingyiStarryMpBuildResolution");
-    }
-
     private IEnumerator Run(GameCommand command, ExecutionOrigin origin, Action completed, Action<Exception> failed)
     {
         var executionGeneration = generation;
@@ -162,42 +140,9 @@ internal sealed class GameCommandExecutor
                     AttackSettlements.Current?.ThrowIfFailed();
                     more = stack.MoveNext();
                     AttackSettlements.Current?.ThrowIfFailed();
-                    if (!more) AttackSettlements.Current?.CheckComplete();
-                    if (more) current = stack.Current;
-                }
-            }
-            catch (Exception ex)
-            {
-                if (tracksClientUnits) MultiplayerUnitStates.EndAuthorityExecution(command);
-                IsBusy = false; failed(ex); yield break;
-            }
-            if (!more) break;
-            yield return current;
-        }
-        if (tracksClientUnits) MultiplayerUnitStates.EndAuthorityExecution(command);
-        IsBusy = false;
-        completed();
-    }
-
-    private IEnumerator RunInner(GameCommand command, IEnumerator inner, ExecutionOrigin origin, Action completed, Action<Exception> failed)
-    {
-        var executionGeneration = generation;
-        var tracksClientUnits = origin == ExecutionOrigin.ClientReplay;
-        if (tracksClientUnits) MultiplayerUnitStates.BeginAuthorityExecution(command);
-        using var stack = new CoroutineStack(inner);
-        while (true)
-        {
-            if (executionGeneration != generation) yield break;
-            bool more; object? current = null;
-            try
-            {
-                using (ExecutionContext.Enter(origin))
-                {
-                    AttackSettlements.Current?.ThrowIfFailed();
-                    more = stack.MoveNext();
-                    AttackSettlements.Current?.ThrowIfFailed();
-                    if (!more) AttackSettlements.Current?.CheckComplete();
-                    if (more) current = stack.Current;
+                    if (!more && AttackSettlements.Current?.HasPending == true) { more = true; current = 0f; }
+                    else if (!more) AttackSettlements.Current?.CheckComplete();
+                    if (more && current is null) current = stack.Current;
                 }
             }
             catch (Exception ex)
@@ -297,12 +242,8 @@ internal sealed class GameCommandExecutor
     private static IEnumerator ExecuteSurrender(GameCommand command)
     {
         var player = GS_Battle.self.all_player.players[command.TargetX];
-        player.defeated = true;
-        BattleEventBus.self.TriggerPlayerDefeat(player);
-        SingletonMono<SS_ANNW_Game>.self.ui.messages.AddMessage(string.Format(LAN.Get("MSG_PlayerDefeat"), player.index + 1));
-        var method = HarmonyLib.AccessTools.Method(typeof(Player), "proc_DoWipeOut") ??
-                     HarmonyLib.AccessTools.Method(typeof(Player), "DoWipeOut");
-        if (method?.Invoke(player, null) is IEnumerator wipeOut) yield return wipeOut;
+        player.DoWipeOut();
+        yield break;
     }
 
     private static IEnumerator ExecuteEndTurnOnly(Player player)
@@ -353,7 +294,16 @@ internal sealed class GameCommandExecutor
             if (candidate.fraction != Fraction.NEUTRAL && !candidate.defeated) break;
             if (candidate.defeated && (candidate.units.Count > 0 ||
                 (int)(HarmonyLib.AccessTools.Method(typeof(Player), "GetRifCount").Invoke(candidate, null) ?? 0) > 0))
-                yield return candidate.proc_DescendResidualUnits();
+            {
+                if (AttackSettlements.Current?.Replaying != true)
+                {
+                    yield return candidate.proc_DescendResidualUnits();
+                    AttackSettlements.Current?.Emit(new Protocol.Wire.SettlementEvent
+                    {
+                        CleanupCompleted = new Protocol.Wire.CleanupCompletedEvent { PlayerIndex = candidate.index }
+                    });
+                }
+            }
         }
 
         battle.cur_player = battle.all_player.players[battle.current_co_index];
@@ -496,66 +446,6 @@ internal sealed class GameCommandExecutor
             op.move_pos = new Inctor2(command.UnitTargetXs[0], command.UnitTargetYs[0]);
         GS_Battle.self.ux_unit_template = UnitTemplate.Acquire(command.TemplateId);
         yield return UX_Manager.self.proc_BuildWithMove(target, unit, op);
-    }
-
-    private static IEnumerator ExecuteEquipmentMovePrelude(GameCommand command)
-    {
-        var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
-        GS_Battle.self.unit_busy = true;
-        BattleEventBus.self.TriggerUnitBusyChanged(isBusy: true);
-        if (command.UnitTargetXs.Length == 1 && command.UnitTargetYs.Length == 1)
-        {
-            var move = new Inctor2(command.UnitTargetXs[0], command.UnitTargetYs[0]);
-            if (move != unit.pos) yield return unit.DoMoveWithAni(move);
-        }
-        unit.in_animation = true;
-        UX_Manager.self.CheckUnitsAndSetUXState();
-    }
-
-    private static IEnumerator ExecuteEquipmentMoveResolution(GameCommand command)
-    {
-        var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
-        var target = GameTileData.Get(new Inctor2(command.TargetX, command.TargetY));
-        var action = unit.GetAction((ActionCate)command.ActionCategory);
-        if (action is null) throw new InvalidOperationException("Equipment move action is no longer available.");
-        if (!string.IsNullOrEmpty(command.TemplateId)) action.train_template = UnitTemplate.Acquire(command.TemplateId);
-        unit.Event_SetAiming?.Invoke(target.pos);
-        unit.in_animation = true;
-        yield return action.DoActionAni(target);
-        unit.CheckAfterAction(action);
-        yield return 0.05f;
-        unit.in_animation = false;
-        GS_Battle.self.unit_busy = false;
-        BattleEventBus.self.TriggerUnitBusyChanged(isBusy: false);
-        GS_Battle.self.ux_skill_action = null;
-        HarmonyLib.AccessTools.Method(GS_Battle.self.cur_player.GetType(), "UpdateUnactionedUnitCount")?.Invoke(GS_Battle.self.cur_player, null);
-        GS_Battle.self.undo_move.ClearUndoableMoveList();
-        UX_Manager.self.CheckUnitsAndSetUXState();
-    }
-
-    private static IEnumerator ExecuteBuildMoveResolution(GameCommand command)
-    {
-        var unit = GS_Battle.self.all_unit.GetUnitByID((int)command.UnitIds[0]);
-        var target = GameTileData.Get(new Inctor2(command.TargetX, command.TargetY));
-        var action = unit.GetAction(ActionCate.BUILD);
-        if (action is null) throw new InvalidOperationException("Build action is no longer available.");
-        var template = UnitTemplate.Acquire(command.TemplateId);
-        GS_Battle.self.ux_unit_template = template;
-        GS_Battle.self.ux_state = UX_State.NONE;
-        action.train_template = template;
-        unit.Event_SetAiming?.Invoke(target.pos);
-        unit.in_animation = true;
-        yield return action.DoActionAni(target);
-        unit.CheckAfterAction(action);
-        yield return 0.05f;
-        unit.in_animation = false;
-        unit.build_planner?.ClearTemplate();
-        GS_Battle.self.unit_busy = false;
-        BattleEventBus.self.TriggerUnitBusyChanged(isBusy: false);
-        GS_Battle.self.ux_skill_action = null;
-        HarmonyLib.AccessTools.Method(GS_Battle.self.cur_player.GetType(), "UpdateUnactionedUnitCount")?.Invoke(GS_Battle.self.cur_player, null);
-        GS_Battle.self.undo_move.ClearUndoableMoveList();
-        UX_Manager.self.CheckUnitsAndSetUXState();
     }
 
     private static System.Collections.Generic.List<UnitData> ResolveUnits(GameCommand command)

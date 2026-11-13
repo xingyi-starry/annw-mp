@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -21,10 +22,10 @@ internal sealed class AuthorityJournal : IDisposable
 
     public IReadOnlyList<AuthorityFrame> Frames => frames;
 
-    public AuthorityFrame Append(AuthorityFrameType type, byte[] payload)
+    public AuthorityFrame Append(AuthorityMessage message)
     {
-        var frame = chain.Append(type, payload);
-        var bytes = ProtocolCodec.EncodeAuthorityFrame(frame);
+        var frame = chain.Append(message);
+        var bytes = ProtocolCodec.EncodeAuthorityFrame(frame).ToByteArray();
         var prefix = new[] { (byte)bytes.Length, (byte)(bytes.Length >> 8), (byte)(bytes.Length >> 16), (byte)(bytes.Length >> 24) };
         stream.Write(prefix, 0, prefix.Length); stream.Write(bytes, 0, bytes.Length); stream.Flush();
         frames.Add(frame); return frame;

@@ -1,0 +1,267 @@
+[
+  {
+    "Name": "frame/operation_begin",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIKU8lYyJAmRzr6w\u002BquASOVb1CkoWZ9heJT14oSfbR4wvqgYOCgMAAf8SAwAB/xgHIAc=",
+    "Hash": "a53c958c89026473afac3eaae0123956f50a4a1667d85e253d78a127db478c2f"
+  },
+  {
+    "Name": "frame/resolution",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyINA16NFX7cpJd8/xNokKyppbWiQ8yxFPSDcfzcVlsZSksgYFCgMAAf8=",
+    "Hash": "d035e8d157edca4977cff136890aca9a5b5a243ccb114f48371fcdc565b194a4"
+  },
+  {
+    "Name": "frame/operation_end",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIGMQnBDoGyISZxs0XsFdXJtgpV8zxdi7s5ALUWa81ytOugYFCgMAAf8=",
+    "Hash": "63109c10e81b2212671b345ec15d5c9b60a55f33c5d8bbb3900b5166bcd72b4e"
+  },
+  {
+    "Name": "frame/turn_phase",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIMeZtMGMiQ\u002B4nQd9a6o3EDJRe4mJbwJCmJyzM2HMOgu9wgYCCAc=",
+    "Hash": "c799b4c18c890fb89d077d6baa371032517b89896f0242989cb33361cc3a0bbd"
+  },
+  {
+    "Name": "frame/seat_changed",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIED52bgrcIAULhLA6WkmHp869rJqb6NTVy\u002BcORQ4LEwBygYXCgMAAf8QBxgBIgzlrZfmrrUvZmllbGQ=",
+    "Hash": "40f9d9b82b7080142e12c0e969261e9f3af6b26a6fa353572f9c3914382c4c01"
+  },
+  {
+    "Name": "frame/match_ended",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIDa1LmkrQMJVsLNnrt/Z0PvklVcDgxFtUjgrKNY\u002BGorY0gYCCAE=",
+    "Hash": "36b52e692b40c255b0b367aedfd9d0fbe495570383116d52382b28d63e1a8ad8"
+  },
+  {
+    "Name": "frame/operation_failed",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIEdcIZlDHIWfvdcTFfqBcrNLHzyJ0ytY\u002BT9PE8x9\u002BuVp2gYTCgMAAf8SDOWtl\u002BautS9maWVsZA==",
+    "Hash": "475c2199431c859fbdd71315fa8172b34b1f3c89d32b58f93f4f13cc7dfae569"
+  },
+  {
+    "Name": "command/move",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIG/NLINOrkfRerZDzUzqY0DhCWIMvNhhw2CcJadq\u002BZr7qgZFChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoJqgYGGA4gDlgB",
+    "Hash": "6fcd2c834eae47d17ab643cd4cea6340e109620cbcd861c3609c25a76af99afb"
+  },
+  {
+    "Name": "command/action",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIHC/tdhOlVF71ZhoWK\u002BBZOvYpn18rSFTb8DSl2cTd5zxqgZgChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoksgYhGA4gDjgHSgzlrZfmrrUvZmllbGRQ\u002Bf//////////AVgB",
+    "Hash": "70bfb5d84e95517bd5986858af8164ebd8a67d7cad21536fc0d2976713779cf1"
+  },
+  {
+    "Name": "command/equipment_action",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyILFWehp1pxdpIcMePDdkBfIWz8/6X9pWrO1TbMLPcKu5qgZhChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASolugYiGA4gDjgHQgzlrZfmrrUvZmllbGRKDOWtl\u002BautS9maWVsZA==",
+    "Hash": "b1567a1a75a7176921c31e3c376405f216cfcffa5fda56aced536cc2cf70abb9"
+  },
+  {
+    "Name": "command/equipment_move_action",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIOR7HEYTh6qQ5EqOjFfjYNj/ZG9eOT9DM3spCVdbVX\u002BDqgZhChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASolwgYiGA4gDjgHQgzlrZfmrrUvZmllbGRKDOWtl\u002BautS9maWVsZA==",
+    "Hash": "e47b1c461387aa90e44a8e8c57e360d8ff646f5e393f43337b2909575b557f83"
+  },
+  {
+    "Name": "command/build_with_move",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIKxt\u002Bslpip/y/PmyAdoJxpKvOkJUCmd6Xzn\u002BAvA\u002BX2FtqgZTChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoXygYUGA4gDjgHSgzlrZfmrrUvZmllbGQ=",
+    "Hash": "ac6dfac9698a9ff2fcf9b201da09c692af3a42540a677a5f39fe02f03e5f616d"
+  },
+  {
+    "Name": "command/skill",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyILLG4qYK0wbBUEMP9CLZ2K5I246xsmZvHFftAaTFkgr0qgZDChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoH0gYEGA4gDg==",
+    "Hash": "b2c6e2a60ad306c150430ff422d9d8ae48db8eb1b2666f1c57ed01a4c5920af4"
+  },
+  {
+    "Name": "command/undo_move",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyID4rOv08mtvsiL65EPmGnyCMd6ovQRAbO9AkC4dtg\u002B0RqgY/ChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoD2gYA",
+    "Hash": "3e2b3afd3c9adbec88beb910f9869f208c77aa2f41101b3bd0240b876d83ed11"
+  },
+  {
+    "Name": "command/end_turn",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIGXqhzdrgUZSwuKJ1/L3xpzZbMx39sUJsW\u002BXuRvQIKbUqgY/ChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoD4gYA",
+    "Hash": "65ea87376b814652c2e289d7f2f7c69cd96ccc77f6c509b16f97b91bd020a6d4"
+  },
+  {
+    "Name": "command/auto_guide_start",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIPrzJ6MXYeuJvcAB7p9a2qX12KXcLWF7KCbbZQdshjoXqgY/ChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoD6gYA",
+    "Hash": "faf327a31761eb89bdc001ee9f5adaa5f5d8a5dc2d617b2826db65076c863a17"
+  },
+  {
+    "Name": "command/debug_add_resources",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIKPBKBBnu0RkwaJHwi05t\u002Br6gH7fSfoWpxmD7gu5EdXQqgZFChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoJ\u002BgYGYAdoDnAO",
+    "Hash": "a3c1281067bb4464c1a247c22d39b7eafa807edf49fa16a71983ee0bb911d5d0"
+  },
+  {
+    "Name": "command/debug_fill_skill",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIBO4JR/OWFHtIQ3EMzRaYOxZTddN0DMdXi3q2rcQh6YkqgZBChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoFggcCYAc=",
+    "Hash": "13b8251fce5851ed210dc433345a60ec594dd74dd0331d5e2deadab71087a624"
+  },
+  {
+    "Name": "command/ai_unit_action",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIFdHxIjgG83gmX0fDn/Z7gd/65eFC9oqo4INfDFknua/qgZiChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASomigcjGA4gDjgHSgzlrZfmrrUvZmllbGRQ\u002Bf//////////AVgBeAc=",
+    "Hash": "5747c488e01bcde0997d1f0e7fd9ee077feb97850bda2aa3820d7c31649ee6bf"
+  },
+  {
+    "Name": "command/ai_skill",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIPhmT7XJWEBnf5fGAoEPLODCafDSujkZyWJltVzrmsm\u002BqgZFChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoJkgcGGA4gDlgB",
+    "Hash": "f8664fb5c95840677f97c602810f2ce0c269f0d2ba3919c96265b55ceb9ac9be"
+  },
+  {
+    "Name": "command/turn_advance",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIIhWxGT/rkITnuVGMDaqKXwwoCkWM3VU86RXJoFDRgrgqgY/ChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoDmgcA",
+    "Hash": "8856c464ffae42139ee5463036aa297c30a02916337554f3a457268143460ae0"
+  },
+  {
+    "Name": "command/surrender",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyICVYbk5ODyFwsaBdPaJ6XpW1WSiYOPZyGUuMBF0ip8\u002B\u002BqgZBChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoFogcCGA4=",
+    "Hash": "25586e4e4e0f2170b1a05d3da27a5e95b559289838f672194b8c045d22a7cfbe"
+  },
+  {
+    "Name": "command/toggle_standby",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIFqXQphvPhKM787kUhrLoqCRkV6mbTIB6c5r//bYFT0VqgZBChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoFqgcCWAE=",
+    "Hash": "5a9742986f3e128cefcee4521acba2a091915ea66d3201e9ce6bfff6d8153d15"
+  },
+  {
+    "Name": "command/toggle_sleep",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIPsJ4FfAXz5wcmtZAJQuLjnenZzFyRECa\u002BJPSNCzbpcJqgZBChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoFsgcCWAE=",
+    "Hash": "fb09e057c05f3e70726b5900942e2e39de9d9cc5c911026be24f48d0b36e9709"
+  },
+  {
+    "Name": "command/stay",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyILRx\u002BiAkSyffnF4RZQbqibNeBzy4JubWpnLmzu4oG/4rqgY/ChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoDugcA",
+    "Hash": "b471fa20244b27df9c5e116506ea89b35e073cb826e6d6a672e6ceee281bfe2b"
+  },
+  {
+    "Name": "command/self_destruct",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIMyg1A4VLNZYG8Wo6c9N036TCPPHTqJL5lvs\u002BpJR3dWKqgY/ChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoDwgcA",
+    "Hash": "cca0d40e152cd6581bc5a8e9cf4dd37e9308f3c74ea24be65becfa9251ddd58a"
+  },
+  {
+    "Name": "command/resolved_unit_actions",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIGfcif3tEv9jLAlza\u002BBB3sf1vKVBJEerrkUUfDr0jl5fqgY/ChABAAAAAAAAAAAAAAAAAAAAEhACAAAAAAAAAAAAAAAAAAAAGP///////////wEg////////////ASoDygcA",
+    "Hash": "67dc89fded12ff632c09736be041dec7f5bca5412447abae45147c3af48e5e5f"
+  },
+  {
+    "Name": "settlement/attack_started",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyINhZpSpRRwSOmYM5zZLxPct2j3nPEHXVu20WnNDe4\u002BYDsgZ8ChADAAAAAAAAAAAAAAAAAAAAogZnCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KASqBhQKDOWtl\u002BautS9maWVsZBAOGA4gAQ==",
+    "Hash": "d859a52a5147048e998339cd92f13dcb768f79cf1075d5bb6d169cd0dee3e603"
+  },
+  {
+    "Name": "settlement/attack_cell",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIBb6ImOhtuC5cCOD6EC8Ejwq/JHBkZvUWoUStIScOxMtsgaKAQoQAwAAAAAAAAAAAAAAAAAAAKIGdQj//////////38Qexo0ChgKDVVuaXREYXRhLkh1cnQ5AAAAAAAAAIASGAoNVW5pdERhdGEuSHVydDkAAAAAAADAPyIKEAn6BgUNAADAPygEsgYiCgzlrZfmrrUvZmllbGQQDhgOOgzlrZfmrrUvZmllbGRABw==",
+    "Hash": "16fa2263a1b6e0b9702383e840bc123c2afc91c1919bd45a8512b4849c3b132d"
+  },
+  {
+    "Name": "settlement/attack_finished",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyINfFRwrfyixqPxiwL80I/esrZFsBNWZNmrwZGifZ90i7sgZ4ChADAAAAAAAAAAAAAAAAAAAAogZjCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KAS6BhAKDOWtl\u002BautS9maWVsZBAB",
+    "Hash": "d7c5470adfca2c6a3f18b02fcd08fdeb2b645b0135664d9abc191a27d9f748bb"
+  },
+  {
+    "Name": "settlement/damage",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIMxMBrtZV1VbM\u002BqKjwAdGnRCt8jq3TMwqcuHlfaOyCtisgZ8ChADAAAAAAAAAAAAAAAAAAAAogZnCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KATCBhQSDOWtl\u002BautS9maWVsZCgBMAE4AQ==",
+    "Hash": "cc4c06bb5957555b33ea8a8f001d1a7442b7c8eadd3330a9cb8795f68ec82b62"
+  },
+  {
+    "Name": "settlement/death_started",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyINp1yS\u002BC672qxtFljvoKu7iE\u002B38KpyDxB2Slpc81coTasgZ6ChADAAAAAAAAAAAAAAAAAAAAogZlCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KATKBhIIBxoM5a2X5q61L2ZpZWxkIAE=",
+    "Hash": "da75c92f82ebbdaac6d1658efa0abbb884fb7f0aa720f10764a5a5cf357284da"
+  },
+  {
+    "Name": "settlement/death_committed",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIBEaW0ktuswtBylwIRk20fdov36rZ11X/0608eAtgWYMsgZwChADAAAAAAAAAAAAAAAAAAAAogZbCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KATSBggIBxAHGAEgAQ==",
+    "Hash": "111a5b492dbacc2d072970211936d1f768bf7eab675d57ff4eb4f1e02d81660c"
+  },
+  {
+    "Name": "settlement/player_defeated",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIFmyYuxclpCz0nSzpUaWVp7oMV5En/JZfeo5iX/nnj/0sgZqChADAAAAAAAAAAAAAAAAAAAAogZVCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KATaBgIIBw==",
+    "Hash": "59b262ec5c9690b3d274b3a54696569ee8315e449ff2597dea39897fe79e3ff4"
+  },
+  {
+    "Name": "settlement/cleanup_completed",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyICTq93bih4shC42jGW2EWNJgyy7qF2gAb0uxDoLsXr7msgZqChADAAAAAAAAAAAAAAAAAAAAogZVCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KATiBgIIBw==",
+    "Hash": "24eaf776e2878b210b8da3196d8458d260cb2eea1768006f4bb10e82ec5ebee6"
+  },
+  {
+    "Name": "settlement/effect",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIEpGGgZO88i4KhWyCVuIu\u002Br6qjc94TCMim2UmvhhZ1pbsgaqAQoQAwAAAAAAAAAAAAAAAAAAAKIGlAEI//////////9/EHsaNAoYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAACAEhgKDVVuaXREYXRhLkh1cnQ5AAAAAAAAwD8iChAJ\u002BgYFDQAAwD8oBOoGQQoM5a2X5q61L2ZpZWxkEAcaDOWtl\u002BautS9maWVsZCD5//////////8BMAE4B0gBUgzlrZfmrrUvZmllbGRYDmAO",
+    "Hash": "4a461a064ef3c8b82a15b2095b88bbeafaaa373de1308c8a6d949af861675a5b"
+  },
+  {
+    "Name": "settlement/spawn",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIIpei1ti2c0uAYmQTR1euYv1AiR0\u002BMl4VljEI\u002BV8li88sgaKAQoQAwAAAAAAAAAAAAAAAAAAAKIGdQj//////////38Qexo0ChgKDVVuaXREYXRhLkh1cnQ5AAAAAAAAAIASGAoNVW5pdERhdGEuSHVydDkAAAAAAADAPyIKEAn6BgUNAADAPygE8gYiCgzlrZfmrrUvZmllbGQQDhgOIAcoATABOAdAAUgBUAFYAQ==",
+    "Hash": "8a5e8b5b62d9cd2e0189904d1d5eb98bf5022474f8c9785658c423e57c962f3c"
+  },
+  {
+    "Name": "settlement/heal",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIORJchZrFTy\u002BUdb7qRDJRJX7Yi74d42jEVnVJ23H5PgEsgZoChADAAAAAAAAAAAAAAAAAAAAogZTCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KAT6BgA=",
+    "Hash": "e44972166b153cbe51d6fba910c94495fb622ef8778da31159d5276dc7e4f804"
+  },
+  {
+    "Name": "settlement/resource",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIK/ESgWJml/zqWuoShXYJmtCPLMZ1vlw4zacpbOxyTzFsgZwChADAAAAAAAAAAAAAAAAAAAAogZbCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KASCBwgIBxAHGA4gDg==",
+    "Hash": "afc44a05899a5ff3a96ba84a15d8266b423cb319d6f970e3369ca5b3b1c93cc5"
+  },
+  {
+    "Name": "settlement/commander_position",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyILLrCztak9PD4XpKd3abzctvcTi680SKCxwVFmdbKiOjsgZqChADAAAAAAAAAAAAAAAAAAAAogZVCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KASKBwIIBw==",
+    "Hash": "b2eb0b3b5a93d3c3e17a4a77769bcdcb6f7138baf3448a0b1c1516675b2a23a3"
+  },
+  {
+    "Name": "settlement/forced_attack",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIPGZ7tXSYxNihQ2tuOpc\u002BAZ0B7IVXTIIo2m2H1yBvccAsgZuChADAAAAAAAAAAAAAAAAAAAAogZZCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KASaBwYIBxAOGA4=",
+    "Hash": "f199eed5d2631362850dadb8ea5cf8067407b2155d3208a369b61f5c81bdc700"
+  },
+  {
+    "Name": "settlement/pulse",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIC\u002BJEKuVhTlhsWY05oW\u002B8eNgmPRaiADI2SwTdAV0xaF9sgZqChADAAAAAAAAAAAAAAAAAAAAogZVCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KASiBwIIBw==",
+    "Hash": "2f8910ab95853961b16634e685bef1e36098f45a8800c8d92c13740574c5a17d"
+  },
+  {
+    "Name": "settlement/wreck",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIB5RFggnHoZUyIEF7\u002BtVBE1Up8JH3z9uvtLYHImTWfFHsgZwChADAAAAAAAAAAAAAAAAAAAAogZbCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KASqBwgIDhAOGAcgAQ==",
+    "Hash": "1e511608271e8654c88105efeb55044d54a7c247df3f6ebed2d81c899359f147"
+  },
+  {
+    "Name": "settlement/shield",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIIldO8GJzZ1TLBCv178GEUt0Qg3ttOSh7LvHSS8G4lBesgZsChADAAAAAAAAAAAAAAAAAAAAogZXCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KASyBwQIBxAB",
+    "Hash": "895d3bc189cd9d532c10afd7bf06114b74420dedb4e4a1ecbbc7492f06e2505e"
+  },
+  {
+    "Name": "settlement/effect_mutation",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIJDLqA37aVBPfdBUDuOaTEQTv12vSwwlKNR/OiCpHZUCsgaJAQoQAwAAAAAAAAAAAAAAAAAAAKIGdAj//////////38Qexo0ChgKDVVuaXREYXRhLkh1cnQ5AAAAAAAAAIASGAoNVW5pdERhdGEuSHVydDkAAAAAAADAPyIKEAn6BgUNAADAPygEugchCgzlrZfmrrUvZmllbGQQBxj5//////////8BIAcoATAH",
+    "Hash": "90cba80dfb69504f7dd0540ee39a4c4413bf5daf4b0c2528d47f3a20a91d9502"
+  },
+  {
+    "Name": "settlement/experience",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIO\u002BMTCNrq1Gz5A8Qaya0TNoFFyMXN2hXDfIrXfdqOORysgZsChADAAAAAAAAAAAAAAAAAAAAogZXCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KATCBwQQARgB",
+    "Hash": "ef8c4c236bab51b3e40f106b26b44cda051723173768570df22b5df76a38e472"
+  },
+  {
+    "Name": "settlement/skill_finished",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIAmmdDBVICXG5q4keUL4ueuLd1mpMqMDEuPO29s5LftAsgZqChADAAAAAAAAAAAAAAAAAAAAogZVCP//////////fxB7GjQKGAoNVW5pdERhdGEuSHVydDkAAAAAAAAAgBIYCg1Vbml0RGF0YS5IdXJ0OQAAAAAAAMA/IgoQCfoGBQ0AAMA/KATKBwIIBw==",
+    "Hash": "09a67430552025c6e6ae247942f8b9eb8b7759a932a30312e3cedbdb392dfb40"
+  },
+  {
+    "Name": "presence/absent",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIBe54NHImJsP8y0qJZPkp6jEkqZcRCw8ogtUlEvuQXC0sgYYChADAAAAAAAAAAAAAAAAAAAAogYDwgYA",
+    "Hash": "17b9e0d1c8989b0ff32d2a2593e4a7a8c492a65c442c3ca20b54944bee4170b4"
+  },
+  {
+    "Name": "presence/zero",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyILkKSnf6tA\u002BtvG5/D/\u002BtfzCuuVQAzI5JxE3OzrmMWskAsgYdChADAAAAAAAAAAAAAAAAAAAAogYIwgYFDQAAAAA=",
+    "Hash": "b90a4a77fab40fadbc6e7f0fffad7f30aeb95400cc8e49c44dceceb98c5ac900"
+  },
+  {
+    "Name": "ieee/negative-zero",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIMbnu/XiAEb51XHo6Vo1UEpzN/UsgxB86VS58DE4NAN6sgYdChADAAAAAAAAAAAAAAAAAAAAogYIwgYFDQAAAIA=",
+    "Hash": "c6e7bbf5e20046f9d571e8e95a35504a7337f52c83107ce954b9f0313834037a"
+  },
+  {
+    "Name": "repeated/resolved",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIKncyrNtoW6jT4Kf/IEVCfoRaQJhr56ECn8AeWCf1K6AqgaEAQoQAQAAAAAAAAAAAAAAAAAAABIQAgAAAAAAAAAAAAAAAAAAACpeygdbggEJCCqiBgQIDhAOggEPCCqqBgoIDhAOGA4gDigHggEdCCqyBhgIDhAOGA4gDigHMgzlrZfmrrUvZmllbGSCARoIKroGFQgOEA4YDiAOKAcw\u002Bf//////////AQ==",
+    "Hash": "a9dccab36da16ea34f829ffc811509fa11690261af9e840a7f0079609fd4ae80"
+  },
+  {
+    "Name": "repeated/reversed",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyIAwpwA1eyrBUHQWPi4D0zWKQ03ievTN3cBuzZiUywGPyqgaEAQoQAQAAAAAAAAAAAAAAAAAAABIQAgAAAAAAAAAAAAAAAAAAACpeygdbggEaCCq6BhUIDhAOGA4gDigHMPn//////////wGCAR0IKrIGGAgOEA4YDiAOKAcyDOWtl\u002BautS9maWVsZIIBDwgqqgYKCA4QDhgOIA4oB4IBCQgqogYECA4QDg==",
+    "Hash": "0c29c00d5ecab0541d058f8b80f4cd6290d3789ebd3377701bb3662532c063f2"
+  },
+  {
+    "Name": "random/wrappers",
+    "Frame": "ChAHAAAAAAAAAAAAAAAAAAAAEP//////////fxogpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaUyILi1/f0bGTK\u002Bw0TEC1VOWjADSyMQPyJKEbjc2T8\u002BnajfsgblAQoQAwAAAAAAAAAAAAAAAAAAAKIGzwEaxAEaFwoMVW5pdERhdGEuRGllOZqZmZmZmfE/IisIARAEGiUKIwoYR2FtZVRpbGVEYXRhLkNyZWF0ZVdyZWNrOc3MzMzMzOw/Kh4IKhIaChgKFFBsYXllci5BdXRvU2V0Q21kUG9zMAAyXAgqElgKKQolVW5pdEVmZmVjdF9TaGFyZUV4cC5QcmVBZGRFeHAvU2h1ZmZsZTADCisKJVVuaXRFZmZlY3RfU2hhcmVFeHAuUHJlQWRkRXhwL1NodWZmbGUQATAAwgYFDQAAAIA=",
+    "Hash": "b8b5fdfd1b1932bec344c40b554e5a30034b23103f224a11b8dcd93f3e9da8df"
+  }
+]

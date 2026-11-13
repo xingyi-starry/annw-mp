@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -50,8 +51,7 @@ internal sealed class RelayHostTransport : IHostTransport, IRoomDirectoryPublish
         try
         {
             await socket.ConnectAsync(parsed.Host, parsed.Port).ConfigureAwait(false);
-            var response = await socket.RequestAsync(new Envelope { Type = MessageType.RelayRegisterRoom, Delivery = Delivery.RelayControl,
-                Payload = ProtocolCodec.EncodeRelayRegisterRoom(registration) },
+            var response = await socket.RequestAsync(new Envelope { Message = Messages.RelayRegisterRoom(ProtocolCodec.EncodeRelayRegisterRoom(registration)), Delivery = Delivery.RelayControl },
                 MessageType.RelayControlResponse, registration.RequestId, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
             var result = ProtocolCodec.DecodeRelayControlResponse(response.Payload);
             if (!result.Success || !result.ClientId.HasValue)
@@ -84,7 +84,7 @@ internal sealed class RelayHostTransport : IHostTransport, IRoomDirectoryPublish
                 lock (peerLock) if (peers.TryGetValue(notice.ClientId, out disconnected)) disconnected.MarkClosed();
                 if (notice.Reason == "left" && disconnected is not null)
                 {
-                    envelope = new InboundEnvelope(disconnected, new Envelope { Type = MessageType.LeaveSession });
+                    envelope = new InboundEnvelope(disconnected, new Envelope { Message = Messages.LeaveSession(new XingyiStarry.Mp.Protocol.Wire.GuidValue()) });
                     return true;
                 }
                 // Let HostSession observe the logical disconnect and enter its grace state
@@ -101,22 +101,22 @@ internal sealed class RelayHostTransport : IHostTransport, IRoomDirectoryPublish
         MarkFailed();
         return true;
     }
-    public async Task SendAsync(IRemotePeer peer, MessageType type, byte[] payload)
+    public async Task SendAsync(IRemotePeer peer, NetworkMessage message)
     {
         if (peer is not RelayRemotePeer relay || relay.Owner != this) throw new InvalidOperationException("Peer does not belong to this relay host.");
         try
         {
-            await socket.SendAsync(new Envelope { Type = type, Payload = payload, RoomId = roomId, ClientId = hostClientId,
+            await socket.SendAsync(new Envelope { Message = message, RoomId = roomId, ClientId = hostClientId,
                 TargetClientId = relay.ClientId, Delivery = Delivery.ToClient }).ConfigureAwait(false);
         }
         catch { MarkFailed(); throw; }
     }
-    public async Task BroadcastAsync(MessageType type, byte[] payload)
+    public async Task BroadcastAsync(NetworkMessage message)
     {
         try
         {
             await socket.SendAsync(new Envelope
-                { Type = type, Payload = payload, RoomId = roomId, ClientId = hostClientId, Delivery = Delivery.Broadcast }).ConfigureAwait(false);
+                { Message = message, RoomId = roomId, ClientId = hostClientId, Delivery = Delivery.Broadcast }).ConfigureAwait(false);
         }
         catch { MarkFailed(); throw; }
     }
@@ -132,25 +132,21 @@ internal sealed class RelayHostTransport : IHostTransport, IRoomDirectoryPublish
     public async Task UpdateRoomAsync(RelayUpdateRoomRequest update)
     {
         update.RequestId = (ulong)Interlocked.Increment(ref controlSequence);
-        var envelope = await socket.RequestAsync(new Envelope { Type = MessageType.RelayUpdateRoom,
-            Payload = ProtocolCodec.EncodeRelayUpdateRoom(update), RoomId = roomId, ClientId = hostClientId,
-            Delivery = Delivery.RelayControl }, MessageType.RelayControlResponse, update.RequestId,
+        var envelope = await socket.RequestAsync(new Envelope { Message = Messages.RelayUpdateRoom(ProtocolCodec.EncodeRelayUpdateRoom(update)), RoomId = roomId, ClientId = hostClientId, Delivery = Delivery.RelayControl }, MessageType.RelayControlResponse, update.RequestId,
             TimeSpan.FromSeconds(10)).ConfigureAwait(false);
         var response = ProtocolCodec.DecodeRelayControlResponse(envelope.Payload);
         if (!response.Success) throw new InvalidDataException(response.Reason.Length == 0 ? "The relay rejected the room update." : response.Reason);
     }
     public async Task CloseJoiningAsync(ulong requestId)
     {
-        var response = await socket.RequestAsync(new Envelope { Type = MessageType.RelayCloseJoining, RoomId = roomId, ClientId = hostClientId,
-            Delivery = Delivery.RelayControl, Payload = ProtocolCodec.EncodeRelayRoomRequest(new RelayRoomRequest { RequestId = requestId, RoomId = roomId }) },
+        var response = await socket.RequestAsync(new Envelope { Message = Messages.RelayCloseJoining(ProtocolCodec.EncodeRelayRoomRequest(new RelayRoomRequest { RequestId = requestId, RoomId = roomId })), RoomId = roomId, ClientId = hostClientId, Delivery = Delivery.RelayControl },
             MessageType.RelayControlResponse, requestId, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
         var result = ProtocolCodec.DecodeRelayControlResponse(response.Payload);
         if (!result.Success) throw new InvalidDataException(result.Reason.Length == 0 ? "The relay could not close room admissions." : result.Reason);
     }
     public void Dispose()
     {
-        try { _ = socket.SendAsync(new Envelope { Type = MessageType.RelayCloseRoom, RoomId = roomId, ClientId = hostClientId,
-            Delivery = Delivery.RelayControl, Payload = ProtocolCodec.EncodeRelayRoomRequest(new RelayRoomRequest { RoomId = roomId }) }); } catch { }
+        try { _ = socket.SendAsync(new Envelope { Message = Messages.RelayCloseRoom(ProtocolCodec.EncodeRelayRoomRequest(new RelayRoomRequest { RoomId = roomId })), RoomId = roomId, ClientId = hostClientId, Delivery = Delivery.RelayControl }); } catch { }
         socket.Dispose(); lock (peerLock) foreach (var peer in peers.Values) peer.MarkClosed();
     }
 
@@ -164,7 +160,7 @@ internal sealed class RelayHostTransport : IHostTransport, IRoomDirectoryPublish
         public RelayRemotePeer(RelayHostTransport owner, Guid clientId) { Owner = owner; ClientId = clientId; }
         public void Touch() { LastReceivedUtc = DateTime.UtcNow; IsConnected = true; }
         public void MarkClosed() => IsConnected = false;
-        public Task SendAsync(Envelope envelope) => Owner.SendAsync(this, envelope.Type, envelope.Payload);
+        public Task SendAsync(Envelope envelope) => Owner.SendAsync(this, envelope.Message);
         public void Close() => MarkClosed();
     }
 }
@@ -187,8 +183,7 @@ internal sealed class RelayClientTransport : IClientTransport
         try
         {
             await nextSocket.ConnectAsync(host, port).ConfigureAwait(false);
-            var envelope = await nextSocket.RequestAsync(new Envelope { Type = MessageType.RelayJoinRoom, Delivery = Delivery.RelayControl,
-                Payload = ProtocolCodec.EncodeRelayJoinRoom(new RelayJoinRoomRequest { RequestId = joinRequestId, RoomId = roomId, Password = password }) },
+            var envelope = await nextSocket.RequestAsync(new Envelope { Message = Messages.RelayJoinRoom(ProtocolCodec.EncodeRelayJoinRoom(new RelayJoinRoomRequest { RequestId = joinRequestId, RoomId = roomId, Password = password })), Delivery = Delivery.RelayControl },
                 MessageType.RelayControlResponse, joinRequestId, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
             var response = ProtocolCodec.DecodeRelayControlResponse(envelope.Payload);
             if (!response.Success || !response.ClientId.HasValue) throw new InvalidDataException(response.Reason.Length == 0 ? "${notice_the_relay_rejected_joining_the_room}" : RelayEndpoint.JoinNoticeTemplate(response.Reason));
@@ -205,9 +200,8 @@ internal sealed class RelayClientTransport : IClientTransport
         try
         {
             await nextSocket.ConnectAsync(host, port).ConfigureAwait(false);
-            var envelope = await nextSocket.RequestAsync(new Envelope { Type = MessageType.RelayResumeRoom, Delivery = Delivery.RelayControl,
-                Payload = ProtocolCodec.EncodeRelayResumeRoom(new RelayResumeRoomRequest { RequestId = requestId, RoomId = expectedRoomId,
-                    ClientId = expectedClientId, MatchId = matchId }) }, MessageType.RelayControlResponse, requestId, TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+            var envelope = await nextSocket.RequestAsync(new Envelope { Message = Messages.RelayResumeRoom(ProtocolCodec.EncodeRelayResumeRoom(new RelayResumeRoomRequest { RequestId = requestId, RoomId = expectedRoomId,
+                    ClientId = expectedClientId, MatchId = matchId })), Delivery = Delivery.RelayControl }, MessageType.RelayControlResponse, requestId, TimeSpan.FromSeconds(3)).ConfigureAwait(false);
             var response = ProtocolCodec.DecodeRelayControlResponse(envelope.Payload);
             if (!response.Success || response.ClientId != expectedClientId) throw new InvalidDataException(response.Reason.Length == 0 ? "The relay rejected reconnection." : response.Reason);
             if (generation != connectionGeneration) throw new OperationCanceledException("A newer reconnect attempt replaced this one.");
@@ -221,9 +215,9 @@ internal sealed class RelayClientTransport : IClientTransport
         if (socket is null) { envelope = null; return false; }
         while (socket.TryDequeue(out var value) && value is not null)
         {
-            if (value.Delivery == Delivery.RelayControl && value.Type == MessageType.RelayCloseRoom)
+            if (value.Delivery == Delivery.RelayControl && value.Type == MessageType.RelayRoomClosed)
             {
-                envelope = new Envelope { Type = MessageType.SessionEnded, Payload = ProtocolCodec.EncodeString("${notice_the_public_room_has_closed}") }; return true;
+                envelope = new Envelope { Message = Messages.SessionEnded(ProtocolCodec.EncodeString("${notice_the_public_room_has_closed}")) }; return true;
             }
             if ((value.Delivery == Delivery.ToClient || value.Delivery == Delivery.Broadcast) && value.RoomId == roomId)
             { envelope = value; return true; }
@@ -232,16 +226,15 @@ internal sealed class RelayClientTransport : IClientTransport
     }
     public bool TryDequeueError(out Exception? exception)
     { if (socket is null) { exception = null; return false; } return socket.TryDequeueError(out exception); }
-    public Task SendAsync(MessageType type, byte[] payload)
+    public Task SendAsync(NetworkMessage message)
     {
         if (socket is null) throw new InvalidOperationException("Client is not connected.");
-        return socket.SendAsync(new Envelope { Type = type, Payload = payload, RoomId = roomId, ClientId = clientId, Delivery = Delivery.ToHost });
+        return socket.SendAsync(new Envelope { Message = message, RoomId = roomId, ClientId = clientId, Delivery = Delivery.ToHost });
     }
     public void Dispose()
     {
         connectionGeneration++;
-        try { if (socket is not null) _ = socket.SendAsync(new Envelope { Type = MessageType.RelayLeaveRoom, RoomId = roomId,
-            ClientId = clientId, Delivery = Delivery.RelayControl, Payload = ProtocolCodec.EncodeRelayRoomRequest(new RelayRoomRequest { RoomId = roomId }) }); } catch { }
+        try { if (socket is not null) _ = socket.SendAsync(new Envelope { Message = Messages.RelayLeaveRoom(ProtocolCodec.EncodeRelayRoomRequest(new RelayRoomRequest { RoomId = roomId })), RoomId = roomId, ClientId = clientId, Delivery = Delivery.RelayControl }); } catch { }
         var previous = socket; socket = null; previous?.Dispose();
     }
 }
@@ -252,8 +245,7 @@ internal static class RelayDirectoryClient
     {
         var parsed = RelayEndpoint.Parse(endpoint); using var socket = new RelaySocket();
         await socket.ConnectAsync(parsed.Host, parsed.Port).ConfigureAwait(false);
-        var envelope = await socket.RequestAsync(new Envelope { Type = MessageType.RelayListRooms, Delivery = Delivery.RelayControl,
-            Payload = ProtocolCodec.EncodeRelayListRoomsRequest(requestId) }, MessageType.RelayRoomList, requestId,
+        var envelope = await socket.RequestAsync(new Envelope { Message = Messages.RelayListRooms(ProtocolCodec.EncodeRelayListRoomsRequest(requestId)), Delivery = Delivery.RelayControl }, MessageType.RelayRoomList, requestId,
             TimeSpan.FromSeconds(10)).ConfigureAwait(false);
         return ProtocolCodec.DecodeRelayRoomList(envelope.Payload).Rooms;
     }
@@ -333,7 +325,7 @@ internal sealed class RelaySocket : IDisposable
             while (!stop.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromSeconds(2), stop.Token).ConfigureAwait(false);
-                await SendAsync(new Envelope { Type = MessageType.Heartbeat, Delivery = Delivery.RelayControl }).ConfigureAwait(false);
+                await SendAsync(new Envelope { Message = Messages.Heartbeat(new XingyiStarry.Mp.Protocol.Wire.Int64Value()), Delivery = Delivery.RelayControl }).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) { }

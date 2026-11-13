@@ -57,7 +57,7 @@ internal sealed class ClientSession : IDisposable
     {
         connectedHost = host; connectedPort = port;
         await network.ConnectAsync(host, port).ConfigureAwait(false);
-        await network.SendAsync(MessageType.Hello, ProtocolCodec.EncodeHello(hello)).ConfigureAwait(false);
+        await network.SendAsync(Messages.Hello(ProtocolCodec.EncodeHello(hello))).ConfigureAwait(false);
     }
 
     public void Pump(Action<SessionLogLevel, string> log, Action<CommandResponse, bool> commandResponse,
@@ -194,28 +194,26 @@ internal sealed class ClientSession : IDisposable
         if (!network.IsConnected || !ClientId.HasValue) return;
         if (DateTime.UtcNow - lastHeartbeatUtc < TimeSpan.FromSeconds(2)) return;
         lastHeartbeatUtc = DateTime.UtcNow;
-        _ = network.SendAsync(MessageType.Heartbeat, ProtocolCodec.EncodeInt64(lastHeartbeatUtc.Ticks));
+        _ = network.SendAsync(Messages.Heartbeat(ProtocolCodec.EncodeInt64(lastHeartbeatUtc.Ticks)));
     }
 
-    public Task ClaimSeatAsync(int lobbySlotIndex) => network.SendAsync(MessageType.ClaimSeat, ProtocolCodec.EncodeInt64(lobbySlotIndex));
-    public Task ReleaseSeatAsync() => network.SendAsync(MessageType.ReleaseSeat, Array.Empty<byte>());
-    public Task JoinMatchAsync(Guid? seatId) => network.SendAsync(MessageType.JoinMatchRequest, ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest { SeatId = seatId }));
-    public Task SetReadyAsync(bool ready) => network.SendAsync(MessageType.SetReady, ProtocolCodec.EncodeInt64(ready ? 1 : 0));
-    public Task SendLobbyDraftAsync(RoomSnapshot draft) => network.SendAsync(MessageType.LobbyDraftChange, ProtocolCodec.EncodeRoom(draft));
+    public Task ClaimSeatAsync(int lobbySlotIndex) => network.SendAsync(Messages.ClaimSeat(ProtocolCodec.EncodeInt64(lobbySlotIndex)));
+    public Task ReleaseSeatAsync() => network.SendAsync(Messages.ReleaseSeat(new XingyiStarry.Mp.Protocol.Wire.GuidValue()));
+    public Task JoinMatchAsync(Guid? seatId) => network.SendAsync(Messages.JoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest { SeatId = seatId })));
+    public Task SetReadyAsync(bool ready) => network.SendAsync(Messages.SetReady(ProtocolCodec.EncodeInt64(ready ? 1 : 0)));
+    public Task SendLobbyDraftAsync(RoomSnapshot draft) => network.SendAsync(Messages.LobbyDraftChange(ProtocolCodec.EncodeRoom(draft)));
     public Task RequestSnapshotAsync()
     {
         hasSnapshotAnchor = false; snapshotRequested = true; IsCaughtUp = false;
-        return network.SendAsync(MessageType.SnapshotRequest, ProtocolCodec.EncodeInt64(AppliedFrameId));
+        return network.SendAsync(Messages.SnapshotRequest(ProtocolCodec.EncodeInt64(AppliedFrameId)));
     }
-    public Task RequestHistoryAsync() => network.SendAsync(MessageType.HistoryRequest, ProtocolCodec.EncodeInt64(VerifiedFrameId));
-    public Task SendChatAsync(ChatChannel channel, string text) => network.SendAsync(MessageType.ChatSend,
-        ProtocolCodec.EncodeChatSend(new ChatSend { Channel = channel, Text = text }));
-    public Task SendPingAsync(int tileX, int tileY) => network.SendAsync(MessageType.PingSend,
-        ProtocolCodec.EncodePingSend(new PingSend { TileX = tileX, TileY = tileY }));
+    public Task RequestHistoryAsync() => network.SendAsync(Messages.HistoryRequest(ProtocolCodec.EncodeInt64(VerifiedFrameId)));
+    public Task SendChatAsync(ChatChannel channel, string text) => network.SendAsync(Messages.ChatSend(ProtocolCodec.EncodeChatSend(new ChatSend { Channel = channel, Text = text })));
+    public Task SendPingAsync(int tileX, int tileY) => network.SendAsync(Messages.PingSend(ProtocolCodec.EncodePingSend(new PingSend { TileX = tileX, TileY = tileY })));
     public Task RequestSocialSyncAsync()
     {
         var requestId = ++socialRequestId;
-        return network.SendAsync(MessageType.SocialSyncRequest, ProtocolCodec.EncodeSocialSyncRequest(requestId));
+        return network.SendAsync(Messages.SocialSyncRequest(ProtocolCodec.EncodeSocialSyncRequest(requestId)));
     }
 
     public bool TryDequeueChat(out ChatEvent? message)
@@ -233,12 +231,12 @@ internal sealed class ClientSession : IDisposable
     {
         if (!ClientId.HasValue || !matchId.HasValue) throw new InvalidOperationException("No multiplayer session is available to resume.");
         await network.ReconnectAsync(connectedHost, connectedPort, sessionRoomId, ClientId.Value, matchId.Value, requestId).ConfigureAwait(false);
-        await network.SendAsync(MessageType.ResumeSession, ProtocolCodec.EncodeResumeSession(new ResumeSessionRequest
+        await network.SendAsync(Messages.ResumeSession(ProtocolCodec.EncodeResumeSession(new ResumeSessionRequest
             { RoomId = sessionRoomId, MatchId = matchId.Value, ClientId = ClientId.Value,
-              AppliedFrameId = AppliedFrameId, VerifiedFrameId = VerifiedFrameId })).ConfigureAwait(false);
+              AppliedFrameId = AppliedFrameId, VerifiedFrameId = VerifiedFrameId }))).ConfigureAwait(false);
     }
 
-    public Task LeaveAsync() => network.IsConnected ? network.SendAsync(MessageType.LeaveSession, Array.Empty<byte>()) : Task.CompletedTask;
+    public Task LeaveAsync() => network.IsConnected ? network.SendAsync(Messages.LeaveSession(new XingyiStarry.Mp.Protocol.Wire.GuidValue())) : Task.CompletedTask;
 
     public void MarkMatchEnded() { MatchEnded = true; MatchStarting = false; IsCaughtUp = false; }
 
@@ -295,7 +293,7 @@ internal sealed class ClientSession : IDisposable
     public Task SendCommandAsync(CommandRequest request)
     {
         if (!ClientId.HasValue || request.ClientId != ClientId.Value) throw new InvalidOperationException("Handshake has not completed.");
-        return network.SendAsync(MessageType.CommandRequest, ProtocolCodec.EncodeCommandRequest(request));
+        return network.SendAsync(Messages.CommandRequest(ProtocolCodec.EncodeCommandRequest(request)));
     }
 
     public void Dispose()

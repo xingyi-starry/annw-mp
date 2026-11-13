@@ -1,4 +1,7 @@
 using System;
+using System.Linq;
+using Google.Protobuf;
+using Google.Protobuf.Reflection;
 using System.IO;
 using XingyiStarry.Mp.Protocol;
 using XingyiStarry.Mp.Session;
@@ -9,48 +12,71 @@ internal static class AttackProtocolTests
 {
     internal static void Events()
     {
-        var begin = new OperationBeginPayload { OperationId = Guid.NewGuid(), SeatId = Guid.NewGuid(), LiveSettlements = true,
-            Command = new GameCommand { Kind = CommandKind.EquipmentAction, UnitIds = new long[] { 234 } } };
-        if (!ProtocolCodec.DecodeOperationBegin(ProtocolCodec.EncodeOperationBegin(begin)).LiveSettlements) throw new Exception("Live settlement flag lost.");
-        foreach (var kind in Enum.GetValues<AttackSettlementKind>())
+        foreach (var field in Protocol.Wire.SettlementEvent.Descriptor.Oneofs.First().Fields)
         {
-            var value = new ResolutionPayload { OperationId = begin.OperationId, StageId = 1, SettlementOrdinal = 7,
-                AttackSettlement = new AttackSettlement { Kind = kind, BatchId = 3, UnitId = 234, ActionName = "HiveMissile",
-                    TargetX = -9, TargetY = 2, OriginX = -6, OriginY = -3, Data = 0.125f } };
-            var copy = ProtocolCodec.DecodeResolution(ProtocolCodec.EncodeResolution(value));
-            var hit = copy.AttackSettlement!;
-            if (copy.OperationId != begin.OperationId || copy.SettlementOrdinal != 7 || hit.Kind != kind || hit.BatchId != 3 ||
-                hit.UnitId != 234 || hit.ActionName != "HiveMissile" || hit.TargetX != -9 || hit.OriginY != -3 || hit.Data != 0.125f)
-                throw new Exception("Attack event changed on the wire.");
-            value.StageId = 0; MustReject(() => ProtocolCodec.EncodeResolution(value));
-            value.StageId = 1; value.SettlementOrdinal = 0; MustReject(() => ProtocolCodec.EncodeResolution(value));
-            value.SettlementOrdinal = 7; value.AttackSettlement.Kind = (AttackSettlementKind)99; MustReject(() => ProtocolCodec.EncodeResolution(value));
-            value.AttackSettlement.Kind = kind; value.AttackSettlement.Data = float.NaN; MustReject(() => ProtocolCodec.EncodeResolution(value));
+            var node = new Protocol.Wire.SettlementEvent { SourceUnitId = 234, TargetUnitId = 159 };
+            field.Accessor.SetValue(node, field.MessageType.Parser.ParseFrom(Array.Empty<byte>()));
+            var value = new ResolutionPayload { OperationId = Guid.NewGuid(), Event = node };
+            var wire = ProtocolCodec.EncodeResolution(value);
+            var copy = ProtocolCodec.DecodeResolution(Protocol.Wire.Resolution.Parser.ParseFrom(wire.ToByteArray()));
+            if (copy.OperationId != value.OperationId || !node.Equals(copy.Event)) throw new Exception("Settlement changed on wire.");
+            RejectDeprecated(wire);
         }
-        var hello = new HelloMessage { ProtocolVersion = 19, PluginVersion = "same", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "name" };
+        var hello = new HelloMessage { ProtocolVersion = 20, PluginVersion = "same", GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "name" };
         if (HandshakeValidator.TryValidate(hello, "same", "game", "content", "", out _, out _)) throw new Exception("Old settlement semantics accepted.");
+        MustReject(() => ProtocolCodec.DecodeResolution(new Protocol.Wire.Resolution()));
     }
 
     internal static void StreamedRandom()
     {
-        var host = new RandomTape(); host.BeginRecording();
-        host.Float("hurt", () => 0.25f);
-        var first = host.DrainRecording();
-        host.Integer("wreck", () => 42);
-        var second = host.DrainRecording();
-        host.Float("after", () => 0.75f);
-        var final = host.EndRecording();
-        if (first.Count != 1 || second[0].Ordinal != 1 || final[0].Ordinal != 2) throw new Exception("Stage boundaries reset random ordinals.");
-        var client = new RandomTape(); client.BeginReplay(first);
-        if (client.Float("hurt", () => throw new Exception("Local RNG called")) != 0.25f) throw new Exception();
-        client.AppendReplay(second);
-        if (client.Integer("wreck", () => throw new Exception("Local RNG called")) != 42) throw new Exception();
-        client.AppendReplay(final);
-        MustReject(client.EndReplay);
-        if (client.Float("after", () => throw new Exception("Local RNG called")) != 0.75f) throw new Exception();
-        client.EndReplay();
-        client.BeginReplay(second); MustReject(() => client.Integer("wreck", () => 0));
-        client.BeginReplay(first); MustReject(() => client.Float("different target callback", () => 0));
+        var damage = new Protocol.Wire.RandomResult(); var death = new Protocol.Wire.RandomResult();
+        using (var host = new RandomResultContext(damage, false, 159))
+        {
+            host.Float("UnitData.Hurt", () => 0f); host.Float("UnitData.Hurt", () => 0.25f);
+            using (var child = new RandomResultContext(death, false, 159)) child.Float("UnitData.Die", () => 1.1f);
+            if (RandomResultContext.Current != host) throw new Exception("Nested context leaked.");
+        }
+        if (RandomResultContext.Current is not null) throw new Exception("Random context leaked.");
+        using (var client = new RandomResultContext(damage, true, 159))
+        {
+            if (client.Float("UnitData.Hurt", () => throw new Exception("Local RNG")) != 0f) throw new Exception("Zero result lost.");
+            MustReject(client.Complete);
+            client.Float("UnitData.Hurt", () => throw new Exception("Local RNG")); client.Complete();
+        }
+        using (var client = new RandomResultContext(death, true, 159))
+        { if (client.Float("UnitData.Die", () => 0) != 1.1f) throw new Exception(); client.Complete(); }
+        using (var client = new RandomResultContext(new Protocol.Wire.RandomResult(), true, 159)) MustReject(() => client.Float("UnitData.Hurt", () => 0));
+        var malformed = new Protocol.Wire.RandomResult();
+        malformed.CommanderPositions.Add(new Protocol.Wire.UnitRandomResult { UnitId = 999, Values = new Protocol.Wire.RandomRecordList() });
+        using (var client = new RandomResultContext(malformed, true, 159)) MustReject(client.Complete);
+        malformed = new Protocol.Wire.RandomResult();
+        malformed.Wrecks.Add(new Protocol.Wire.TileRandomResult { X = 1, Y = 2, Values = new Protocol.Wire.RandomRecordList() });
+        using (var client = new RandomResultContext(malformed, true, 159)) MustReject(client.Complete);
+    }
+
+    internal static void AllEnvelopeCases()
+    {
+        foreach (var field in Protocol.Wire.WireEnvelope.Descriptor.Oneofs.First().Fields)
+        {
+            var wire = new Protocol.Wire.WireEnvelope();
+            field.Accessor.SetValue(wire, field.MessageType.Parser.ParseFrom(Array.Empty<byte>()));
+            var envelope = ProtocolCodec.DecodeEnvelope(wire.ToByteArray());
+            var restored = Protocol.Wire.WireEnvelope.Parser.ParseFrom(ProtocolCodec.EncodeEnvelope(envelope));
+            if (!wire.Equals(restored)) throw new Exception("Envelope branch changed: " + field.Name);
+            RejectDeprecated(restored);
+        }
+        MustReject(() => ProtocolCodec.DecodeEnvelope(new Protocol.Wire.WireEnvelope().ToByteArray()));
+    }
+
+    private static void RejectDeprecated(IMessage message)
+    {
+        var input = new CodedInputStream(message.ToByteArray()); uint tag;
+        while ((tag = input.ReadTag()) != 0)
+        {
+            var field = message.Descriptor.FindFieldByNumber((int)(tag >> 3));
+            if (field?.GetOptions()?.Deprecated == true) throw new Exception("Deprecated field written: " + field.FullName);
+            input.SkipLastField();
+        }
     }
 
     private static void MustReject(Action action)

@@ -11,6 +11,8 @@ internal static class GameCompatibility
     {
         "GameController.ExecuteAction", "GameController.NextTurn", "GameController.StartPlayerTurn", "GameController.EndPlayerTurn",
         "UX_Manager.proc_UnitsDoMove", "UX_Manager.proc_UnitsDoAction", "UX_Manager.proc_SkillDoAction",
+        "Player.DoWipeOut", "Player.proc_DoWipeOut", "UnitData.AddExp_BasePercent", "UnitData.Hurt", "UnitData.Die",
+        "GameAPI.CreateUnit", "GameAPI.DescendUnit", "UnitData.TriggerDieEvent", "ActionData.DoActionCell",
         "UnitAI.ExecuteAction", "UndoMoveData.UndoLastMove", "GS_Battle.Save_General"
     };
 

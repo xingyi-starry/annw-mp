@@ -13,12 +13,65 @@ enum Delivery {
 }
 
 message WireEnvelope {
-  uint32 message_type     = 1;
-  bytes  payload          = 2;
+  uint32 message_type = 1 [deprecated = true];
+  bytes payload = 2 [deprecated = true];
   optional bytes room_id          = 3;
   optional bytes client_id        = 4;
   optional bytes target_client_id = 5;
   Delivery delivery               = 6;
+  oneof body {
+    Hello hello = 101;
+    Welcome welcome = 102;
+    StringValue reject = 103;
+    Int64Value heartbeat = 104;
+    Room room_state = 105;
+    Int64Value claim_seat = 106;
+    Int64Value set_ready = 107;
+    GuidValue start_match = 108;
+    CommandRequestMessage command_request = 109;
+    CommandResponseMessage command_accepted = 110;
+    CommandResponseMessage command_rejected = 111;
+    AuthorityFrameMessage authority_frame = 112;
+    Int64Value history_request = 113;
+    Int64Value history_complete = 114;
+    Int64Value snapshot_request = 115;
+    SnapshotManifestMessage snapshot_manifest = 116;
+    SnapshotChunkMessage snapshot_chunk = 117;
+    GuidValue snapshot_complete = 118;
+    GuidValue catch_up_complete = 119;
+    StringValue session_ended = 120;
+    Room lobby_draft_change = 121;
+    StringValue participant_notice = 122;
+    RelayRegisterRoomRequest relay_register_room = 123;
+    RelayUpdateRoomRequest relay_update_room = 124;
+    RelayListRoomsRequest relay_list_rooms = 125;
+    RelayListRoomsResponse relay_room_list = 126;
+    RelayJoinRoomRequest relay_join_room = 127;
+    RelayControlResponse relay_control_response = 128;
+    RelayRoomRequest relay_close_joining = 129;
+    RelayRoomRequest relay_leave_room = 130;
+    RelayRoomRequest relay_close_room = 131;
+    RelayPeerNotice relay_peer_joined = 132;
+    RelayPeerNotice relay_peer_left = 133;
+    GuidValue release_seat = 134;
+    JoinMatchRequest join_match_request = 135;
+    JoinMatchAcceptedMessage join_match_accepted = 136;
+    ResumeSessionRequest resume_session = 137;
+    ResumeSessionAccepted resume_session_accepted = 138;
+    StringValue resume_session_rejected = 139;
+    GuidValue leave_session = 140;
+    RelayResumeRoomRequest relay_resume_room = 141;
+    GuidValue match_starting = 142;
+    ChatSendMessage chat_send = 143;
+    ChatEventMessage chat_event = 144;
+    PingSendMessage ping_send = 145;
+    PingEventMessage ping_event = 146;
+    SocialSyncRequestMessage social_sync_request = 147;
+    SocialSyncBeginMessage social_sync_begin = 148;
+    SocialSyncChunkMessage social_sync_chunk = 149;
+    SocialSyncCompleteMessage social_sync_complete = 150;
+    RelayPeerNotice relay_room_closed = 151;
+  }
 }
 
 message GuidValue {
@@ -127,39 +180,67 @@ message Room {
 }
 
 message GameCommandMessage {
-  uint32         kind     = 1;
-  repeated int64 unit_ids = 2;
-  sint32         target_x = 3;
-  sint32         target_y = 4;
+  uint32         kind     = 1 [deprecated = true];
+  repeated int64 unit_ids = 2 [deprecated = true];
+  sint32         target_x = 3 [deprecated = true];
+  sint32         target_y = 4 [deprecated = true];
 
-  repeated sint32 unit_target_xs  = 5;
-  repeated sint32 unit_target_ys  = 6;
-  int32           action_category = 7;
+  repeated sint32 unit_target_xs  = 5 [deprecated = true];
+  repeated sint32 unit_target_ys  = 6 [deprecated = true];
+  int32           action_category = 7 [deprecated = true];
 
-  string action_id            = 8;
-  string template_id          = 9;
-  int64  passenger_unit_id    = 10;
-  bool   desired_toggle_state = 11;
+  string action_id            = 8 [deprecated = true];
+  string template_id          = 9 [deprecated = true];
+  int64  passenger_unit_id    = 10 [deprecated = true];
+  bool   desired_toggle_state = 11 [deprecated = true];
 
-  int32  debug_player_index = 12;
-  sint32 debug_metal_delta  = 13;
-  sint32 debug_power_delta  = 14;
-  int32  ai_action_type     = 15;
-  repeated ResolvedUnitAction resolved_actions = 16;
+  int32  debug_player_index = 12 [deprecated = true];
+  sint32 debug_metal_delta  = 13 [deprecated = true];
+  sint32 debug_power_delta  = 14 [deprecated = true];
+  int32  ai_action_type     = 15 [deprecated = true];
+  repeated ResolvedUnitAction resolved_actions = 16 [deprecated = true];
+  oneof body {
+    MoveCommand move = 101;
+    ActionCommand action = 102;
+    EquipmentActionCommand equipment_action = 103;
+    EquipmentMoveActionCommand equipment_move_action = 104;
+    BuildWithMoveCommand build_with_move = 105;
+    SkillCommand skill = 106;
+    UndoMoveCommand undo_move = 107;
+    EndTurnCommand end_turn = 108;
+    AutoGuideStartCommand auto_guide_start = 109;
+    DebugAddResourcesCommand debug_add_resources = 111;
+    DebugFillSkillCommand debug_fill_skill = 112;
+    AiUnitActionCommand ai_unit_action = 113;
+    AiSkillCommand ai_skill = 114;
+    TurnAdvanceCommand turn_advance = 115;
+    SurrenderCommand surrender = 116;
+    ToggleStandbyCommand toggle_standby = 117;
+    ToggleSleepCommand toggle_sleep = 118;
+    StayCommand stay = 119;
+    SelfDestructCommand self_destruct = 120;
+    ResolvedUnitActionsCommand resolved_unit_actions = 121;
+  }
 }
 
 // Host-resolved native auto-guide batch. Clients execute these actions without planning.
 message ResolvedUnitAction {
   int64 unit_id = 1;
-  int32 action_type = 2;
-  sint32 move_x = 3;
-  sint32 move_y = 4;
-  sint32 target_x = 5;
-  sint32 target_y = 6;
-  int32 action_category = 7;
-  string template_id = 8;
-  int64 passenger_unit_id = 9;
+  int32 action_type = 2 [deprecated = true];
+  sint32 move_x = 3 [deprecated = true];
+  sint32 move_y = 4 [deprecated = true];
+  sint32 target_x = 5 [deprecated = true];
+  sint32 target_y = 6 [deprecated = true];
+  int32 action_category = 7 [deprecated = true];
+  string template_id = 8 [deprecated = true];
+  int64 passenger_unit_id = 9 [deprecated = true];
   bool skip_animations = 10;
+  oneof body {
+    ResolvedMove move = 100;
+    ResolvedAction action = 101;
+    ResolvedCreate create = 102;
+    ResolvedUnload unload = 103;
+  }
 }
 
 message CommandRequestMessage {
@@ -372,23 +453,29 @@ message CommandResponseMessage {
 }
 
 message RandomRecordMessage {
-  string call_site      = 1;
-  int32  ordinal        = 2;
-  uint32 value_kind     = 3;
-  int64  integer_value  = 4;
-  double floating_value = 5;
+  string call_site = 1;
+  int32 ordinal = 2;
+  uint32 value_kind     = 3 [deprecated = true];
+  int64  integer_value  = 4 [deprecated = true];
+  double floating_value = 5 [deprecated = true];
+  oneof value {
+    int64 integer = 6;
+    double floating = 7;
+  }
 }
 
 message Resolution {
-  bytes                        operation_id       = 1;
-  int32                        stage_id           = 2;
-  int32                        settlement_ordinal = 3;
-  repeated RandomRecordMessage random_records     = 4;
-  AttackSettlement             attack_settlement  = 5;
+  bytes                        operation_id = 1;
+  int32                        stage_id           = 2 [deprecated = true];
+  int32                        settlement_ordinal = 3 [deprecated = true];
+  repeated RandomRecordMessage random_records     = 4 [deprecated = true];
+  AttackSettlement             attack_settlement  = 5 [deprecated = true];
+  SettlementEvent event = 100;
 }
 
 // Runtime events, not predicted damage. Native animations do not authorize settlement.
 message AttackSettlement {
+  option deprecated = true;
   enum Kind {
     UNSPECIFIED = 0;
     BATCH_STARTED = 1;
@@ -413,7 +500,7 @@ message OperationBegin {
   uint64             request_id   = 3;
   int32              round        = 4;
   GameCommandMessage command      = 5;
-  bool               live_settlements = 6;
+  bool               live_settlements = 6 [deprecated = true];
 }
 
 message OperationEnd {
@@ -429,12 +516,22 @@ message AuthorityFrameMessage {
   bytes  match_id      = 1;
   int64  frame_id      = 2;
   bytes  previous_hash = 3;
-  uint32 frame_type    = 4;
-  bytes  payload       = 5;
+  uint32 frame_type = 4 [deprecated = true];
+  bytes payload = 5 [deprecated = true];
   bytes  hash          = 6;
+  oneof body {
+    OperationBegin operation_begin = 101;
+    Resolution resolution = 102;
+    OperationEnd operation_end = 103;
+    AuthorityTurnPhase turn_phase = 104;
+    SeatControlChanged seat_changed = 105;
+    AuthorityMatchEnded match_ended = 106;
+    OperationFailed operation_failed = 107;
+  }
 }
 
 message AuthorityHashInput {
+  option deprecated = true;
   string domain        = 1;
   bytes  match_id      = 2;
   int64  frame_id      = 3;
@@ -458,3 +555,198 @@ message SnapshotChunkMessage {
   int32 index       = 2;
   bytes data        = 3;
 }
+
+message MoveCommand {
+  repeated int64 unit_ids = 2;
+  sint32 target_x = 3;
+  sint32 target_y = 4;
+  repeated sint32 unit_target_xs = 5;
+  repeated sint32 unit_target_ys = 6;
+  bool desired_toggle_state = 11;
+}
+
+message ActionCommand {
+  repeated int64 unit_ids = 2;
+  sint32 target_x = 3;
+  sint32 target_y = 4;
+  repeated sint32 unit_target_xs = 5;
+  repeated sint32 unit_target_ys = 6;
+  int32 action_category = 7;
+  string template_id = 9;
+  int64 passenger_unit_id = 10;
+  bool desired_toggle_state = 11;
+}
+
+message EquipmentActionCommand {
+  repeated int64 unit_ids = 2;
+  sint32 target_x = 3;
+  sint32 target_y = 4;
+  int32 action_category = 7;
+  string action_id = 8;
+  string template_id = 9;
+}
+
+message EquipmentMoveActionCommand {
+  repeated int64 unit_ids = 2;
+  sint32 target_x = 3;
+  sint32 target_y = 4;
+  int32 action_category = 7;
+  string action_id = 8;
+  string template_id = 9;
+}
+
+message BuildWithMoveCommand {
+  repeated int64 unit_ids = 2;
+  sint32 target_x = 3;
+  sint32 target_y = 4;
+  int32 action_category = 7;
+  string template_id = 9;
+}
+
+message SkillCommand {
+  sint32 target_x = 3;
+  sint32 target_y = 4;
+}
+
+message UndoMoveCommand {
+}
+
+message EndTurnCommand {
+}
+
+message AutoGuideStartCommand {
+  repeated int64 unit_ids = 2;
+}
+
+message DebugAddResourcesCommand {
+  int32 debug_player_index = 12;
+  sint32 debug_metal_delta = 13;
+  sint32 debug_power_delta = 14;
+}
+
+message DebugFillSkillCommand {
+  int32 debug_player_index = 12;
+}
+
+message AiUnitActionCommand {
+  repeated int64 unit_ids = 2;
+  sint32 target_x = 3;
+  sint32 target_y = 4;
+  repeated sint32 unit_target_xs = 5;
+  repeated sint32 unit_target_ys = 6;
+  int32 action_category = 7;
+  string template_id = 9;
+  int64 passenger_unit_id = 10;
+  bool desired_toggle_state = 11;
+  int32 ai_action_type = 15;
+}
+
+message AiSkillCommand {
+  sint32 target_x = 3;
+  sint32 target_y = 4;
+  bool desired_toggle_state = 11;
+}
+
+message TurnAdvanceCommand {
+}
+
+message SurrenderCommand {
+  sint32 target_x = 3;
+}
+
+message ToggleStandbyCommand {
+  repeated int64 unit_ids = 2;
+  bool desired_toggle_state = 11;
+}
+
+message ToggleSleepCommand {
+  repeated int64 unit_ids = 2;
+  bool desired_toggle_state = 11;
+}
+
+message StayCommand {
+  repeated int64 unit_ids = 2;
+}
+
+message SelfDestructCommand {
+  repeated int64 unit_ids = 2;
+}
+
+message ResolvedUnitActionsCommand {
+  repeated int64 unit_ids = 2;
+  repeated ResolvedUnitAction resolved_actions = 16;
+}
+
+message RandomRecordList { repeated RandomRecordMessage records = 1; }
+message UnitRandomResult { int64 unit_id = 1; RandomRecordList values = 2; }
+message TileRandomResult { sint32 x = 1; sint32 y = 2; RandomRecordList values = 3; }
+message RandomResult {
+  RandomRecordMessage damage_roll = 1;
+  RandomRecordMessage damage_variation = 2;
+  RandomRecordMessage death_wreck_scale = 3;
+  repeated TileRandomResult wrecks = 4;
+  repeated UnitRandomResult commander_positions = 5;
+  repeated UnitRandomResult experience_shares = 6;
+}
+message SettlementEvent {
+  int64 source_unit_id = 1;
+  int64 target_unit_id = 2;
+  RandomResult random_result = 3;
+  repeated SettlementEvent children = 4;
+  int32 player_index = 5;
+  reserved 114;
+  oneof body {
+    AttackStartedEvent attack_started = 101;
+    AttackCellEvent attack_cell = 102;
+    AttackFinishedEvent attack_finished = 103;
+    DamageEvent damage = 104;
+    DeathStartedEvent death_started = 105;
+    DeathCommittedEvent death_committed = 106;
+    PlayerDefeatedEvent player_defeated = 107;
+    CleanupCompletedEvent cleanup_completed = 108;
+    EffectEvent effect = 109;
+    SpawnEvent spawn = 110;
+    HealEvent heal = 111;
+    ResourceEvent resource = 112;
+    CommanderPositionEvent commander_position = 113;
+    // 114 is retired: experience sharing is an Effect callback with local results.
+    ForcedAttackEvent forced_attack = 115;
+    PulseEvent pulse = 116;
+    WreckEvent wreck = 117;
+    ShieldEvent shield = 118;
+    EffectMutationEvent effect_mutation = 119;
+    ExperienceEvent experience = 120;
+    SkillFinishedEvent skill_finished = 121;
+  }
+}
+message AttackStartedEvent { string action_name = 1; sint32 target_x = 2; sint32 target_y = 3; bool global_phase = 4; }
+message AttackCellEvent { string action_name = 1; sint32 target_x = 2; sint32 target_y = 3; optional sint32 origin_x = 4; optional sint32 origin_y = 5; optional float data = 6; string action_type = 7; int32 skill_index = 8; }
+message AttackFinishedEvent { string action_name = 1; bool check_after_action = 2; }
+message DamageEvent { optional float damage = 1; string action_name = 2; optional sint32 center_x = 3; optional sint32 center_y = 4; bool use_predamage = 5; bool do_random = 6; bool no_kill = 7; }
+message DeathStartedEvent { int32 reason = 1; optional float damage = 2; string action_name = 3; bool generate_wreck = 4; optional sint32 center_x = 5; optional sint32 center_y = 6; }
+message DeathCommittedEvent { int32 reason = 1; int32 killer_player = 2; bool descend_only = 3; bool callbacks_only = 4; }
+message PlayerDefeatedEvent { int32 player_index = 1; }
+message CleanupCompletedEvent { int32 player_index = 1; }
+message EffectEvent { string effect_name = 1; int32 effect_index = 2; string callback = 3; int64 other_unit_id = 4; optional float damage = 5; bool killed = 6; int32 reason = 7; optional float value = 8; bool preview = 9; string effect_type = 10; sint32 x = 11; sint32 y = 12; }
+message SpawnEvent { string template_id = 1; sint32 x = 2; sint32 y = 3; int32 player_index = 4; bool building = 5; bool spawned = 6; int32 create_reason = 7; bool trigger_passives = 8; bool has_position = 9; bool moved = 10; bool actioned = 11; }
+message HealEvent { optional float amount = 1; }
+message ResourceEvent { int32 player_index = 1; int32 reason = 2; sint32 metal = 3; sint32 power = 4; }
+message CommanderPositionEvent { int32 player_index = 1; }
+message ForcedAttackEvent { int32 action_category = 1; sint32 target_x = 2; sint32 target_y = 3; }
+message PulseEvent { int32 effect_index = 1; }
+
+
+message WreckEvent { sint32 x = 1; sint32 y = 2; int32 amount = 3; bool use_random = 4; }
+message ShieldEvent { int32 damage = 1; bool preview = 2; }
+message EffectMutationEvent { string effect_name = 1; int32 layer = 2; int64 caster_unit_id = 3; int32 caster_player = 4; bool remove = 5; int32 effect_index = 6; }
+message ExperienceEvent { optional float amount = 1; bool use_filter = 2; bool base_percent = 3; }
+
+message SkillFinishedEvent { int32 player_index = 1; }
+
+message ResolvedMove { sint32 x = 1; sint32 y = 2; }
+message ResolvedAction { sint32 move_x = 1; sint32 move_y = 2; sint32 target_x = 3; sint32 target_y = 4; int32 action_category = 5; }
+message ResolvedCreate { sint32 move_x = 1; sint32 move_y = 2; sint32 target_x = 3; sint32 target_y = 4; int32 action_category = 5; string template_id = 6; }
+message ResolvedUnload { sint32 move_x = 1; sint32 move_y = 2; sint32 target_x = 3; sint32 target_y = 4; int32 action_category = 5; int64 passenger_unit_id = 6; }
+
+message AuthorityTurnPhase { int32 phase = 1; }
+message AuthorityMatchEnded { bool local_victory = 1; }

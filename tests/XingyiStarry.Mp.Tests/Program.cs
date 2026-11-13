@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using System;
 using System.IO;
 using System.Net;
@@ -25,6 +26,7 @@ internal static class Program
         Test("nested coroutine failure cleanup", AutoGuideProtocolTests.CoroutineFailures);
         Test("operation queue reset", AutoGuideProtocolTests.QueueReset);
         Test("native batch arrival order ignores animation completion order", AutoGuideProtocolTests.ArrivalOrder);
+        Test("explicit field hash and cross-language vectors", ProtocolHashTests.Run);
         Test("authority chain", AuthorityChain);
         Test("tamper detection", TamperDetection);
         Test("snapshot codec", SnapshotRoundTrip);
@@ -33,7 +35,7 @@ internal static class Program
         Test("snapshot assembly", SnapshotAssembly);
         Test("operation failure codec", OperationFailureRoundTrip);
         Test("attack settlement protocol", AttackProtocolTests.Events);
-        Test("streamed random records preserve operation ordinals", AttackProtocolTests.StreamedRandom);
+        Test("random results are local to native calls", AttackProtocolTests.StreamedRandom);
         Test("protobuf wire format", ProtobufWireFormat);
         Test("all protobuf messages", AllProtobufMessagesRoundTrip);
         Test("relay protobuf messages", RelayMessagesRoundTrip);
@@ -64,7 +66,7 @@ internal static class Program
             await TestAsync("C# to Go relay integration", () => RelayIntegration(relayEndpoint));
             await TestAsync("direct and relay host integration", () => MultiStackHostIntegration(relayEndpoint));
         }
-        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 41 : 43)}"); return 0;
+        Console.WriteLine($"PASS {passed}/{(string.IsNullOrWhiteSpace(relayEndpoint) ? 42 : 44)}"); return 0;
     }
 
     private static void HostHandshakePassword()
@@ -129,7 +131,7 @@ internal static class Program
         var command = new GameCommand { Kind = CommandKind.Action, UnitIds = new long[] { 9, 2 }, TargetX = -4, TargetY = 17, UnitTargetXs = new[] { 3, 4 }, UnitTargetYs = new[] { 5, 6 }, ActionCategory = 3, ActionId = "attack", TemplateId = "unit.tank", PassengerUnitId = 44, DesiredToggleState = true, DebugPlayerIndex = 3, DebugMetalDelta = 1200, DebugPowerDelta = 800, AiActionType = 2 };
         var decoded = ProtocolCodec.DecodeCommand(ProtocolCodec.EncodeCommand(command));
         Equal(command.Kind, decoded.Kind); Equal(command.UnitIds[1], decoded.UnitIds[1]); Equal(command.TargetX, decoded.TargetX); Equal(4, decoded.UnitTargetXs[1]); Equal(command.TemplateId, decoded.TemplateId);
-        Equal(3, decoded.DebugPlayerIndex); Equal(1200, decoded.DebugMetalDelta); Equal(800, decoded.DebugPowerDelta); Equal(2, decoded.AiActionType);
+        Equal(0, decoded.DebugPlayerIndex); Equal(0, decoded.DebugMetalDelta); Equal(0, decoded.DebugPowerDelta); Equal(0, decoded.AiActionType);
         var surrender = ProtocolCodec.DecodeCommand(ProtocolCodec.EncodeCommand(new GameCommand { Kind = CommandKind.Surrender, TargetX = 4 }));
         Equal(CommandKind.Surrender, surrender.Kind); Equal(4, surrender.TargetX);
         Equal((ushort)20, (ushort)CommandKind.SelfDestruct);
@@ -140,17 +142,17 @@ internal static class Program
 
     private static void AuthorityChain()
     {
-        var match = Guid.NewGuid(); var chain = new AuthorityHashChain(match);
-        var one = chain.Append(AuthorityFrameType.OperationBegin, new byte[] { 1 });
-        var two = chain.Append(AuthorityFrameType.OperationEnd, new byte[] { 2 });
-        AuthorityHashChain.VerifyNext(one, match, 1, new byte[32]); AuthorityHashChain.VerifyNext(two, match, 2, one.Hash);
+        var match=Guid.NewGuid(); var chain=new AuthorityHashChain(match);
+        var one=chain.Append(AuthorityMessages.TurnPhase(ProtocolCodec.EncodeTurnPhase((TurnPhase)1)));
+        var two=chain.Append(AuthorityMessages.OperationEnd(ProtocolCodec.EncodeOperationEnd(new OperationEndPayload { OperationId=Guid.NewGuid() })));
+        AuthorityHashChain.VerifyNext(one,match,1,new byte[32]); AuthorityHashChain.VerifyNext(two,match,2,one.Hash);
     }
 
     private static void TamperDetection()
     {
-        var match = Guid.NewGuid(); var frame = new AuthorityHashChain(match).Append(AuthorityFrameType.Resolution, new byte[] { 4 });
-        frame.Payload[0] = 5;
-        Throws<InvalidDataException>(() => AuthorityHashChain.VerifyNext(frame, match, 1, new byte[32]));
+        var match=Guid.NewGuid(); var frame=new AuthorityHashChain(match).Append(AuthorityMessages.TurnPhase(ProtocolCodec.EncodeTurnPhase((TurnPhase)4)));
+        ((Wire.AuthorityTurnPhase)frame.Payload).Phase=5;
+        Throws<InvalidDataException>(()=>AuthorityHashChain.VerifyNext(frame,match,1,new byte[32]));
     }
 
     private static void SnapshotRoundTrip()
@@ -162,10 +164,10 @@ internal static class Program
 
     private static async Task PacketRoundTrip()
     {
-        using var stream = new MemoryStream();
-        await PacketFraming.WriteAsync(stream, new Envelope { Type = MessageType.Heartbeat, Payload = new byte[] { 1, 2, 3 } }, CancellationToken.None);
-        stream.Position = 0; var decoded = await PacketFraming.ReadAsync(stream, CancellationToken.None);
-        Equal(MessageType.Heartbeat, decoded?.Type); Equal(3, decoded?.Payload.Length);
+        using var stream=new MemoryStream();
+        await PacketFraming.WriteAsync(stream,new Envelope { Message=Messages.Heartbeat(ProtocolCodec.EncodeInt64(123)) },CancellationToken.None);
+        stream.Position=0;var decoded=await PacketFraming.ReadAsync(stream,CancellationToken.None);
+        Equal(MessageType.Heartbeat,decoded?.Type);Equal(123L,ProtocolCodec.DecodeInt64(decoded!.Payload));
     }
 
     private static void RoomRoundTrip()
@@ -214,25 +216,16 @@ internal static class Program
 
     private static void ProtobufWireFormat()
     {
-        var command = new GameCommand { Kind = CommandKind.Move, UnitIds = new long[] { 17 }, TargetX = -3, TargetY = 8 };
-        var wireCommand = Wire.GameCommandMessage.Parser.ParseFrom(ProtocolCodec.EncodeCommand(command));
-        Equal((uint)CommandKind.Move, wireCommand.Kind); Equal(17L, wireCommand.UnitIds[0]); Equal(-3, wireCommand.TargetX);
-
-        var roomId = Guid.NewGuid(); var clientId = Guid.NewGuid(); var targetId = Guid.NewGuid();
-        var encodedEnvelope = ProtocolCodec.EncodeEnvelope(new Envelope { Type = MessageType.CommandRequest,
-            Payload = new byte[] { 4, 5 }, RoomId = roomId, ClientId = clientId,
-            TargetClientId = targetId, Delivery = Delivery.ToHost });
-        var wireEnvelope = Wire.WireEnvelope.Parser.ParseFrom(encodedEnvelope);
-        Equal((byte)0x08, encodedEnvelope[0]);
-        Equal((uint)MessageType.CommandRequest, wireEnvelope.MessageType);
-        Equal(2, wireEnvelope.Payload.Length);
-        Equal(roomId, new Guid(wireEnvelope.RoomId.ToByteArray()));
-        Equal(clientId, new Guid(wireEnvelope.ClientId.ToByteArray()));
-        Equal(targetId, new Guid(wireEnvelope.TargetClientId.ToByteArray()));
-        Equal(Wire.Delivery.ToHost, wireEnvelope.Delivery);
-        var restoredEnvelope = ProtocolCodec.DecodeEnvelope(encodedEnvelope);
-        Equal(roomId, restoredEnvelope.RoomId); Equal(clientId, restoredEnvelope.ClientId);
-        Equal(targetId, restoredEnvelope.TargetClientId); Equal(Delivery.ToHost, restoredEnvelope.Delivery);
+        var command=new GameCommand {Kind=CommandKind.Move,UnitIds=new long[]{17},TargetX=-3,TargetY=8};
+        var wireCommand=ProtocolCodec.EncodeCommand(command);
+        Equal(Wire.GameCommandMessage.BodyOneofCase.Move,wireCommand.BodyCase);Equal(17L,wireCommand.Move.UnitIds[0]);Equal(-3,wireCommand.Move.TargetX);
+        var room=Guid.NewGuid();var client=Guid.NewGuid();var target=Guid.NewGuid();
+        var bytes=ProtocolCodec.EncodeEnvelope(new Envelope {Message=Messages.CommandRequest(ProtocolCodec.EncodeCommandRequest(new CommandRequest {SeatId=Guid.NewGuid(),Command=command})),RoomId=room,ClientId=client,TargetClientId=target,Delivery=Delivery.ToHost});
+        var wire=Wire.WireEnvelope.Parser.ParseFrom(bytes);
+        Equal(Wire.WireEnvelope.BodyOneofCase.CommandRequest,wire.BodyCase);
+        Equal(room,new Guid(wire.RoomId.ToByteArray()));Equal(client,new Guid(wire.ClientId.ToByteArray()));Equal(target,new Guid(wire.TargetClientId.ToByteArray()));
+        var decoded=ProtocolCodec.DecodeEnvelope(bytes);Equal(MessageType.CommandRequest,decoded.Type);Equal(Delivery.ToHost,decoded.Delivery);
+        AttackProtocolTests.AllEnvelopeCases();
     }
 
     private static void AllProtobufMessagesRoundTrip()
@@ -261,12 +254,10 @@ internal static class Program
         Equal(operationId, begin.OperationId); Equal(CommandKind.ToggleSleep, begin.Command.Kind);
         Equal(operationId, ProtocolCodec.DecodeOperationEnd(ProtocolCodec.EncodeOperationEnd(new OperationEndPayload { OperationId = operationId })).OperationId);
 
-        var resolutionSource = new ResolutionPayload { OperationId = operationId };
-        resolutionSource.RandomRecords.Add(new RandomRecord { CallSite = "hurt", Ordinal = 1, ValueKind = 2, IntegerValue = -5, FloatingValue = 0.25 });
-        var resolution = ProtocolCodec.DecodeResolution(ProtocolCodec.EncodeResolution(resolutionSource));
-        Equal(0, resolution.StageId); Equal("hurt", resolution.RandomRecords[0].CallSite); Equal(-5L, resolution.RandomRecords[0].IntegerValue);
-
-        var chain = new AuthorityHashChain(matchId); var frameSource = chain.Append(AuthorityFrameType.Resolution, ProtocolCodec.EncodeResolution(resolutionSource));
+        var resolutionSource = new ResolutionPayload { OperationId=operationId,Event=new Wire.SettlementEvent {TargetUnitId=5,Damage=new Wire.DamageEvent {Damage=0.25f}} };
+        var resolution=ProtocolCodec.DecodeResolution(ProtocolCodec.EncodeResolution(resolutionSource));
+        Equal(5L,resolution.Event!.TargetUnitId);Equal(0.25f,resolution.Event.Damage.Damage);
+        var chain = new AuthorityHashChain(matchId); var frameSource = chain.Append(AuthorityMessages.Resolution(ProtocolCodec.EncodeResolution(resolutionSource)));
         var frame = ProtocolCodec.DecodeAuthorityFrame(ProtocolCodec.EncodeAuthorityFrame(frameSource));
         Equal(frameSource.FrameId, frame.FrameId); True(AuthorityHashChain.FixedEquals(frameSource.Hash, frame.Hash));
 
@@ -319,7 +310,7 @@ internal static class Program
     private static void SessionMessagesRoundTrip()
     {
         Equal((ushort)34, (ushort)MessageType.ReleaseSeat); Equal((ushort)41, (ushort)MessageType.RelayResumeRoom);
-        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)50, (ushort)MessageType.SocialSyncComplete); Equal((ushort)20, ProtocolConstants.Version);
+        Equal((ushort)42, (ushort)MessageType.MatchStarting); Equal((ushort)50, (ushort)MessageType.SocialSyncComplete); Equal((ushort)21, ProtocolConstants.Version);
         var room = Guid.NewGuid(); var match = Guid.NewGuid(); var client = Guid.NewGuid(); var seat = Guid.NewGuid();
         Equal(seat, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest { SeatId = seat })).SeatId);
         Equal(null, ProtocolCodec.DecodeJoinMatchRequest(ProtocolCodec.EncodeJoinMatchRequest(new JoinMatchRequest())).SeatId);
@@ -421,102 +412,79 @@ internal static class Program
         using var host = new TcpClient(); using var browser = new TcpClient(); using var client = new TcpClient();
         await host.ConnectAsync(hostName, port); await browser.ConnectAsync(hostName, port); await client.ConnectAsync(hostName, port);
         var roomId = Guid.NewGuid();
-        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RelayRegisterRoom, Delivery = Delivery.RelayControl,
-            Payload = ProtocolCodec.EncodeRelayRegisterRoom(new RelayRegisterRoomRequest { RequestId = 101, RoomId = roomId,
-                RoomName = "interop", HostName = "host", Password = "secret", PluginVersion = "0.9.0", GameFingerprint = "game", ContentFingerprint = "content" }) }, CancellationToken.None);
+        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Message = Messages.RelayRegisterRoom(ProtocolCodec.EncodeRelayRegisterRoom(new RelayRegisterRoomRequest { RequestId = 101, RoomId = roomId,
+                RoomName = "interop", HostName = "host", Password = "secret", PluginVersion = "0.9.0", GameFingerprint = "game", ContentFingerprint = "content" })), Delivery = Delivery.RelayControl }, CancellationToken.None);
         var registered = ProtocolCodec.DecodeRelayControlResponse((await ReadType(host, MessageType.RelayControlResponse)).Payload);
         True(registered.Success); True(registered.ClientId.HasValue);
 
-        await PacketFraming.WriteAsync(browser.GetStream(), new Envelope { Type = MessageType.RelayListRooms, Delivery = Delivery.RelayControl,
-            Payload = ProtocolCodec.EncodeRelayListRoomsRequest(102) }, CancellationToken.None);
+        await PacketFraming.WriteAsync(browser.GetStream(), new Envelope { Message = Messages.RelayListRooms(ProtocolCodec.EncodeRelayListRoomsRequest(102)), Delivery = Delivery.RelayControl }, CancellationToken.None);
         var rooms = ProtocolCodec.DecodeRelayRoomList((await ReadType(browser, MessageType.RelayRoomList)).Payload);
         True(rooms.Rooms.Exists(value => value.RoomId == roomId && value.HasPassword));
 
-        await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Type = MessageType.RelayJoinRoom, Delivery = Delivery.RelayControl,
-            Payload = ProtocolCodec.EncodeRelayJoinRoom(new RelayJoinRoomRequest { RequestId = 103, RoomId = roomId, Password = "secret" }) }, CancellationToken.None);
+        await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Message = Messages.RelayJoinRoom(ProtocolCodec.EncodeRelayJoinRoom(new RelayJoinRoomRequest { RequestId = 103, RoomId = roomId, Password = "secret" })), Delivery = Delivery.RelayControl }, CancellationToken.None);
         var joined = ProtocolCodec.DecodeRelayControlResponse((await ReadType(client, MessageType.RelayControlResponse)).Payload);
         True(joined.Success); True(joined.ClientId.HasValue); var clientId = joined.ClientId!.Value;
         await ReadType(host, MessageType.RelayPeerJoined);
 
-        await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Type = MessageType.Hello, Delivery = Delivery.ToHost,
-            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeHello(new HelloMessage { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.9.0",
-                GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "client", Password = "secret" }) }, CancellationToken.None);
+        await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Message = Messages.Hello(ProtocolCodec.EncodeHello(new HelloMessage { ProtocolVersion = ProtocolConstants.Version, PluginVersion = "0.9.0",
+                GameFingerprint = "game", ContentFingerprint = "content", DisplayName = "client", Password = "secret" })), Delivery = Delivery.ToHost, RoomId = roomId, ClientId = clientId }, CancellationToken.None);
         var hello = await ReadType(host, MessageType.Hello); Equal(clientId, hello.ClientId); Equal(Delivery.ToHost, hello.Delivery);
         Equal("secret", ProtocolCodec.DecodeHello(hello.Payload).Password);
 
-        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.Welcome, Delivery = Delivery.ToClient,
-            RoomId = roomId, ClientId = registered.ClientId, TargetClientId = clientId,
-            Payload = ProtocolCodec.EncodeWelcome(new WelcomeMessage { ClientId = clientId, RoomId = roomId }) }, CancellationToken.None);
+        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Message = Messages.Welcome(ProtocolCodec.EncodeWelcome(new WelcomeMessage { ClientId = clientId, RoomId = roomId })), Delivery = Delivery.ToClient, RoomId = roomId, ClientId = registered.ClientId, TargetClientId = clientId }, CancellationToken.None);
         await ReadType(client, MessageType.Welcome);
         var preview = SnapshotCodec.Compress(new byte[] { 7, 8, 9 });
-        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RoomState, Delivery = Delivery.Broadcast,
-            RoomId = roomId, ClientId = registered.ClientId, Payload = ProtocolCodec.EncodeRoom(new RoomSnapshot
-            { RoomId = roomId, MapId = "local-map", UserMap = true, MapPreview = preview }) }, CancellationToken.None);
+        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Message = Messages.RoomState(ProtocolCodec.EncodeRoom(new RoomSnapshot
+            { RoomId = roomId, MapId = "local-map", UserMap = true, MapPreview = preview })), Delivery = Delivery.Broadcast, RoomId = roomId, ClientId = registered.ClientId }, CancellationToken.None);
         var forwardedRoom = ProtocolCodec.DecodeRoom((await ReadType(client, MessageType.RoomState)).Payload);
         Equal("local-map", forwardedRoom.MapId); Equal(true, forwardedRoom.UserMap);
         True(AuthorityHashChain.FixedEquals(preview, forwardedRoom.MapPreview));
 
-        await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Type = MessageType.CommandRequest, Delivery = Delivery.ToHost,
-            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeCommandRequest(new CommandRequest
-            { ClientId = clientId, RequestId = 106, Command = new GameCommand { Kind = CommandKind.SelfDestruct, UnitIds = new long[] { 17 } } }) }, CancellationToken.None);
+        await PacketFraming.WriteAsync(client.GetStream(), new Envelope { Message = Messages.CommandRequest(ProtocolCodec.EncodeCommandRequest(new CommandRequest
+            { ClientId = clientId, RequestId = 106, Command = new GameCommand { Kind = CommandKind.SelfDestruct, UnitIds = new long[] { 17 } } })), Delivery = Delivery.ToHost, RoomId = roomId, ClientId = clientId }, CancellationToken.None);
         var forwardedSelfDestruct = ProtocolCodec.DecodeCommandRequest((await ReadType(host, MessageType.CommandRequest)).Payload);
         Equal(CommandKind.SelfDestruct, forwardedSelfDestruct.Command.Kind); Equal(17L, forwardedSelfDestruct.Command.UnitIds[0]);
 
         var matchId = Guid.NewGuid();
-        var batchFrame = new AuthorityHashChain(matchId).Append(AuthorityFrameType.OperationBegin,
-            ProtocolCodec.EncodeOperationBegin(new OperationBeginPayload { OperationId = Guid.NewGuid(), SeatId = Guid.NewGuid(),
-                Command = AutoGuideProtocolTests.MovementBatch() }));
-        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.AuthorityFrame, Delivery = Delivery.ToClient,
-            RoomId = roomId, ClientId = registered.ClientId, TargetClientId = clientId,
-            Payload = ProtocolCodec.EncodeAuthorityFrame(batchFrame) }, CancellationToken.None);
+        var batchFrame = new AuthorityHashChain(matchId).Append(AuthorityMessages.OperationBegin(ProtocolCodec.EncodeOperationBegin(new OperationBeginPayload { OperationId = Guid.NewGuid(), SeatId = Guid.NewGuid(),
+                Command = AutoGuideProtocolTests.MovementBatch() })));
+        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Message = Messages.AuthorityFrame(ProtocolCodec.EncodeAuthorityFrame(batchFrame)), Delivery = Delivery.ToClient, RoomId = roomId, ClientId = registered.ClientId, TargetClientId = clientId }, CancellationToken.None);
         var forwardedBatchFrame = ProtocolCodec.DecodeAuthorityFrame((await ReadType(client, MessageType.AuthorityFrame)).Payload);
         var forwardedBatch = ProtocolCodec.DecodeOperationBegin(forwardedBatchFrame.Payload).Command;
         Equal(CommandKind.ResolvedUnitActions, forwardedBatch.Kind);
         Equal(-7, forwardedBatch.ResolvedActions[0].MoveX); Equal(3L, forwardedBatch.ResolvedActions[1].UnitId);
         True(forwardedBatch.ResolvedActions[1].SkipAnimations);
-        var hitResolution = new ResolutionPayload { OperationId = Guid.NewGuid(), StageId = 1, SettlementOrdinal = 2,
-            AttackSettlement = new AttackSettlement { Kind = AttackSettlementKind.Cell, BatchId = 1, UnitId = 234,
-                ActionName = "HiveMissile", TargetX = -6, TargetY = 9, OriginX = 3, OriginY = -2 } };
-        hitResolution.RandomRecords.Add(new RandomRecord { CallSite = "UnitData.Hurt", Ordinal = 3, ValueKind = 1, FloatingValue = 0.125 });
-        var hitFrame = new AuthorityHashChain(matchId).Append(AuthorityFrameType.Resolution, ProtocolCodec.EncodeResolution(hitResolution));
-        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.AuthorityFrame, Delivery = Delivery.ToClient,
-            RoomId = roomId, ClientId = registered.ClientId, TargetClientId = clientId,
-            Payload = ProtocolCodec.EncodeAuthorityFrame(hitFrame) }, CancellationToken.None);
+        var hitResolution = new ResolutionPayload { OperationId=Guid.NewGuid(), Event=new Wire.SettlementEvent { SourceUnitId=234, AttackCell=new Wire.AttackCellEvent { ActionName="HiveMissile",TargetX=-6,TargetY=3 } } };
+        var hitFrame = new AuthorityHashChain(matchId).Append(AuthorityMessages.Resolution(ProtocolCodec.EncodeResolution(hitResolution)));
+        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Message = Messages.AuthorityFrame(ProtocolCodec.EncodeAuthorityFrame(hitFrame)), Delivery = Delivery.ToClient, RoomId = roomId, ClientId = registered.ClientId, TargetClientId = clientId }, CancellationToken.None);
         var forwardedHitFrame = ProtocolCodec.DecodeAuthorityFrame((await ReadType(client, MessageType.AuthorityFrame)).Payload);
-        True(AuthorityHashChain.FixedEquals(hitFrame.Payload, forwardedHitFrame.Payload));
+        True(hitFrame.Payload.Equals(forwardedHitFrame.Payload));
         var forwardedHit = ProtocolCodec.DecodeResolution(forwardedHitFrame.Payload);
-        Equal(-6, forwardedHit.AttackSettlement!.TargetX); Equal(0.125, forwardedHit.RandomRecords[0].FloatingValue);
-        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RelayUpdateRoom, Delivery = Delivery.RelayControl,
-            RoomId = roomId, ClientId = registered.ClientId,
-            Payload = ProtocolCodec.EncodeRelayUpdateRoom(new RelayUpdateRoomRequest { RequestId = 104, RoomId = roomId,
-                Status = RelayRoomStatus.Playing, AvailableSeats = 1, MatchId = matchId }) }, CancellationToken.None);
+        Equal(-6, forwardedHit.Event!.AttackCell.TargetX);
+        await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Message = Messages.RelayUpdateRoom(ProtocolCodec.EncodeRelayUpdateRoom(new RelayUpdateRoomRequest { RequestId = 104, RoomId = roomId,
+                Status = RelayRoomStatus.Playing, AvailableSeats = 1, MatchId = matchId })), Delivery = Delivery.RelayControl, RoomId = roomId, ClientId = registered.ClientId }, CancellationToken.None);
         True(ProtocolCodec.DecodeRelayControlResponse((await ReadType(host, MessageType.RelayControlResponse)).Payload).Success);
 
         client.Close();
         await ReadType(host, MessageType.RelayPeerLeft);
         using var resumed = new TcpClient(); await resumed.ConnectAsync(hostName, port);
-        await PacketFraming.WriteAsync(resumed.GetStream(), new Envelope { Type = MessageType.RelayResumeRoom, Delivery = Delivery.RelayControl,
-            Payload = ProtocolCodec.EncodeRelayResumeRoom(new RelayResumeRoomRequest { RequestId = 105, RoomId = roomId,
-                MatchId = matchId, ClientId = clientId }) }, CancellationToken.None);
+        await PacketFraming.WriteAsync(resumed.GetStream(), new Envelope { Message = Messages.RelayResumeRoom(ProtocolCodec.EncodeRelayResumeRoom(new RelayResumeRoomRequest { RequestId = 105, RoomId = roomId,
+                MatchId = matchId, ClientId = clientId })), Delivery = Delivery.RelayControl }, CancellationToken.None);
         var resumeResponse = ProtocolCodec.DecodeRelayControlResponse((await ReadType(resumed, MessageType.RelayControlResponse)).Payload);
         True(resumeResponse.Success); Equal(clientId, resumeResponse.ClientId);
         await ReadType(host, MessageType.RelayPeerJoined);
         var resumeSession = new ResumeSessionRequest { RoomId = roomId, MatchId = matchId, ClientId = clientId, AppliedFrameId = 7, VerifiedFrameId = 9 };
-        await PacketFraming.WriteAsync(resumed.GetStream(), new Envelope { Type = MessageType.ResumeSession, Delivery = Delivery.ToHost,
-            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeResumeSession(resumeSession) }, CancellationToken.None);
+        await PacketFraming.WriteAsync(resumed.GetStream(), new Envelope { Message = Messages.ResumeSession(ProtocolCodec.EncodeResumeSession(resumeSession)), Delivery = Delivery.ToHost, RoomId = roomId, ClientId = clientId }, CancellationToken.None);
         var forwardedResume = ProtocolCodec.DecodeResumeSession((await ReadType(host, MessageType.ResumeSession)).Payload);
         Equal(7L, forwardedResume.AppliedFrameId); Equal(9L, forwardedResume.VerifiedFrameId);
         // Return to the same room without replacing either connection, then start a new match.
         foreach (var next in new[] { RelayRoomStatus.Waiting, RelayRoomStatus.Playing })
         {
-            await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Type = MessageType.RelayUpdateRoom, Delivery = Delivery.RelayControl,
-                RoomId = roomId, ClientId = registered.ClientId,
-                Payload = ProtocolCodec.EncodeRelayUpdateRoom(new RelayUpdateRoomRequest { RequestId = 107, RoomId = roomId,
-                    Status = next, MatchId = next == RelayRoomStatus.Playing ? Guid.NewGuid() : null }) }, CancellationToken.None);
+            await PacketFraming.WriteAsync(host.GetStream(), new Envelope { Message = Messages.RelayUpdateRoom(ProtocolCodec.EncodeRelayUpdateRoom(new RelayUpdateRoomRequest { RequestId = 107, RoomId = roomId,
+                    Status = next, MatchId = next == RelayRoomStatus.Playing ? Guid.NewGuid() : null })), Delivery = Delivery.RelayControl, RoomId = roomId, ClientId = registered.ClientId }, CancellationToken.None);
             True(ProtocolCodec.DecodeRelayControlResponse((await ReadType(host, MessageType.RelayControlResponse)).Payload).Success);
         }
-        await PacketFraming.WriteAsync(resumed.GetStream(), new Envelope { Type = MessageType.SetReady, Delivery = Delivery.ToHost,
-            RoomId = roomId, ClientId = clientId, Payload = ProtocolCodec.EncodeInt64(1) }, CancellationToken.None);
+        await PacketFraming.WriteAsync(resumed.GetStream(), new Envelope { Message = Messages.SetReady(ProtocolCodec.EncodeInt64(1)), Delivery = Delivery.ToHost, RoomId = roomId, ClientId = clientId }, CancellationToken.None);
         Equal(clientId, (await ReadType(host, MessageType.SetReady)).ClientId);
     }
 
@@ -545,8 +513,8 @@ internal static class Program
             using var relayClient = new RelayClientTransport(roomId, "secret", 202);
             await directClient.ConnectAsync(IPAddress.Loopback.ToString(), directPort);
             await relayClient.ConnectAsync(relayHostName, relayPort);
-            await directClient.SendAsync(MessageType.Hello, new byte[] { 1 });
-            await relayClient.SendAsync(MessageType.Heartbeat, new byte[] { 2 });
+            await directClient.SendAsync(Messages.Hello(new Wire.Hello {DisplayName="test"}));
+            await relayClient.SendAsync(Messages.Heartbeat(new Wire.Int64Value {Value=2}));
 
             var first = await ReadHostEnvelope(composite);
             var second = await ReadHostEnvelope(composite);
@@ -555,7 +523,7 @@ internal static class Program
             True(second.Envelope.Type is MessageType.Hello or MessageType.Heartbeat);
 
             const string notice = "Alice${notice_joined}";
-            await composite.BroadcastAsync(MessageType.ParticipantNotice, ProtocolCodec.EncodeString(notice));
+            await composite.BroadcastAsync(Messages.ParticipantNotice(ProtocolCodec.EncodeString(notice)));
             var directNotice = await ReadClientEnvelope(directClient);
             var relayNotice = await ReadClientEnvelope(relayClient);
             Equal(MessageType.ParticipantNotice, directNotice.Type);

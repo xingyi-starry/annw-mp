@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -55,13 +56,13 @@ internal sealed class NetworkHost : IHostTransport
 
     public bool TryDequeue(out InboundEnvelope? envelope) => inbox.TryDequeue(out envelope);
     public bool TryDequeueError(out Exception? exception) => errors.TryDequeue(out exception);
-    public Task SendAsync(IRemotePeer peer, MessageType type, byte[] payload) => peer.SendAsync(new Envelope { Type = type, Payload = payload });
+    public Task SendAsync(IRemotePeer peer, NetworkMessage message) => peer.SendAsync(new Envelope { Message = message });
 
-    public async Task BroadcastAsync(MessageType type, byte[] payload)
+    public async Task BroadcastAsync(NetworkMessage message)
     {
         PeerConnection[] copy;
         lock (peerLock) copy = peers.ToArray();
-        foreach (var peer in copy) if (peer.IsConnected) await SendAsync(peer, type, payload).ConfigureAwait(false);
+        foreach (var peer in copy) if (peer.IsConnected) await SendAsync(peer, message).ConfigureAwait(false);
     }
 
     public void Dispose()

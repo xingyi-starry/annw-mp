@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using System;
 using System.Threading.Tasks;
 using XingyiStarry.Mp.Protocol;
@@ -18,8 +19,8 @@ internal interface IHostTransport : IDisposable
     void Start();
     bool TryDequeue(out InboundEnvelope? envelope);
     bool TryDequeueError(out Exception? exception);
-    Task SendAsync(IRemotePeer peer, MessageType type, byte[] payload);
-    Task BroadcastAsync(MessageType type, byte[] payload);
+    Task SendAsync(IRemotePeer peer, NetworkMessage message);
+    Task BroadcastAsync(NetworkMessage message);
 }
 
 internal interface IRoomDirectoryPublisher
@@ -35,5 +36,5 @@ internal interface IClientTransport : IDisposable
     Task ReconnectAsync(string host, int port, Guid roomId, Guid clientId, Guid matchId, ulong requestId);
     bool TryDequeue(out Envelope? envelope);
     bool TryDequeueError(out Exception? exception);
-    Task SendAsync(MessageType type, byte[] payload);
+    Task SendAsync(NetworkMessage message);
 }

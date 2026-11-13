@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using System;
 using System.IO;
 using System.Security.Cryptography;
@@ -13,9 +14,9 @@ public sealed class AuthorityHashChain
 
     public AuthorityHashChain(Guid matchId) => this.matchId = matchId;
 
-    public AuthorityFrame Append(AuthorityFrameType type, byte[] payload)
+    public AuthorityFrame Append(AuthorityMessage message)
     {
-        var frame = new AuthorityFrame { MatchId = matchId, FrameId = nextFrameId, PrevHash = (byte[])previousHash.Clone(), FrameType = type, Payload = payload };
+        var frame = new AuthorityFrame { MatchId = matchId, FrameId = nextFrameId, PrevHash = (byte[])previousHash.Clone(), Message = new AuthorityMessage(message.Body.Clone()) };
         frame.Hash = ComputeHash(frame);
         previousHash = (byte[])frame.Hash.Clone(); nextFrameId++;
         return frame;

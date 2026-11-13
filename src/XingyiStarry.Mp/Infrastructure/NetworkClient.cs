@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using System;
 using System.Collections.Concurrent;
 using System.Net.Sockets;
@@ -35,10 +36,10 @@ internal sealed class NetworkClient : IClientTransport
     }
 
     public bool TryDequeueError(out Exception? exception) => errors.TryDequeue(out exception);
-    public Task SendAsync(MessageType type, byte[] payload)
+    public Task SendAsync(NetworkMessage message)
     {
         if (peer is null) throw new InvalidOperationException("Client is not connected.");
-        return peer.SendAsync(new Envelope { Type = type, Payload = payload });
+        return peer.SendAsync(new Envelope { Message = message });
     }
 
     public void Dispose() { connectionGeneration++; var previous = peer; peer = null; previous?.Dispose(); }

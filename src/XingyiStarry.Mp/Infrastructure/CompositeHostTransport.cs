@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -54,11 +55,11 @@ internal sealed class CompositeHostTransport : IHostTransport, IRoomDirectoryPub
         return false;
     }
 
-    public Task SendAsync(IRemotePeer peer, MessageType type, byte[] payload) =>
-        peer.SendAsync(new Envelope { Type = type, Payload = payload });
+    public Task SendAsync(IRemotePeer peer, NetworkMessage message) =>
+        peer.SendAsync(new Envelope { Message = message });
 
-    public Task BroadcastAsync(MessageType type, byte[] payload) => RunAllAsync(
-        transports.Select(transport => (transport, (Func<Task>)(() => transport.BroadcastAsync(type, payload)))));
+    public Task BroadcastAsync(NetworkMessage message) => RunAllAsync(
+        transports.Select(transport => (transport, (Func<Task>)(() => transport.BroadcastAsync(message)))));
 
     public Task UpdateRoomAsync(RelayUpdateRoomRequest update) => RunAllAsync(
         transports.OfType<IRoomDirectoryPublisher>()

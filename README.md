@@ -82,9 +82,8 @@ dotnet .\tests\XingyiStarry.Mp.Tests\bin\Release\net8.0\XingyiStarry.Mp.Tests.dl
 
 ### 协议与 Relay
 
-唯一 protobuf 定义位于 `src\XingyiStarry.Mp.Protocol\Protos\multiplayer.proto`。修改协议后还需要在相邻 Relay 仓库运行 `generate.ps1`，提交重新生成的 Go 代码，并完成 C#、Go 和跨语言测试。
+唯一 protobuf 定义位于 `src\XingyiStarry.Mp.Protocol\Protos\multiplayer.proto`。C# 消息由 `Grpc.Tools` 随构建生成。字段哈希编码由 `python tools/generate_authority_hash.py` 生成 C#／Go 实现（需 Python 3 与 protoc）。修改协议后还需要在相邻 Relay 仓库运行 `generate.ps1`，提交重新生成的 Go 代码，并完成 C#、Go 和跨语言测试。
 
-握手、进入战场、重连和结束流程见[联机游戏与协议生命周期](docs/session-lifecycle.md)。
 
 ## 许可证
 

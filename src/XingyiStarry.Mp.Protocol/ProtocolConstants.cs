@@ -2,7 +2,7 @@ namespace XingyiStarry.Mp.Protocol;
 
 public static class ProtocolConstants
 {
-    public const ushort Version = 20;
+    public const ushort Version = 21;
     // Keep a room update well below the relay's default 8 MiB per-peer write queue.
     public const int MaxMapPreviewBytes = 4 * 1024 * 1024;
     public const int MaxExpandedMapPreviewBytes = 32 * 1024 * 1024;
@@ -10,7 +10,7 @@ public static class ProtocolConstants
     public const int MaxPacketBytes = 16 * 1024 * 1024;
     public const int MaxSnapshotBytes = 256 * 1024 * 1024;
     public const int SnapshotChunkBytes = 256 * 1024;
-    public const string HashDomain = "XingyiStarry.Mp/authority/v1";
+    public const string HashDomain = "XingyiStarry.Mp/authority/v2";
 }
 
 public enum MessageType : ushort
@@ -64,7 +64,8 @@ public enum MessageType : ushort
     SocialSyncRequest = 47,
     SocialSyncBegin = 48,
     SocialSyncChunk = 49,
-    SocialSyncComplete = 50
+    SocialSyncComplete = 50,
+    RelayRoomClosed = 51
 }
 
 public enum ParticipantAdmission : byte

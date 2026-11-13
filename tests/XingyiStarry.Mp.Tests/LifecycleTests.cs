@@ -53,15 +53,15 @@ internal static class LifecycleTests
     {
         var transport = new FakeClientTransport(); using var client = new ClientSession(transport);
         var id = Guid.NewGuid(); var roomId = Guid.NewGuid(); var firstMatch = Guid.NewGuid();
-        transport.Add(MessageType.Welcome, ProtocolCodec.EncodeWelcome(new WelcomeMessage { ClientId = id, RoomId = roomId, Mode = WelcomeMode.Lobby }));
-        transport.Add(MessageType.MatchStarting, Array.Empty<byte>());
-        transport.Add(MessageType.RoomState, ProtocolCodec.EncodeRoom(new RoomSnapshot { RoomId = roomId, MatchId = firstMatch, MatchStarted = true }));
+        transport.Add(Messages.Welcome(ProtocolCodec.EncodeWelcome(new WelcomeMessage { ClientId = id, RoomId = roomId, Mode = WelcomeMode.Lobby })));
+        transport.Add(Messages.MatchStarting(new XingyiStarry.Mp.Protocol.Wire.GuidValue()));
+        transport.Add(Messages.RoomState(ProtocolCodec.EncodeRoom(new RoomSnapshot { RoomId = roomId, MatchId = firstMatch, MatchStarted = true })));
         Pump(client); Require(client.JoinedMatch && client.MatchStarting);
         client.AcceptSnapshotAnchor(new SnapshotManifest { MatchId = firstMatch, FrameHash = new byte[32] });
         // The host is already in the lobby while this client is still replaying the old game.
-        transport.Add(MessageType.RoomState, ProtocolCodec.EncodeRoom(new RoomSnapshot { RoomId = roomId }));
-        var end = new AuthorityHashChain(firstMatch).Append(AuthorityFrameType.MatchEnded, ProtocolCodec.EncodeInt64(1));
-        transport.Add(MessageType.AuthorityFrame, ProtocolCodec.EncodeAuthorityFrame(end));
+        transport.Add(Messages.RoomState(ProtocolCodec.EncodeRoom(new RoomSnapshot { RoomId = roomId })));
+        var end = new AuthorityHashChain(firstMatch).Append(AuthorityMessages.MatchEnded(ProtocolCodec.EncodeMatchEnded(true)));
+        transport.Add(Messages.AuthorityFrame(ProtocolCodec.EncodeAuthorityFrame(end)));
         var frames = new List<AuthorityFrame>(); Pump(client, frames.Add);
         Require(frames.Count == 1 && client.MatchId == firstMatch && client.JoinedMatch);
         client.MarkApplied(end.FrameId); client.MarkMatchEnded();
@@ -71,20 +71,20 @@ internal static class LifecycleTests
         client.ReturnToLobby();
         Require(transport.Sent.Count == sentBeforeReturn && client.ClientId == id && client.MatchId == null && !client.JoinedMatch);
         Require(!client.MatchStarting && client.AppliedFrameId == 0 && client.VerifiedFrameId == 0);
-        transport.Add(MessageType.AuthorityFrame, ProtocolCodec.EncodeAuthorityFrame(end));
-        transport.Add(MessageType.SnapshotManifest, ProtocolCodec.EncodeSnapshotManifest(new SnapshotManifest
-            { SnapshotId = Guid.NewGuid(), MatchId = firstMatch, FrameHash = new byte[32], ContentHash = new byte[32] }));
+        transport.Add(Messages.AuthorityFrame(ProtocolCodec.EncodeAuthorityFrame(end)));
+        transport.Add(Messages.SnapshotManifest(ProtocolCodec.EncodeSnapshotManifest(new SnapshotManifest
+            { SnapshotId = Guid.NewGuid(), MatchId = firstMatch, FrameHash = new byte[32], ContentHash = new byte[32] })));
         Pump(client); Require(client.MatchId == null && !client.SnapshotRequested);
         var secondMatch = Guid.NewGuid();
-        transport.Add(MessageType.MatchStarting, Array.Empty<byte>());
-        transport.Add(MessageType.RoomState, ProtocolCodec.EncodeRoom(new RoomSnapshot { RoomId = roomId, MatchId = secondMatch, MatchStarted = true }));
+        transport.Add(Messages.MatchStarting(new XingyiStarry.Mp.Protocol.Wire.GuidValue()));
+        transport.Add(Messages.RoomState(ProtocolCodec.EncodeRoom(new RoomSnapshot { RoomId = roomId, MatchId = secondMatch, MatchStarted = true })));
         Pump(client);
         Require(client.MatchId == secondMatch && client.JoinedMatch && !client.MatchEnded && client.SnapshotRequested);
         client.AcceptSnapshotAnchor(new SnapshotManifest { MatchId = secondMatch, FrameHash = new byte[32] });
-        var start = new AuthorityHashChain(secondMatch).Append(AuthorityFrameType.TurnPhase, ProtocolCodec.EncodeInt64(3));
-        transport.Add(MessageType.AuthorityFrame, ProtocolCodec.EncodeAuthorityFrame(start));
+        var start = new AuthorityHashChain(secondMatch).Append(AuthorityMessages.TurnPhase(ProtocolCodec.EncodeTurnPhase((TurnPhase)3)));
+        transport.Add(Messages.AuthorityFrame(ProtocolCodec.EncodeAuthorityFrame(start)));
         Pump(client, frame => client.MarkApplied(frame.FrameId)); Require(client.AppliedFrameId == 1);
-        transport.Add(MessageType.SessionEnded, ProtocolCodec.EncodeString("closed")); Pump(client);
+        transport.Add(Messages.SessionEnded(ProtocolCodec.EncodeString("closed"))); Pump(client);
         Require(client.TerminalSessionEnded && client.ConnectionLost);
     }
 
@@ -93,11 +93,11 @@ internal static class LifecycleTests
         var transport = new FakeClientTransport(); using var client = new ClientSession(transport);
         var id = Guid.NewGuid(); var roomId = Guid.NewGuid(); var matchId = Guid.NewGuid();
         var room = ProtocolCodec.EncodeRoom(new RoomSnapshot { RoomId = roomId, MatchId = matchId, MatchStarted = true });
-        transport.Add(MessageType.Welcome, ProtocolCodec.EncodeWelcome(new WelcomeMessage
-            { ClientId = id, RoomId = roomId, MatchId = matchId, Mode = WelcomeMode.JoinSelection }));
-        transport.Add(MessageType.RoomState, room); Pump(client); Require(!client.JoinedMatch);
-        transport.Add(MessageType.JoinMatchAccepted, ProtocolCodec.EncodeJoinMatchAccepted(new JoinMatchAccepted { Spectator = true }));
-        transport.Add(MessageType.RoomState, room);
+        transport.Add(Messages.Welcome(ProtocolCodec.EncodeWelcome(new WelcomeMessage
+            { ClientId = id, RoomId = roomId, MatchId = matchId, Mode = WelcomeMode.JoinSelection })));
+        transport.Add(Messages.RoomState(room)); Pump(client); Require(!client.JoinedMatch);
+        transport.Add(Messages.JoinMatchAccepted(ProtocolCodec.EncodeJoinMatchAccepted(new JoinMatchAccepted { Spectator = true })));
+        transport.Add(Messages.RoomState(room));
         Pump(client); Require(client.JoinedMatch && client.IsSpectator && client.SnapshotRequested);
     }
 
@@ -111,12 +111,12 @@ internal static class LifecycleTests
         private readonly Queue<Envelope> incoming = new Queue<Envelope>();
         public List<Envelope> Sent { get; } = new List<Envelope>();
         public bool IsConnected => true;
-        public void Add(MessageType type, byte[] payload) => incoming.Enqueue(new Envelope { Type = type, Payload = payload });
+        public void Add(NetworkMessage message) => incoming.Enqueue(new Envelope { Message = message });
         public Task ConnectAsync(string host, int port) => Task.CompletedTask;
         public Task ReconnectAsync(string host, int port, Guid roomId, Guid clientId, Guid matchId, ulong requestId) => Task.CompletedTask;
         public bool TryDequeue(out Envelope? envelope) => incoming.TryDequeue(out envelope);
         public bool TryDequeueError(out Exception? exception) { exception = null; return false; }
-        public Task SendAsync(MessageType type, byte[] payload) { Sent.Add(new Envelope { Type = type, Payload = payload }); return Task.CompletedTask; }
+        public Task SendAsync(NetworkMessage message) { Sent.Add(new Envelope { Message = message }); return Task.CompletedTask; }
         public void Dispose() { }
     }
 }

@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -95,11 +96,11 @@ internal sealed class HostSession : IDisposable
         if (client.Finalized || client.Reconnecting) throw new InvalidDataException("Session must be resumed before sending game messages.");
         switch (inbound.Envelope.Type)
         {
-            case MessageType.Heartbeat: _ = network.SendAsync(inbound.Peer, MessageType.Heartbeat, ProtocolCodec.EncodeInt64(DateTime.UtcNow.Ticks)); break;
+            case MessageType.Heartbeat: _ = network.SendAsync(inbound.Peer, Messages.Heartbeat(ProtocolCodec.EncodeInt64(DateTime.UtcNow.Ticks))); break;
             case MessageType.ClaimSeat:
             if (!Room.TryClaimSeat(client.ClientId, client.DisplayName, checked((int)ProtocolCodec.DecodeInt64(inbound.Envelope.Payload)), out _, out var claimReason))
                 {
-                    _ = network.SendAsync(inbound.Peer, MessageType.Reject, ProtocolCodec.EncodeString(claimReason)); return;
+                    _ = network.SendAsync(inbound.Peer, Messages.Reject(ProtocolCodec.EncodeString(claimReason))); return;
                 }
                 BroadcastRoom(); break;
             case MessageType.ReleaseSeat:
@@ -110,10 +111,9 @@ internal sealed class HostSession : IDisposable
                 if (!Room.MatchStarted || !MatchId.HasValue) throw new InvalidDataException("Match has not started.");
                 var join = ProtocolCodec.DecodeJoinMatchRequest(inbound.Envelope.Payload);
                 if (!Room.AdmitToMatch(client.ClientId, join.SeatId, out var spectator, out var joinReason))
-                { _ = network.SendAsync(inbound.Peer, MessageType.Reject, ProtocolCodec.EncodeString(joinReason)); return; }
+                { _ = network.SendAsync(inbound.Peer, Messages.Reject(ProtocolCodec.EncodeString(joinReason))); return; }
                 client.JoinedMatch = true;
-                _ = network.SendAsync(inbound.Peer, MessageType.JoinMatchAccepted,
-                    ProtocolCodec.EncodeJoinMatchAccepted(new JoinMatchAccepted { SeatId = join.SeatId, Spectator = spectator }));
+                _ = network.SendAsync(inbound.Peer, Messages.JoinMatchAccepted(ProtocolCodec.EncodeJoinMatchAccepted(new JoinMatchAccepted { SeatId = join.SeatId, Spectator = spectator })));
                 var admittedSeat = join.SeatId.HasValue ? Room.Seats.FirstOrDefault(value => value.SeatId == join.SeatId.Value) : null;
                 PublishSystem(spectator ? SystemEventKind.EnteredSpectator : SystemEventKind.EnteredPlayer,
                     client.DisplayName + "${ui_joined_the_room_as}" + (spectator ? "${notice_a_spectator}" : $"${{ui_player}}{(admittedSeat?.LobbySlotIndex ?? -1) + 1}."));
@@ -163,9 +163,9 @@ internal sealed class HostSession : IDisposable
         clientsByConnection[peer.ConnectionId] = record;
         clientsById[record.ClientId] = record;
         var mode = MatchId.HasValue ? WelcomeMode.JoinSelection : WelcomeMode.Lobby;
-        _ = network.SendAsync(peer, MessageType.Welcome, ProtocolCodec.EncodeWelcome(new WelcomeMessage { ClientId = record.ClientId, RoomId = Room.RoomId, MatchId = MatchId, LatestFrameId = journal?.Frames.Count ?? 0, Mode = mode }));
+        _ = network.SendAsync(peer, Messages.Welcome(ProtocolCodec.EncodeWelcome(new WelcomeMessage { ClientId = record.ClientId, RoomId = Room.RoomId, MatchId = MatchId, LatestFrameId = journal?.Frames.Count ?? 0, Mode = mode })));
         var room = Room.Snapshot(); room.MatchId = MatchId;
-        _ = network.SendAsync(peer, MessageType.RoomState, ProtocolCodec.EncodeRoom(room));
+        _ = network.SendAsync(peer, Messages.RoomState(ProtocolCodec.EncodeRoom(room)));
         var notice = cleanName + "${notice_joined}";
         PublishSystem(SystemEventKind.Joined, notice);
         participantNotice(notice);
@@ -178,16 +178,16 @@ internal sealed class HostSession : IDisposable
             !clientsById.TryGetValue(request.ClientId, out var record) || !record.Reconnecting || record.Finalized ||
             DateTime.UtcNow >= record.ReconnectDeadlineUtc)
         {
-            _ = network.SendAsync(peer, MessageType.ResumeSessionRejected, ProtocolCodec.EncodeString("${notice_reconnection_identity_does_not_exist_or_has_expired}")); return;
+            _ = network.SendAsync(peer, Messages.ResumeSessionRejected(ProtocolCodec.EncodeString("${notice_reconnection_identity_does_not_exist_or_has_expired}"))); return;
         }
         if (record.Peer is not null) clientsByConnection.Remove(record.Peer.ConnectionId);
         record.Peer = peer; record.Reconnecting = false;
         Room.MarkReconnecting(record.ClientId, false);
         clientsByConnection[peer.ConnectionId] = record;
-        _ = network.SendAsync(peer, MessageType.ResumeSessionAccepted, ProtocolCodec.EncodeResumeSessionAccepted(new ResumeSessionAccepted
-            { RoomId = Room.RoomId, MatchId = MatchId.Value, ClientId = record.ClientId, LatestFrameId = journal?.Frames.Count ?? 0 }));
+        _ = network.SendAsync(peer, Messages.ResumeSessionAccepted(ProtocolCodec.EncodeResumeSessionAccepted(new ResumeSessionAccepted
+            { RoomId = Room.RoomId, MatchId = MatchId.Value, ClientId = record.ClientId, LatestFrameId = journal?.Frames.Count ?? 0 })));
         var room = Room.Snapshot(); room.MatchId = MatchId;
-        _ = network.SendAsync(peer, MessageType.RoomState, ProtocolCodec.EncodeRoom(room));
+        _ = network.SendAsync(peer, Messages.RoomState(ProtocolCodec.EncodeRoom(room)));
         _ = SendSnapshotAsync(peer);
         PublishSystem(SystemEventKind.Reconnected, record.DisplayName + "${notice_reconnected}");
         BroadcastRoom();
@@ -245,7 +245,7 @@ internal sealed class HostSession : IDisposable
 
     private async Task RejectHandshakeAsync(IRemotePeer peer, string reason)
     {
-        try { await network.SendAsync(peer, MessageType.Reject, ProtocolCodec.EncodeString(reason)).ConfigureAwait(false); }
+        try { await network.SendAsync(peer, Messages.Reject(ProtocolCodec.EncodeString(reason))).ConfigureAwait(false); }
         finally { peer.Close(); }
     }
 
@@ -371,19 +371,19 @@ internal sealed class HostSession : IDisposable
         return result;
     }
 
-    public AuthorityFrame AppendAndBroadcast(AuthorityFrameType type, byte[] payload)
+    public AuthorityFrame AppendAndBroadcast(AuthorityMessage message)
     {
         if (journal is null) throw new InvalidOperationException("Match has not started.");
-        var frame = journal.Append(type, payload);
-        _ = BroadcastToJoinedAsync(MessageType.AuthorityFrame, ProtocolCodec.EncodeAuthorityFrame(frame));
+        var frame = journal.Append(message);
+        _ = BroadcastToJoinedAsync(Messages.AuthorityFrame(ProtocolCodec.EncodeAuthorityFrame(frame)));
         return frame;
     }
 
-    private Task BroadcastToJoinedAsync(MessageType type, byte[] payload)
+    private Task BroadcastToJoinedAsync(NetworkMessage message)
     {
         var sends = clientsById.Values
             .Where(value => value.JoinedMatch && !value.Finalized && value.Peer is not null && value.Peer.IsConnected)
-            .Select(value => network.SendAsync(value.Peer!, type, payload))
+            .Select(value => network.SendAsync(value.Peer!, message))
             .ToArray();
         return sends.Length == 0 ? Task.CompletedTask : Task.WhenAll(sends);
     }
@@ -391,7 +391,7 @@ internal sealed class HostSession : IDisposable
     public void BroadcastRoom()
     {
         var snapshot = Room.Snapshot(); snapshot.MatchId = MatchId;
-        _ = network.BroadcastAsync(MessageType.RoomState, ProtocolCodec.EncodeRoom(snapshot));
+        _ = network.BroadcastAsync(Messages.RoomState(ProtocolCodec.EncodeRoom(snapshot)));
         if (network is IRoomDirectoryPublisher publisher)
         {
             _ = publisher.UpdateRoomAsync(new RelayUpdateRoomRequest { RequestId = 0, RoomId = Room.RoomId,
@@ -425,7 +425,7 @@ internal sealed class HostSession : IDisposable
         if (audience.Contains(LocalHostClientId)) localChats.Enqueue(message);
         var payload = ProtocolCodec.EncodeChatEvent(message);
         foreach (var target in clientsById.Values.Where(value => audience.Contains(value.ClientId) && !value.Finalized && value.Peer?.IsConnected == true))
-            _ = network.SendAsync(target.Peer!, MessageType.ChatEvent, payload);
+            _ = network.SendAsync(target.Peer!, Messages.ChatEvent(payload));
     }
 
     private void SendPingToAudience(PingEvent message, IReadOnlyCollection<Guid> audience)
@@ -433,7 +433,7 @@ internal sealed class HostSession : IDisposable
         if (audience.Contains(LocalHostClientId)) localPings.Enqueue(message);
         var payload = ProtocolCodec.EncodePingEvent(message);
         foreach (var target in clientsById.Values.Where(value => audience.Contains(value.ClientId) && !value.Finalized && value.Peer?.IsConnected == true))
-            _ = network.SendAsync(target.Peer!, MessageType.PingEvent, payload);
+            _ = network.SendAsync(target.Peer!, Messages.PingEvent(payload));
     }
 
     private async Task SendSocialSyncAsync(ClientRecord client, ulong requestId)
@@ -442,24 +442,23 @@ internal sealed class HostSession : IDisposable
         var messages = social.ChatsFor(client.ClientId); var chunkCount = (uint)((messages.Count + 63) / 64);
         var begin = new SocialSyncBegin { RequestId = requestId, Watermark = social.Watermark, ChunkCount = chunkCount };
         foreach (var participant in Room.Snapshot().Participants) begin.Participants.Add(participant);
-        await network.SendAsync(peer, MessageType.SocialSyncBegin, ProtocolCodec.EncodeSocialSyncBegin(begin)).ConfigureAwait(false);
+        await network.SendAsync(peer, Messages.SocialSyncBegin(ProtocolCodec.EncodeSocialSyncBegin(begin))).ConfigureAwait(false);
         for (var index = 0; index < chunkCount; index++)
         {
             var chunk = new SocialSyncChunk { RequestId = requestId, ChunkIndex = (uint)index };
             foreach (var message in messages.Skip(index * 64).Take(64)) chunk.Messages.Add(message);
-            await network.SendAsync(peer, MessageType.SocialSyncChunk, ProtocolCodec.EncodeSocialSyncChunk(chunk)).ConfigureAwait(false);
+            await network.SendAsync(peer, Messages.SocialSyncChunk(ProtocolCodec.EncodeSocialSyncChunk(chunk))).ConfigureAwait(false);
         }
-        await network.SendAsync(peer, MessageType.SocialSyncComplete,
-            ProtocolCodec.EncodeSocialSyncComplete(new SocialSyncComplete { RequestId = requestId, Watermark = begin.Watermark })).ConfigureAwait(false);
+        await network.SendAsync(peer, Messages.SocialSyncComplete(ProtocolCodec.EncodeSocialSyncComplete(new SocialSyncComplete { RequestId = requestId, Watermark = begin.Watermark }))).ConfigureAwait(false);
     }
     public void BroadcastMatchStarting() =>
-        _ = network.BroadcastAsync(MessageType.MatchStarting, Array.Empty<byte>());
+        _ = network.BroadcastAsync(Messages.MatchStarting(new XingyiStarry.Mp.Protocol.Wire.GuidValue()));
     public Task CloseRelayJoiningAsync(ulong requestId) =>
         network is IRoomDirectoryPublisher publisher ? publisher.CloseJoiningAsync(requestId) : Task.CompletedTask;
     public Task BroadcastSessionEndedAsync(string reason) =>
-        network.BroadcastAsync(MessageType.SessionEnded, ProtocolCodec.EncodeString(reason));
-    public void Accept(IRemotePeer peer, ulong requestId, long frameId) => _ = network.SendAsync(peer, MessageType.CommandAccepted, ProtocolCodec.EncodeCommandResponse(new CommandResponse { RequestId = requestId, AuthorityFrameId = frameId }));
-    public void Reject(IRemotePeer peer, ulong requestId, string reason) => _ = network.SendAsync(peer, MessageType.CommandRejected, ProtocolCodec.EncodeCommandResponse(new CommandResponse { RequestId = requestId, AuthorityFrameId = 0, Reason = reason }));
+        network.BroadcastAsync(Messages.SessionEnded(ProtocolCodec.EncodeString(reason)));
+    public void Accept(IRemotePeer peer, ulong requestId, long frameId) => _ = network.SendAsync(peer, Messages.CommandAccepted(ProtocolCodec.EncodeCommandResponse(new CommandResponse { RequestId = requestId, AuthorityFrameId = frameId })));
+    public void Reject(IRemotePeer peer, ulong requestId, string reason) => _ = network.SendAsync(peer, Messages.CommandRejected(ProtocolCodec.EncodeCommandResponse(new CommandResponse { RequestId = requestId, AuthorityFrameId = 0, Reason = reason })));
 
     public bool Authorize(CommandRequest request, int currentPlayerIndex, int currentRound, out string reason)
     {
@@ -492,15 +491,15 @@ internal sealed class HostSession : IDisposable
     private async Task SendSnapshotAsync(IRemotePeer peer)
     {
         var manifest = latestSnapshotManifest; var compressed = latestCompressedSnapshot;
-        if (manifest is null || compressed is null) { await network.SendAsync(peer, MessageType.Reject, ProtocolCodec.EncodeString("No safe-boundary snapshot is available.")).ConfigureAwait(false); return; }
-        await network.SendAsync(peer, MessageType.SnapshotManifest, ProtocolCodec.EncodeSnapshotManifest(manifest)).ConfigureAwait(false);
+        if (manifest is null || compressed is null) { await network.SendAsync(peer, Messages.Reject(ProtocolCodec.EncodeString("No safe-boundary snapshot is available."))).ConfigureAwait(false); return; }
+        await network.SendAsync(peer, Messages.SnapshotManifest(ProtocolCodec.EncodeSnapshotManifest(manifest))).ConfigureAwait(false);
         for (var index = 0; index < manifest.ChunkCount; index++)
         {
             var offset = index * ProtocolConstants.SnapshotChunkBytes; var length = Math.Min(ProtocolConstants.SnapshotChunkBytes, compressed.Length - offset);
             var data = new byte[length]; Buffer.BlockCopy(compressed, offset, data, 0, length);
-            await network.SendAsync(peer, MessageType.SnapshotChunk, ProtocolCodec.EncodeSnapshotChunk(new SnapshotChunk { SnapshotId = manifest.SnapshotId, Index = index, Data = data })).ConfigureAwait(false);
+            await network.SendAsync(peer, Messages.SnapshotChunk(ProtocolCodec.EncodeSnapshotChunk(new SnapshotChunk { SnapshotId = manifest.SnapshotId, Index = index, Data = data }))).ConfigureAwait(false);
         }
-        await network.SendAsync(peer, MessageType.SnapshotComplete, ProtocolCodec.EncodeGuid(manifest.SnapshotId)).ConfigureAwait(false);
+        await network.SendAsync(peer, Messages.SnapshotComplete(ProtocolCodec.EncodeGuid(manifest.SnapshotId))).ConfigureAwait(false);
     }
 
     private void SendHistory(IRemotePeer peer, long after)
@@ -513,8 +512,8 @@ internal sealed class HostSession : IDisposable
 
     private async Task SendHistoryAsync(IRemotePeer peer, IReadOnlyList<AuthorityFrame> frames, long latestFrameId)
     {
-        foreach (var frame in frames) await network.SendAsync(peer, MessageType.AuthorityFrame, ProtocolCodec.EncodeAuthorityFrame(frame)).ConfigureAwait(false);
-        await network.SendAsync(peer, MessageType.HistoryComplete, ProtocolCodec.EncodeInt64(latestFrameId)).ConfigureAwait(false);
+        foreach (var frame in frames) await network.SendAsync(peer, Messages.AuthorityFrame(ProtocolCodec.EncodeAuthorityFrame(frame))).ConfigureAwait(false);
+        await network.SendAsync(peer, Messages.HistoryComplete(ProtocolCodec.EncodeInt64(latestFrameId))).ConfigureAwait(false);
     }
 
     public void Dispose() { journal?.Dispose(); network.Dispose(); }

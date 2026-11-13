@@ -33,7 +33,7 @@ internal static class AutoGuideProtocolTests
             var operation = new OperationBeginPayload { OperationId = Guid.NewGuid(), SeatId = Guid.NewGuid(), RequestId = 99, Command = command };
             var result = ProtocolCodec.DecodeOperationBegin(ProtocolCodec.EncodeOperationBegin(operation)).Command.ResolvedActions[0];
             Require(result.UnitId == 55 && result.Type == type && result.TargetY == -14 && result.ActionCategory == 6 &&
-                result.TemplateId == "resolved.factory" && result.PassengerUnitId == 71);
+                result.TemplateId == (type==ResolvedActionType.Create?"resolved.factory":"") && result.PassengerUnitId == (type==ResolvedActionType.Unload?71:0));
         }
     }
 
@@ -50,10 +50,10 @@ internal static class AutoGuideProtocolTests
             Require(!CommandRules.MayBroadcast(kind));
             Throws<InvalidDataException>(() => ProtocolCodec.EncodeOperationBegin(new OperationBeginPayload { Command = new GameCommand { Kind = kind } }));
             var forged = new Wire.OperationBegin { OperationId = ByteString.CopyFrom(Guid.NewGuid().ToByteArray()),
-                SeatId = ByteString.CopyFrom(Guid.NewGuid().ToByteArray()), Command = new Wire.GameCommandMessage { Kind = (uint)kind } };
-            Throws<InvalidDataException>(() => ProtocolCodec.DecodeOperationBegin(forged.ToByteArray()));
+                SeatId = ByteString.CopyFrom(Guid.NewGuid().ToByteArray()), Command = kind == CommandKind.AutoGuideStart ? new Wire.GameCommandMessage { AutoGuideStart=new Wire.AutoGuideStartCommand() } : new Wire.GameCommandMessage() };
+            Throws<InvalidDataException>(() => ProtocolCodec.DecodeOperationBegin(forged));
         }
-        Throws<InvalidDataException>(() => ProtocolCodec.DecodeCommand(new Wire.GameCommandMessage { Kind = 10 }.ToByteArray()));
+        Throws<InvalidDataException>(() => ProtocolCodec.DecodeCommand(new Wire.GameCommandMessage()));
         Require(!CommandRules.MayRequest((CommandKind)10));
         Require(!HandshakeValidator.TryValidate(new HelloMessage { ProtocolVersion = 18, PluginVersion = "p", GameFingerprint = "g",
             ContentFingerprint = "c", DisplayName = "old" }, "p", "g", "c", "", out _, out _));
@@ -71,12 +71,12 @@ internal static class AutoGuideProtocolTests
         Throws<InvalidDataException>(() => ProtocolCodec.EncodeCommand(batch));
         batch = MovementBatch(); batch.Kind = CommandKind.AutoGuideStart;
         Throws<InvalidDataException>(() => ProtocolCodec.EncodeCommand(batch));
-        var forged = new Wire.GameCommandMessage { Kind = (uint)CommandKind.ResolvedUnitActions };
+        var forged = new Wire.GameCommandMessage { ResolvedUnitActions = new Wire.ResolvedUnitActionsCommand() };
         for (var index = 0; index <= CommandRules.MaxResolvedActions; index++)
         {
-            forged.UnitIds.Add(index); forged.ResolvedActions.Add(new Wire.ResolvedUnitAction { UnitId = index });
+            forged.ResolvedUnitActions.UnitIds.Add(index); forged.ResolvedUnitActions.ResolvedActions.Add(new Wire.ResolvedUnitAction { UnitId = index });
         }
-        Throws<InvalidDataException>(() => ProtocolCodec.DecodeCommand(forged.ToByteArray()));
+        Throws<InvalidDataException>(() => ProtocolCodec.DecodeCommand(forged));
     }
 
     internal static void CoroutineScopes()

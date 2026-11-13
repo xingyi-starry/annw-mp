@@ -6,18 +6,19 @@ namespace XingyiStarry.Mp.Game;
 
 internal static class GameplayRandom
 {
-    public static RandomTape? ActiveTape { get; set; }
 
     public static float Range(float minimum, float maximum, string callSite)
     {
-        var tape = ActiveTape;
-        return tape is null ? UnityEngine.Random.Range(minimum, maximum) : tape.Float(callSite, () => UnityEngine.Random.Range(minimum, maximum));
+        var result = Protocol.RandomResultContext.Current;
+        if (result is null && AttackSettlements.Current is not null) throw new System.InvalidOperationException("Gameplay random has no settlement owner: " + callSite);
+        return result is null ? UnityEngine.Random.Range(minimum, maximum) : result.Float(callSite, () => UnityEngine.Random.Range(minimum, maximum));
     }
 
     public static int Range(int minimum, int maximum, string callSite)
     {
-        var tape = ActiveTape;
-        return tape is null ? UnityEngine.Random.Range(minimum, maximum) : tape.Integer(callSite, () => UnityEngine.Random.Range(minimum, maximum));
+        var result = Protocol.RandomResultContext.Current;
+        if (result is null && AttackSettlements.Current is not null) throw new System.InvalidOperationException("Gameplay random has no settlement owner: " + callSite);
+        return result is null ? UnityEngine.Random.Range(minimum, maximum) : result.Integer(callSite, () => UnityEngine.Random.Range(minimum, maximum));
     }
 
     public static float UnitDataHurtFloat(float minimum, float maximum) => Range(minimum, maximum, "UnitData.Hurt");
